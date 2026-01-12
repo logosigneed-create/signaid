@@ -2,7 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import fetch from "node-fetch";
 
 // Clé partagée utilisée dans le projet
-const API_KEY = "AIzaSyBvd07dBlJNv3MbxXxzcqwAvZkNfxiQRug";
+const API_KEY = "AI*************************************g";
 
 console.log(`🔑 Test de la clé : ${API_KEY.substring(0, 10)}...`);
 
@@ -61,3 +61,4 @@ async function checkPermissions() {
 }
 
 checkPermissions();
+
