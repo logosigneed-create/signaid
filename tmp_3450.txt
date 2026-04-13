@@ -1,0 +1,30 @@
+3441: 
+3442: {/* SIZE SELECTOR */}
+3443: <div className="flex flex-col gap-4">
+3444: <div className="flex items-center justify-between">
+3445: <div className="flex flex-col gap-1">
+3446: <div className="flex items-center gap-3 mb-1">
+3447: <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Choix des tailles</h4>
+3448: <button
+3449: onClick={() => setShowSizeGuide(true)}
+3450: className="text-[9px] font-bold text-gray-400 hover:text-orange-600 transition-colors flex items-center gap-1 border-b border-gray-200 border-dotted"
+3451: >
+3452: <i className="fa-solid fa-ruler-vertical"></i>
+3453: Guide des tailles (Mesures)
+3454: </button>
+3455: </div>
+3456: <p className="text-[9px] font-bold text-orange-600 mt-1 uppercase italic">Plusieurs tailles/quantitÃ©s possibles par projet</p>
+3457: </div>
+3458: {Object.values(selectedSizes).some(qty => (qty as number) > 0) && (
+3459: <div className="bg-orange-50 px-2 py-0.5 rounded text-[10px] font-black text-orange-700 animate-pulse">
+3460: {Object.values(selectedSizes).reduce((acc, qty) => acc + (qty as number), 0)} PIÃˆCES
+3461: </div>
+3462: )}
+3463: </div>
+3464: <div data-layout-id="size-selector-container" className={`flex flex-wrap gap-2 justify-center ${shakeSizes ? 'animate-shake' : ''}`}>
+3465: {(product.sizes || ["XS", "S", "M", "L", "XL", "XXL", "3XL"]).filter((s: string) => !['4XL', '5XL', '6XL', '7XL', '8XL', '9XL', '10XL'].includes(s)).map((size: string) => {
+3466: const qty = selectedSizes[size] || 0;
+3467: return (
+3468: <div key={size} className={`flex items-center rounded-lg border transition-all overflow-hidden mb-1 ${qty > 0 ? 'bg-gray-900 border-gray-900 shadow-md ring-1 ring-offset-1 ring-gray-900' : 'bg-white border-gray-200 hover:border-orange-500'}`}>
+3469: {qty > 0 ? (
+3470: <>

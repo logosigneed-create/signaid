@@ -1,0 +1,10 @@
+880: const [isMeasureToolActive, setIsMeasureToolActive] = useState(false);
+3192: showDimensions={isMeasureToolActive}
+3206: showDimensions={isMeasureToolActive}
+3220: showDimensions={isMeasureToolActive}
+3233: showDimensions={isMeasureToolActive}
+3246: showDimensions={isMeasureToolActive}
+3259: showDimensions={isMeasureToolActive}
+3282: {isMeasureToolActive && (
+3452: <i className="fa-solid fa-ruler-vertical"></i>
+3698: <i className="fa-solid fa-ruler-combined text-orange-600"></i>

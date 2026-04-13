@@ -1,0 +1,29 @@
+288: activeLogoColorFront: 'original', backgroundRemovedFront: false, logoInvertedFront: false as boolean,
+289: activeLogoColorBack: 'original', backgroundRemovedBack: false, logoInvertedBack: false as boolean,
+383: backgroundRemovedBack: false, logoInvertedBack: false,
+390: backgroundRemovedFront: false, logoInvertedFront: false,
+1121: backgroundRemovedBack: false, logoInvertedBack: false,
+1129: backgroundRemovedFront: false, logoInvertedFront: false,
+1538: backgroundRemovedBack: false, logoInvertedBack: false,
+1548: backgroundRemovedFront: false, logoInvertedFront: false,
+1643: backgroundRemovedBack: false, logoInvertedBack: false,
+1652: backgroundRemovedFront: false, logoInvertedFront: false,
+2018: btn.innerHTML = '<i class="fa-solid fa-check"></i> SAUVEGARDÃ‰ !';
+2874: backgroundRemovedBack: false, logoInvertedBack: false, // Reset flags
+2882: backgroundRemovedFront: false, logoInvertedFront: false, // Reset flags
+3453: Guide des tailles (Mesures)
+3619: <i className="fa-solid fa-check-double"></i>
+3621: <span>{isUpdatingPost ? "MISE Ã€ JOUR..." : "Valider les modifications"}</span>
+3738: {previewSize === size && <i className="fa-solid fa-check ml-2 text-xs"></i>}
+3787: <i className="fa-solid fa-check text-green-200"></i>
+3814: btn.innerHTML = '<i class="fa-solid fa-check"></i> SAUVEGARDÃ‰ !';
+3911: inverted?: boolean;
+3921: inverted: isBack ? item.logoInvertedBack : item.logoInvertedFront
+3932: inverted: s2?.inverted
+3943: inverted: s3?.inverted
+3964: <i className="fa-solid fa-check"></i> Valider
+4071: logoInvertedFront: item.logoInvertedBack,
+4087: logoInvertedBack: item.logoInvertedFront,
+4385: <button onClick={() => setActivePanel('none')} className="w-full py-4 bg-gray-900 text-white font-black uppercase tracking-widest rounded-xl shadow-lg hover:bg-black transition-all">Valider</button>
+4876: <i className="fa-solid fa-check group-hover:translate-x-1 transition-transform"></i>
+4969: <i className={`fa-solid ${toast?.type === 'success' ? 'fa-check-circle text-green-500 text-xl' : 'fa-circle-exclamation text-xl'}`}></i>

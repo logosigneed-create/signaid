@@ -1,0 +1,3 @@
+162: const validateBtnRef = useRef<HTMLButtonElement>(null);
+2913: if (carrouselRef.current && validateBtnRef.current) {
+2915: const btn = validateBtnRef.current;

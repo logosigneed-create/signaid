@@ -1,0 +1,90 @@
+152: activeLogoService?: LogoCreationData | null;
+153: initialMode?: 'upload' | 'service' | null;
+154: isServiceMode?: boolean;
+155: onRequestLogoService?: () => void;
+156: onOpenAtelier?: () => void;
+157: onUpdatePost?: (postId: string, customization: CartItem) => Promise<void>;
+158: products: any;
+159: }) {
+160: const [isUpdatingPost, setIsUpdatingPost] = useState(false);
+161: const carrouselRef = useRef<HTMLDivElement>(null);
+162: const validateBtnRef = useRef<HTMLButtonElement>(null);
+163: const navigate = useNavigate();
+164: const sizeSelectionRef = useRef<HTMLDivElement>(null);
+165: const [isMenuOpen, setIsMenuOpen] = useState(false);
+166: const [isAiViewVisible, setIsAiViewVisible] = useState(false); // New state for AI View Toggle
+167: const [showAiResultModal, setShowAiResultModal] = useState(false);
+168: const [captureLoading, setCaptureLoading] = useState(false);
+169: const [showAllSizes, setShowAllSizes] = useState(false);
+170: const [showSizeError, setShowSizeError] = useState(false);
+171: 
+172: 
+173: const [cameraTimerDelay, setCameraTimerDelay] = useState<number>(3); // 0, 3, 10
+174: const [shakeSizes, setShakeSizes] = useState(false);
+175: const [isRemovingBackground, setIsRemovingBackground] = useState(false);
+176: const [isPickingColor, setIsPickingColor] = useState(false);
+177: const [selectedStyleName, setSelectedStyleName] = useState<string>('');
+178: const [aiStep, setAiStep] = useState<'prompt' | 'input' | 'result'>('prompt');
+179: const [selectedAiPrompt, setSelectedAiPrompt] = useState<string>('');
+180: const [isGeneratingLocal, setIsGeneratingLocal] = useState(false);
+181: const [animationPreview, setAnimationPreview] = useState<string | null>(null);
+2903: animation: bounce-ia 2s infinite;
+2904: }
+2905: .hero-btn-glow {
+2906: box-shadow: 0 0 20px rgba(232, 93, 37, 0.4);
+2907: animation: pulse-orange 2s infinite !important;
+2908: }
+2909: `;
+2910: 
+2911: 
+2912: useEffect(() => {
+2913: if (carrouselRef.current && validateBtnRef.current) {
+2914: const container = carrouselRef.current;
+2915: const btn = validateBtnRef.current;
+2916: // Calcule la position exacte pour que le bouton soit au milieu du conteneur
+2917: const centerPosition = btn.offsetLeft - (container.offsetWidth / 2) + (btn.offsetWidth / 2);
+2918: // Applique le scroll instantanÃ©ment au chargement
+2919: container.scrollTo({ left: centerPosition, behavior: 'instant' });
+2920: }
+2921: }, []);
+2922: 
+2923: if (!product) {
+2924: return <div className="p-8 text-center">Produit introuvable. <button onClick={onBack} className="text-orange-500 underline">Retour</button></div>;
+2925: }
+2926: 
+2927: const isCatalogueMode = item.productType === 'catalogue';
+2928: 
+2929: return (
+2930: <div className={`flex flex-col items-center w-full min-h-screen bg-gray-50 relative z-10 transition-all duration-700 ${isAiViewVisible ? 'brightness-95 saturate-[0.8]' : ''} ${isCatalogueMode ? 'h-screen overflow-hidden fixed inset-0 z-[200]' : ''}`} style={{ touchAction: 'pan-y' }}>
+2931: <style>{dynamicStyles}</style>
+2932: {pendingElement && (
+2905: .hero-btn-glow {
+2906: box-shadow: 0 0 20px rgba(232, 93, 37, 0.4);
+2907: animation: pulse-orange 2s infinite !important;
+2908: }
+2909: `;
+2910: 
+2911: 
+2912: useEffect(() => {
+2913: if (carrouselRef.current && validateBtnRef.current) {
+2914: const container = carrouselRef.current;
+2915: const btn = validateBtnRef.current;
+2916: // Calcule la position exacte pour que le bouton soit au milieu du conteneur
+2917: const centerPosition = btn.offsetLeft - (container.offsetWidth / 2) + (btn.offsetWidth / 2);
+2918: // Applique le scroll instantanÃ©ment au chargement
+2919: container.scrollTo({ left: centerPosition, behavior: 'instant' });
+2920: }
+2921: }, []);
+2922: 
+2923: if (!product) {
+2924: return <div className="p-8 text-center">Produit introuvable. <button onClick={onBack} className="text-orange-500 underline">Retour</button></div>;
+2925: }
+2926: 
+2927: const isCatalogueMode = item.productType === 'catalogue';
+2928: 
+2929: return (
+2930: <div className={`flex flex-col items-center w-full min-h-screen bg-gray-50 relative z-10 transition-all duration-700 ${isAiViewVisible ? 'brightness-95 saturate-[0.8]' : ''} ${isCatalogueMode ? 'h-screen overflow-hidden fixed inset-0 z-[200]' : ''}`} style={{ touchAction: 'pan-y' }}>
+2931: <style>{dynamicStyles}</style>
+2932: {pendingElement && (
+2933: <div className="fixed inset-0 z-[100] bg-white/90 backdrop-blur-sm flex items-center justify-center p-4">
+2934: <div className="bg-white rounded-2xl border border-gray-200 p-6 w-full max-w-sm shadow-2xl">

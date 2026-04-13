@@ -1,0 +1,443 @@
+﻿
+  src\restoration\CustomizerView.Restored.tsx:204:
+  src\restoration\CustomizerView.Restored.tsx:205:
+  src\restoration\CustomizerView.Restored.tsx:206:    
+// MAGIC LINK EFFECTS
+> src\restoration\CustomizerView.Restored.tsx:207:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:208:      
+  if (initialColor) {
+  src\restoration\CustomizerView.Restored.tsx:209:      
+      // Wait for product load or state init if needed, 
+but setState usually works
+  src\restoration\CustomizerView.Restored.tsx:210:      
+      // Access internal state setter if available or 
+via prop effect ???
+  src\restoration\CustomizerView.Restored.tsx:215:
+  src\restoration\CustomizerView.Restored.tsx:216:
+  src\restoration\CustomizerView.Restored.tsx:217:
+> src\restoration\CustomizerView.Restored.tsx:218:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:219:      
+  if (initialAiPromo || initialAiModalOpen) {
+  src\restoration\CustomizerView.Restored.tsx:220:      
+      // Delay slightly to allow render
+  src\restoration\CustomizerView.Restored.tsx:221:      
+      setTimeout(() => {
+  src\restoration\CustomizerView.Restored.tsx:225:    
+}, [initialAiPromo, initialAiModalOpen]);
+  src\restoration\CustomizerView.Restored.tsx:226:
+  src\restoration\CustomizerView.Restored.tsx:227:    
+// TRIGGER UPLOAD ON MOUNT IF REQUESTED
+> src\restoration\CustomizerView.Restored.tsx:228:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:229:      
+  if (initialUploadOpen) {
+  src\restoration\CustomizerView.Restored.tsx:230:      
+      setTimeout(() => {
+  src\restoration\CustomizerView.Restored.tsx:231:      
+          triggerUniversalInput(null, true);
+  src\restoration\CustomizerView.Restored.tsx:236:    
+// HANDLE INITIAL MODE (Service / Upload from Navbar)
+  src\restoration\CustomizerView.Restored.tsx:237:    
+// FIX: Only trigger onOpenAtelier on FIRST mount with 
+service mode, not on every initialMode change
+  src\restoration\CustomizerView.Restored.tsx:238:    
+const hasOpenedAtelierRef = useRef(false);
+> src\restoration\CustomizerView.Restored.tsx:239:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:240:      
+  if (initialMode === 'service' && onOpenAtelier && 
+!hasOpenedAtelierRef.current && !activeLogoService) {
+  src\restoration\CustomizerView.Restored.tsx:241:      
+      hasOpenedAtelierRef.current = true;
+  src\restoration\CustomizerView.Restored.tsx:242:      
+      setTimeout(() => {
+  src\restoration\CustomizerView.Restored.tsx:414:
+  src\restoration\CustomizerView.Restored.tsx:415:    
+// --- EFFECT: Switch to Canvas if color changes, but 
+KEEP AI result for toggle ---
+  src\restoration\CustomizerView.Restored.tsx:416:    
+const lastColorRef = useRef(item.color);
+> src\restoration\CustomizerView.Restored.tsx:417:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:418:      
+  if (item.color !== lastColorRef.current) {
+  src\restoration\CustomizerView.Restored.tsx:419:      
+      // Un-toggle AI view so user sees the new color 
+on the 3D model immediately
+  src\restoration\CustomizerView.Restored.tsx:420:      
+      setIsAiViewVisible(false);
+  src\restoration\CustomizerView.Restored.tsx:426:    
+}, [item.color]);
+  src\restoration\CustomizerView.Restored.tsx:427:
+  src\restoration\CustomizerView.Restored.tsx:428:    
+// EFFECT: Apply Magic Template
+> src\restoration\CustomizerView.Restored.tsx:429:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:430:      
+  if (initialTemplate) {
+  src\restoration\CustomizerView.Restored.tsx:431:      
+      // Simulate adding a logo
+  src\restoration\CustomizerView.Restored.tsx:432:      
+      const loadMagicTemplate = async () => {
+  src\restoration\CustomizerView.Restored.tsx:449:    
+}, [initialTemplate]);
+  src\restoration\CustomizerView.Restored.tsx:450:
+  src\restoration\CustomizerView.Restored.tsx:451:    
+// EFFECT: Update color if prop changes late
+> src\restoration\CustomizerView.Restored.tsx:452:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:453:      
+  if (initialColor && item.color !== initialColor) {
+  src\restoration\CustomizerView.Restored.tsx:454:      
+      setItem(prev => ({ ...prev, color: initialColor 
+}));
+  src\restoration\CustomizerView.Restored.tsx:455:      
+  }
+  src\restoration\CustomizerView.Restored.tsx:459:
+  src\restoration\CustomizerView.Restored.tsx:460:    
+// Save to local storage on change
+  src\restoration\CustomizerView.Restored.tsx:461:    
+// Save to local storage on change
+> src\restoration\CustomizerView.Restored.tsx:462:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:463:      
+  // [FIX] Enable auto-save even if working with 
+initialState (edit mode)
+  src\restoration\CustomizerView.Restored.tsx:464:      
+  // This ensures changes are preserved across forced 
+remounts (product/color changes)
+  src\restoration\CustomizerView.Restored.tsx:465:      
+  try {
+  src\restoration\CustomizerView.Restored.tsx:484:    
+}, [item, aiResult]);
+  src\restoration\CustomizerView.Restored.tsx:485:
+  src\restoration\CustomizerView.Restored.tsx:486:    
+// Restore AI Result on mount if prop is null
+> src\restoration\CustomizerView.Restored.tsx:487:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:488:      
+  if (!aiResult && setAiResult) {
+  src\restoration\CustomizerView.Restored.tsx:489:      
+      const saved = 
+localStorage.getItem('stylelink_draft_ai_result');
+  src\restoration\CustomizerView.Restored.tsx:490:      
+      if (saved) {
+  src\restoration\CustomizerView.Restored.tsx:494:    
+}, []);
+  src\restoration\CustomizerView.Restored.tsx:495:
+  src\restoration\CustomizerView.Restored.tsx:496:    
+// SYNC URL WITH PRODUCT STATE
+> src\restoration\CustomizerView.Restored.tsx:497:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:498:      
+  if (!initialProductType) return; // Don't run on very 
+first mount if not ready
+  src\restoration\CustomizerView.Restored.tsx:499:
+  src\restoration\CustomizerView.Restored.tsx:500:      
+  const currentParams = new 
+URLSearchParams(window.location.search);
+  src\restoration\CustomizerView.Restored.tsx:614:      
+  dragRef.current.activeId = null;
+  src\restoration\CustomizerView.Restored.tsx:615:    };
+  src\restoration\CustomizerView.Restored.tsx:616:
+> src\restoration\CustomizerView.Restored.tsx:617:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:618:      
+  fetch('https://api.ipify.org?format=json')
+  src\restoration\CustomizerView.Restored.tsx:619:      
+      .then(res => res.json())
+  src\restoration\CustomizerView.Restored.tsx:620:      
+      .then(data => {
+  src\restoration\CustomizerView.Restored.tsx:625:    
+}, []);
+  src\restoration\CustomizerView.Restored.tsx:626:
+  src\restoration\CustomizerView.Restored.tsx:627:    
+// Lock Body Scroll when AI Modal is open
+> src\restoration\CustomizerView.Restored.tsx:628:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:629:      
+  if (aiModalOpen || previewImage) {
+  src\restoration\CustomizerView.Restored.tsx:630:      
+      if (document.body) document.body.style.overflow = 
+'hidden';
+  src\restoration\CustomizerView.Restored.tsx:631:      
+  } else {
+  src\restoration\CustomizerView.Restored.tsx:634:      
+  return () => { if (document.body) 
+document.body.style.overflow = ''; };
+  src\restoration\CustomizerView.Restored.tsx:635:    
+}, [aiModalOpen, previewImage]);
+  src\restoration\CustomizerView.Restored.tsx:636:
+> src\restoration\CustomizerView.Restored.tsx:637:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:638:      
+  if (setIsMenuVisible) {
+  src\restoration\CustomizerView.Restored.tsx:639:      
+      setIsMenuVisible(!aiModalOpen);
+  src\restoration\CustomizerView.Restored.tsx:640:      
+  }
+  src\restoration\CustomizerView.Restored.tsx:674:    
+const [customStylePrompt, setCustomStylePrompt] = 
+useState(initialStylePrompt || '');
+  src\restoration\CustomizerView.Restored.tsx:675:
+  src\restoration\CustomizerView.Restored.tsx:676:    
+// Update state if props change
+> src\restoration\CustomizerView.Restored.tsx:677:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:678:      
+  if (initialStyleCategory) 
+setActiveStyleCategory(initialStyleCategory as 
+StyleCategory);
+  src\restoration\CustomizerView.Restored.tsx:679:      
+  if (initialStylePrompt) {
+  src\restoration\CustomizerView.Restored.tsx:680:      
+      setSelectedStylePrompt(initialStylePrompt);
+  src\restoration\CustomizerView.Restored.tsx:691:    
+const [activePanel, setActivePanel] = useState<'none' | 
+'import' | 'text' | 'code' | 'category' | 'ai' | 
+'service_summary'>('none');
+  src\restoration\CustomizerView.Restored.tsx:692:
+  src\restoration\CustomizerView.Restored.tsx:693:    
+// Auto-scroll to panel on Mobile when active
+> src\restoration\CustomizerView.Restored.tsx:694:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:695:      
+  if (activePanel !== 'none' && window.innerWidth < 
+1024) {
+  src\restoration\CustomizerView.Restored.tsx:696:      
+      setTimeout(() => {
+  src\restoration\CustomizerView.Restored.tsx:697:      
+          let el = null;
+  src\restoration\CustomizerView.Restored.tsx:707:    
+}, [activePanel]);
+  src\restoration\CustomizerView.Restored.tsx:708:
+  src\restoration\CustomizerView.Restored.tsx:709:    
+// Center active color in mobile carousel
+> src\restoration\CustomizerView.Restored.tsx:710:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:711:      
+  if (colorScrollRef.current && window.innerWidth < 
+1024) {
+  src\restoration\CustomizerView.Restored.tsx:712:      
+      const container = colorScrollRef.current;
+  src\restoration\CustomizerView.Restored.tsx:713:      
+      // Use querySelector because the buttons are 
+rendered dynamically
+  src\restoration\CustomizerView.Restored.tsx:719:    
+}, [item.color]);
+  src\restoration\CustomizerView.Restored.tsx:720:    
+const [textOptionsOpen, setTextOptionsOpen] = 
+useState(false);
+  src\restoration\CustomizerView.Restored.tsx:721:    
+const [workshopOpen, setWorkshopOpen] = useState(false);
+> src\restoration\CustomizerView.Restored.tsx:722:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:723:      
+  if (isServiceMode && activeLogoService) {
+  src\restoration\CustomizerView.Restored.tsx:724:      
+      setWorkshopOpen(true);
+  src\restoration\CustomizerView.Restored.tsx:725:      
+      // Force Import Panel Open (Standard "Atelier" 
+Panel)
+  src\restoration\CustomizerView.Restored.tsx:738:    
+}, [isServiceMode, activeLogoService]);
+  src\restoration\CustomizerView.Restored.tsx:739:
+  src\restoration\CustomizerView.Restored.tsx:740:    
+// Handle initial mode navigation
+> src\restoration\CustomizerView.Restored.tsx:741:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:742:      
+  if (initialMode === 'upload') {
+  src\restoration\CustomizerView.Restored.tsx:743:      
+      setActivePanel('import');
+  src\restoration\CustomizerView.Restored.tsx:744:      
+  } else if (initialMode === 'service') {
+  src\restoration\CustomizerView.Restored.tsx:775:    
+const [pongRewardModalOpen, setPongRewardModalOpen] = 
+useState(false);
+  src\restoration\CustomizerView.Restored.tsx:776:    
+const wasGeneratingRef = useRef(false);
+  src\restoration\CustomizerView.Restored.tsx:777:
+> src\restoration\CustomizerView.Restored.tsx:778:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:779:      
+  if (!aiGenerating && wasGeneratingRef.current) {
+  src\restoration\CustomizerView.Restored.tsx:780:      
+      // Just finished generation
+  src\restoration\CustomizerView.Restored.tsx:781:      
+      // If user is guest and scored points
+  src\restoration\CustomizerView.Restored.tsx:794:    
+const [feedbackComment, setFeedbackComment] = 
+useState('');
+  src\restoration\CustomizerView.Restored.tsx:795:    
+const [showFeedbackInput, setShowFeedbackInput] = 
+useState(false);
+  src\restoration\CustomizerView.Restored.tsx:796:    
+// AI RESULT PERSISTENCE
+> src\restoration\CustomizerView.Restored.tsx:797:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:798:      
+  const saved = localStorage.getItem('lastAiResult');
+  src\restoration\CustomizerView.Restored.tsx:799:      
+  if (saved && !aiResult) {
+  src\restoration\CustomizerView.Restored.tsx:800:      
+      // Optional: Auto-restore or just set a flag? 
+  src\restoration\CustomizerView.Restored.tsx:803:    
+}, []);
+  src\restoration\CustomizerView.Restored.tsx:804:
+  src\restoration\CustomizerView.Restored.tsx:805:    
+// Save Result
+> src\restoration\CustomizerView.Restored.tsx:806:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:807:      
+  if (aiResult) {
+  src\restoration\CustomizerView.Restored.tsx:808:      
+      localStorage.setItem('lastAiResult', aiResult);
+  src\restoration\CustomizerView.Restored.tsx:809:      
+  }
+  src\restoration\CustomizerView.Restored.tsx:859:    
+// TEMPORARILY DISABLED - This useEffect was causing 
+infinite loops after AI generation
+  src\restoration\CustomizerView.Restored.tsx:860:    
+// TODO: Reimplement cache logic without circular 
+dependencies
+  src\restoration\CustomizerView.Restored.tsx:861:    /*
+> src\restoration\CustomizerView.Restored.tsx:862:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:863:      
+  const currentSide = isBack ? 'back' : 'front';
+  src\restoration\CustomizerView.Restored.tsx:864:     
+  src\restoration\CustomizerView.Restored.tsx:865:      
+  // A. INVALIDATION: If Product or Color changes, wipe 
+invalid slots
+  src\restoration\CustomizerView.Restored.tsx:972:    
+const [touchEnd, setTouchEnd] = useState<{ x: number, 
+y: number } | null>(null);
+  src\restoration\CustomizerView.Restored.tsx:973:
+  src\restoration\CustomizerView.Restored.tsx:974:
+> src\restoration\CustomizerView.Restored.tsx:975:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:976:      
+  const logo = isBack
+  src\restoration\CustomizerView.Restored.tsx:977:      
+      ? (item.predefinedLogoUrlBack || 
+item.processedLogoUrlBack_original || 
+item.originalLogoUrlBack)
+  src\restoration\CustomizerView.Restored.tsx:978:      
+      : (item.predefinedLogoUrlFront || 
+item.processedLogoUrlFront_original || 
+item.originalLogoUrlFront);
+  src\restoration\CustomizerView.Restored.tsx:1074:    
+};
+  src\restoration\CustomizerView.Restored.tsx:1075:
+  src\restoration\CustomizerView.Restored.tsx:1076:
+> src\restoration\CustomizerView.Restored.tsx:1077:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:1078:     
+   const code = isBack ? 
+specialCodeBack.trim().toUpperCase() : 
+specialCodeFront.trim().toUpperCase();
+  src\restoration\CustomizerView.Restored.tsx:1079:     
+   if (SPECIAL_CODES[code]) {
+  src\restoration\CustomizerView.Restored.tsx:1080:     
+       const logoCode = SPECIAL_CODES[code];
+  src\restoration\CustomizerView.Restored.tsx:1515:    
+const [postCaption, setPostCaption] = useState('');
+  src\restoration\CustomizerView.Restored.tsx:1516:
+  src\restoration\CustomizerView.Restored.tsx:1517:    
+// Auto-add Hashtag when AI Result is ready
+> src\restoration\CustomizerView.Restored.tsx:1518:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:1519:     
+   if (aiResult && selectedStyleName) {
+  src\restoration\CustomizerView.Restored.tsx:1520:     
+       const hashtag = '#' + 
+selectedStyleName.replace(/\s+/g, '');
+  src\restoration\CustomizerView.Restored.tsx:1521:     
+       setPostCaption(prev => {
+  src\restoration\CustomizerView.Restored.tsx:1588:     
+   }
+  src\restoration\CustomizerView.Restored.tsx:1589:    
+};
+  src\restoration\CustomizerView.Restored.tsx:1590:
+> src\restoration\CustomizerView.Restored.tsx:1591:    
+useEffect(() => { if (isCameraOpen && videoRef.current 
+&& cameraStream) videoRef.current.srcObject = 
+cameraStream; }, [cameraStream, isCameraOpen]);
+> src\restoration\CustomizerView.Restored.tsx:1592:    
+useEffect(() => { return () => { if (cameraStream) 
+cameraStream.getTracks().forEach(t => t.stop()); }; }, 
+[cameraStream]);
+  src\restoration\CustomizerView.Restored.tsx:1593:
+  src\restoration\CustomizerView.Restored.tsx:1594:    
+const startCamera = async () => {
+  src\restoration\CustomizerView.Restored.tsx:1595:     
+   try {
+  src\restoration\CustomizerView.Restored.tsx:1620:    
+const stopCamera = () => { if (cameraStream) { 
+cameraStream.getTracks().forEach(track => 
+track.stop()); setCameraStream(null); } 
+setIsCameraOpen(false); };
+  src\restoration\CustomizerView.Restored.tsx:1621:    
+const toggleCamera = () => setFacingMode(prev => prev 
+=== 'user' ? 'environment' : 'user');
+  src\restoration\CustomizerView.Restored.tsx:1622:    
+// FIX: Add isCameraOpen to dependency array to trigger 
+startCamera when modal opens
+> src\restoration\CustomizerView.Restored.tsx:1623:    
+useEffect(() => { if (isCameraOpen) startCamera(); }, 
+[facingMode, isCameraOpen]);
+  src\restoration\CustomizerView.Restored.tsx:1624:
+> src\restoration\CustomizerView.Restored.tsx:1625:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:1626:     
+   if (countdown === null) return;
+  src\restoration\CustomizerView.Restored.tsx:1627:     
+   if (countdown > 0) {
+  src\restoration\CustomizerView.Restored.tsx:1628:     
+       const timer = setTimeout(() => setCountdown(prev 
+=> (prev as number) - 1), 1000);
+  src\restoration\CustomizerView.Restored.tsx:2117:
+  src\restoration\CustomizerView.Restored.tsx:2118:
+  src\restoration\CustomizerView.Restored.tsx:2119:    
+// --- UI HELPERS: History & Click Outside ---
+> src\restoration\CustomizerView.Restored.tsx:2120:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:2121:     
+   const handleClickOutside = (e: MouseEvent) => {
+  src\restoration\CustomizerView.Restored.tsx:2122:     
+       const target = e.target as HTMLElement;
+  src\restoration\CustomizerView.Restored.tsx:2123:     
+       // FIX: Removed .animate-fade-in in R3.5, so we 
+must check for data-layout-id or the fixed container
+  src\restoration\CustomizerView.Restored.tsx:2148:    
+}, [activePanel, isDesktopSizeOpen]);
+  src\restoration\CustomizerView.Restored.tsx:2149:
+  src\restoration\CustomizerView.Restored.tsx:2150:    
+// Handle Mobile Back Button
+> src\restoration\CustomizerView.Restored.tsx:2151:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:2152:     
+   const handlePopState = (e: PopStateEvent) => {
+  src\restoration\CustomizerView.Restored.tsx:2153:     
+       if (aiModalOpen) {
+  src\restoration\CustomizerView.Restored.tsx:2154:     
+           e.preventDefault();
+  src\restoration\CustomizerView.Restored.tsx:2166:
+  src\restoration\CustomizerView.Restored.tsx:2167:    
+// Push state when opening panel/selecting
+  src\restoration\CustomizerView.Restored.tsx:2168:    
+// Push state when opening panel/selecting OR AI Modal
+> src\restoration\CustomizerView.Restored.tsx:2169:    
+useEffect(() => {
+  src\restoration\CustomizerView.Restored.tsx:2170:     
+   if (activePanel !== 'none' || activeEl || 
+aiModalOpen) {
+  src\restoration\CustomizerView.Restored.tsx:2171:     
+       history.pushState({ modal: true }, '');
+  src\restoration\CustomizerView.Restored.tsx:2172:     
+   }
+
+

@@ -1,0 +1,2090 @@
+﻿import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { authService } from '../services/authService';
+import { db, storage, auth } from '../firebaseConfig';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, increment, getDoc, setDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { geminiService } from '../services/geminiService';
+import { productDatabase, SPECIAL_CODES, PREDEFINED_LOGOS, PLACEMENT_PRESETS, STYLE_MATRIX, POSE_IMAGES, StyleCategory } from '../constants';
+import { CartItem, User, PredefinedLogo, CustomizationState, Product } from '../types';
+import { DraggableElement } from './DraggableElement';
+import { LazyImage } from './LazyImage';
+import { getProxiedUrl, resizeImage, removeBackground, getCroppedImg, urlToBase64, addWatermark, tintImage } from '../utils/helpers';
+import html2canvas from 'html2canvas';
+import Cropper from 'react-easy-crop';
+
+// Local type definitions to avoid import errors
+type Point = { x: number, y: number };
+type Area = { width: number, height: number, x: number, y: number };
+
+interface FontItem {
+    name: string;
+    label: string;
+    style: string;
+}
+
+const AVAILABLE_FONTS: FontItem[] = [
+    { name: 'Inter', label: 'Inter (Standard)', style: 'Inter' },
+    { name: 'Roboto', label: 'Roboto', style: 'Roboto' },
+    { name: 'Open Sans', label: 'Open Sans', style: 'Open Sans' },
+    { name: 'Lato', label: 'Lato', style: 'Lato' },
+    { name: 'Playfair Display', label: 'Playfair (Elégant)', style: 'Playfair Display' },
+    { name: 'Merriweather', label: 'Merriweather', style: 'Merriweather' },
+    { name: 'Arvo', label: 'Arvo', style: 'Arvo' },
+    { name: 'monospace', label: 'Techno (Mono)', style: 'monospace' },
+    { name: 'Bangers', label: 'Bangers', style: 'Bangers' },
+    { name: 'Anton', label: 'Anton', style: 'Anton' },
+    { name: 'Lobster', label: 'Lobster', style: 'Lobster' },
+    { name: 'Pacifico', label: 'Pacifico', style: 'Pacifico' },
+    { name: 'Dancing Script', label: 'Dancing Script', style: 'Dancing Script' },
+    { name: 'Oswald', label: 'Oswald', style: 'Oswald' },
+];
+
+const GuestLimitModal = React.lazy(() => import('./GuestLimitModal').then(module => ({ default: module.GuestLimitModal })));
+const PongGame = React.lazy(() => import('./PongGame').then(module => ({ default: module.PongGame })));
+
+
+export function CustomizerView({ initialProductType, initialState, isRemixMode, onAddToCart, onAddToCartBatch, onBack, onPublish, onAddToWishlist, userCredits, onDeductCredits, isGuest, onAuthRequired, user, onUpdateUser, initialAiPromo, productDimensions, initialStyleCategory, initialStylePrompt, setIsQuoteModalOpen, onGoToRewards, setIsMenuVisible }: {
+    initialProductType: string,
+    initialState?: CartItem,
+    isRemixMode?: boolean,
+    onAddToCart: (item: CartItem) => void,
+    onAddToCartBatch: (items: CartItem[]) => void,
+    onBack: () => void,
+    onPublish: (image: string, caption: string, productType: string, customization: CartItem, styleCategory?: string, stylePrompt?: string) => void,
+    onAddToWishlist: (productId: string, color: string) => void,
+    userCredits: number,
+    onDeductCredits: (amount: number) => boolean,
+    isGuest: boolean,
+    onAuthRequired: () => void,
+    user: User | null,
+    onUpdateUser: (u: Partial<User>) => void,
+    setIsQuoteModalOpen?: (v: boolean) => void;
+    initialAiPromo?: boolean;
+    productDimensions?: Record<string, Record<string, number>>;
+    initialStyleCategory?: string;
+    initialStylePrompt?: string;
+    onGoToRewards: () => void;
+    setIsMenuVisible?: (visible: boolean) => void;
+}) {
+
+    const navigate = useNavigate();
+    const [isDownloading, setIsDownloading] = useState(false);
+    const [guestPublishModalOpen, setGuestPublishModalOpen] = useState(false);
+
+    // Auto-close modal when user logs in
+    useEffect(() => {
+        if (user && guestPublishModalOpen) {
+            setGuestPublishModalOpen(false);
+        }
+    }, [user, guestPublishModalOpen]);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [isFlashing, setIsFlashing] = useState(false);
+
+
+
+    useEffect(() => {
+        if (initialAiPromo) {
+            // Delay slightly to allow render
+            setTimeout(() => {
+                setAiModalOpen(true);
+                // Optional: Show a toast or message
+                // alert("Découvrez notre essayage virtuel !");
+            }, 500);
+        }
+    }, [initialAiPromo]);
+
+    const getDefaultText = () => ({
+        lines: [''], text: '', fontSize: 24, fontFamily: 'Inter', fontWeight: '700',
+        textTransform: 'none' as const, color: '#000000', position: { x: 50, y: 50 }, letterSpacing: 0
+    });
+
+    const defaultState: CartItem = {
+        id: crypto.randomUUID(),
+        productType: initialProductType,
+        color: '#000000',
+        sizes: {},
+        logoSizeFront: 100, logoPositionXFront: 50, logoPositionYFront: 30,
+        originalLogoUrlFront: null, processedLogoUrlFront_original: null,
+        textFront: getDefaultText(),
+        logoSizeBack: 100, logoPositionXBack: 50, logoPositionYBack: 30,
+        originalLogoUrlBack: null, processedLogoUrlBack_original: null,
+        textBack: getDefaultText(),
+        activeLogoColorFront: 'original', backgroundRemovedFront: false, logoInvertedFront: false,
+        activeLogoColorBack: 'original', backgroundRemovedBack: false, logoInvertedBack: false,
+        processedLogoUrlFront_white: null, processedLogoUrlFront_black: null, processedLogoUrlFront_noBackground: null,
+        processedLogoUrlBack_white: null, processedLogoUrlBack_black: null, processedLogoUrlBack_noBackground: null,
+        isPredefinedLogoFront: false, predefinedLogoUrlFront: null,
+        isPredefinedLogoBack: false, predefinedLogoUrlBack: null,
+        serviceRetouche: false, serviceModernisation: false
+    };
+
+
+    // --- PERSISTENCE LOGIC START ---
+    const STORAGE_KEY = 'stylelink_draft_project';
+    const getSavedState = (): CartItem | null => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            return saved ? JSON.parse(saved) : null;
+        } catch (e) {
+            console.error("Failed to load saved state", e);
+            return null;
+        }
+    };
+
+    const [item, setItem] = useState<CartItem>(() => {
+        if (initialState) return { ...initialState, id: crypto.randomUUID() };
+        const saved = getSavedState();
+        return saved ? saved : defaultState;
+    });
+
+    // Save to local storage on change
+    useEffect(() => {
+        if (!initialState) { // Only auto-save if working on a new/draft project
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(item));
+            } catch (e) {
+                console.warn("LocalStorage quota exceeded. Failed to save draft.", e);
+                // Optional: Clear specific heavy keys or notify user
+            }
+        }
+    }, [item, initialState]);
+    // --- PERSISTENCE LOGIC END ---
+
+    const [isBack, setIsBack] = useState(false);
+    const [activeEl, setActiveEl] = useState<string | null>(null);
+    const [aiModalOpen, setAiModalOpen] = useState(false);
+
+    useEffect(() => {
+        if (setIsMenuVisible) {
+            setIsMenuVisible(!aiModalOpen);
+        }
+    }, [aiModalOpen, setIsMenuVisible]);
+    const [aiGenerating, setAiGenerating] = useState(false);
+    const [aiResult, setAiResult] = useState<string | null>(null);
+    const [lastUserImage, setLastUserImage] = useState<string | null>(null);
+    const [uploadedGarment, setUploadedGarment] = useState<string | null>(null);
+
+
+
+    const previewRef = useRef<HTMLDivElement>(null);
+    const fontScrollRef = useRef<HTMLDivElement>(null);
+
+    const centerFontButton = (fontName: string) => {
+        if (!fontScrollRef.current) return;
+        const btn = document.getElementById(`font-btn-${fontName}`);
+        if (btn) {
+            btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+    };
+
+    const handleFontNavigation = (direction: 'prev' | 'next') => {
+        if (!fontScrollRef.current) return;
+        const currentIndex = AVAILABLE_FONTS.findIndex(f => f.name === (activeText.fontFamily || 'Inter'));
+        let newIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+
+        if (newIndex < 0) newIndex = AVAILABLE_FONTS.length - 1;
+        if (newIndex >= AVAILABLE_FONTS.length) newIndex = 0;
+
+        const newFont = AVAILABLE_FONTS[newIndex];
+        updateText({ fontFamily: newFont.name });
+        centerFontButton(newFont.name);
+    };
+
+    const [publishCaption, setPublishCaption] = useState('');
+    const [isCameraOpen, setIsCameraOpen] = useState(false);
+    const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+    const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const [capturedImage, setCapturedImage] = useState<string | null>(null);
+    const [selectedSizes, setSelectedSizes] = useState<Record<string, number>>(initialState?.sizes || {});
+    // Preview Size for Real World Dimensions
+    const [previewSize, setPreviewSize] = useState<string>('L');
+
+    // --- ZOOM LOGIC ---
+    const [specialCodeFront, setSpecialCodeFront] = useState('');
+    const [specialCodeBack, setSpecialCodeBack] = useState('');
+    const [showLogoGallery, setShowLogoGallery] = useState(false);
+    const [filteredLogos, setFilteredLogos] = useState<PredefinedLogo[]>([]);
+    const [pendingElement, setPendingElement] = useState<{ type: 'logo' | 'text', content?: string, predefined?: boolean } | null>(null);
+
+    const [activeStyleCategory, setActiveStyleCategory] = useState<StyleCategory>(initialStyleCategory as StyleCategory || 'Réaliste');
+    const [selectedStylePrompt, setSelectedStylePrompt] = useState(initialStylePrompt || "");
+    const [customStylePrompt, setCustomStylePrompt] = useState(initialStyleCategory === 'Custom' ? initialStylePrompt || '' : '');
+
+    // Update state if props change
+    useEffect(() => {
+        if (initialStyleCategory) setActiveStyleCategory(initialStyleCategory as StyleCategory);
+        if (initialStylePrompt) {
+            if (initialStyleCategory === 'Custom') setCustomStylePrompt(initialStylePrompt);
+            else setSelectedStylePrompt(initialStylePrompt);
+        }
+    }, [initialStyleCategory, initialStylePrompt]);
+    const [selectedPose, setSelectedPose] = useState<'front' | 'back' | null>('front');
+
+    const [zoomLevel, setZoomLevel] = useState(1);
+
+    const [activePanel, setActivePanel] = useState<'none' | 'import' | 'text' | 'code'>('none');
+    const [textOptionsOpen, setTextOptionsOpen] = useState(false);
+    const [workshopOpen, setWorkshopOpen] = useState(false);
+    const [uploadedLogoPreview, setUploadedLogoPreview] = useState<string | null>(null);
+    const [codeLogoPreview, setCodeLogoPreview] = useState<string | null>(null);
+    const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [guestLimitModalOpen, setGuestLimitModalOpen] = useState(false);
+
+    // NEW STATES FOR REFINEMENTS
+    const [isModifying, setIsModifying] = useState(false);
+    const [modificationPrompt, setModificationPrompt] = useState('');
+    const [feedbackGiven, setFeedbackGiven] = useState(false);
+    const [feedbackComment, setFeedbackComment] = useState('');
+    const [showFeedbackInput, setShowFeedbackInput] = useState(false);
+
+    // CROPPER STATE
+    const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
+    const [zoom, setZoom] = useState(1);
+    const [croppingImage, setCroppingImage] = useState<string | null>(null);
+    const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+
+    const onCropComplete = useCallback((croppedArea: Area, croppedAreaPixels: Area) => {
+        setCroppedAreaPixels(croppedAreaPixels);
+    }, []);
+
+    const handleCropSave = async () => {
+        if (croppingImage && croppedAreaPixels) {
+            try {
+                const croppedImage = await getCroppedImg(croppingImage, croppedAreaPixels);
+                // Set as pending element
+                const isLogo = true; // Assuming logo upload for now
+                setPendingElement({ type: 'logo', content: croppedImage, predefined: false });
+                setUploadedLogoPreview(croppedImage);
+                setCroppingImage(null); // Close modal
+                setZoom(1);
+            } catch (e) {
+                console.error("Crop error:", e);
+                alert("Erreur lors du recadrage.");
+            }
+        }
+    };
+
+    // SWIPE STATE
+    const [touchStart, setTouchStart] = useState<{ x: number, y: number } | null>(null);
+    const [touchEnd, setTouchEnd] = useState<{ x: number, y: number } | null>(null);
+
+
+    useEffect(() => {
+        const logo = isBack
+            ? (item.predefinedLogoUrlBack || item.originalLogoUrlBack)
+            : (item.predefinedLogoUrlFront || item.originalLogoUrlFront);
+
+        const previewUrl = Array.isArray(logo) ? logo[0] : logo;
+        setUploadedLogoPreview(previewUrl || null);
+    }, [isBack, item.predefinedLogoUrlBack, item.originalLogoUrlBack, item.predefinedLogoUrlFront, item.originalLogoUrlFront]);
+
+    // Flatten styles for single line display
+    const allStyles = useMemo(() => {
+        const list: { category: string, style: any }[] = [];
+        Object.entries(STYLE_MATRIX).forEach(([cat, styles]) => {
+            styles.forEach(s => list.push({ category: cat, style: s }));
+        });
+        return list;
+    }, []);
+
+    const handleStyleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+        const container = e.currentTarget;
+        const containerLeft = container.getBoundingClientRect().left;
+
+        // Find the first visible element to update category
+        const children = Array.from(container.children) as HTMLElement[];
+        for (const child of children) {
+            const rect = child.getBoundingClientRect();
+            // If the element is mostly visible (e.g. crossed the left edge + padding)
+            if (rect.right > containerLeft + 50) {
+                const cat = child.getAttribute('data-category');
+                if (cat) {
+                    setActiveStyleCategory(cat as StyleCategory);
+                }
+                break;
+            }
+        }
+    };
+
+    // PART 2 PLACEHOLDER
+    const product = productDatabase[item.productType];
+    if (!product) {
+        return <div className="p-8 text-center">Produit introuvable. <button onClick={onBack} className="text-orange-500 underline">Retour</button></div>;
+    }
+
+    const updateItem = (updates: Partial<CartItem>) => setItem(prev => ({ ...prev, ...updates }));
+
+    const updateText = (updates: any) => {
+        const currentText = isBack ? item.textBack : item.textFront;
+        const newText = { ...currentText, ...updates };
+        updateItem(isBack ? { textBack: newText } : { textFront: newText });
+    };
+
+    // --- LOGO COLOR HANDLER ---
+    const handleLogoColorChange = async (color: 'black' | 'white' | 'original') => {
+        const targetIsBack = isBack;
+        const originalUrl = targetIsBack ? item.originalLogoUrlBack || item.predefinedLogoUrlBack : item.originalLogoUrlFront || item.predefinedLogoUrlFront;
+
+        // Base updates
+        const updates: Partial<CartItem> = targetIsBack
+            ? { activeLogoColorBack: color, logoInvertedBack: false }
+            : { activeLogoColorFront: color, logoInvertedFront: false };
+
+        if (color === 'original') {
+            // Reset to original
+            if (targetIsBack) {
+                updates.processedLogoUrlBack = null;
+                updates.processedLogoUrlBack_original = null;
+                updates.backgroundRemovedBack = false;
+            } else {
+                updates.processedLogoUrlFront = null;
+                updates.processedLogoUrlFront_original = null;
+                updates.backgroundRemovedFront = false;
+            }
+        } else if (originalUrl && typeof originalUrl === 'string') {
+            // Tint Image for Visual Preview (Snapshot will capture this)
+            try {
+                const hexColor = color === 'black' ? '#000000' : '#FFFFFF';
+                // Ensure we have a valid base64 or url to tint
+                const validUrl = originalUrl.startsWith('data:') ? originalUrl : getProxiedUrl(originalUrl);
+
+                const tintedBase64 = await tintImage(validUrl, hexColor);
+
+                if (targetIsBack) {
+                    updates.processedLogoUrlBack = tintedBase64;
+                } else {
+                    updates.processedLogoUrlFront = tintedBase64;
+                }
+            } catch (e) {
+                console.error("Tint failed", e);
+            }
+        }
+
+        updateItem(updates);
+    };
+
+    const removeText = () => {
+        const emptyText = getDefaultText();
+        updateItem(isBack ? { textBack: emptyText } : { textFront: emptyText });
+        setTextOptionsOpen(false);
+        setActiveEl(null);
+    };
+
+    const removeLogo = () => {
+        const wasPredefined = isBack ? item.isPredefinedLogoBack : item.isPredefinedLogoFront;
+        if (isBack) {
+            updateItem({
+                originalLogoUrlBack: null, processedLogoUrlBack_original: null,
+                isPredefinedLogoBack: false, predefinedLogoUrlBack: null
+            });
+        } else {
+            updateItem({
+                originalLogoUrlFront: null, processedLogoUrlFront_original: null,
+                isPredefinedLogoFront: false, predefinedLogoUrlFront: null
+            });
+        }
+        setUploadedLogoPreview(null);
+        setCodeLogoPreview(null);
+        setActiveEl(null);
+
+        // If it was a predefined logo, go back to code panel
+        if (wasPredefined) {
+            setActivePanel('code');
+            // Ensure gallery stays visible if code exists
+            if (isBack ? specialCodeBack : specialCodeFront) {
+                setShowLogoGallery(true);
+            }
+        }
+    };
+
+    const colors = Object.keys(product.images);
+    const currentIndex = colors.indexOf(item.color);
+    const prevIndex = (currentIndex - 1 + colors.length) % colors.length;
+    const nextIndex = (currentIndex + 1) % colors.length;
+    const visibleIndices = [prevIndex, currentIndex, nextIndex];
+
+    const handleTouchStart = (e: React.TouchEvent) => {
+        setTouchEnd(null);
+        setTouchStart({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        setTouchEnd({ x: e.targetTouches[0].clientX, y: e.targetTouches[0].clientY });
+    };
+
+    const handleTouchEnd = () => {
+        if (!touchStart || !touchEnd) return;
+        const xDist = touchStart.x - touchEnd.x;
+        const yDist = touchStart.y - touchEnd.y;
+
+        if (Math.abs(yDist) > Math.abs(xDist)) return; // Vertical scroll, ignore
+
+        const minSwipeDistance = 50;
+
+        if (xDist > minSwipeDistance) {
+            updateItem({ color: colors[nextIndex] });
+        }
+        if (xDist < -minSwipeDistance) {
+            updateItem({ color: colors[prevIndex] });
+        }
+    };
+
+
+    useEffect(() => {
+        const code = isBack ? specialCodeBack.trim().toUpperCase() : specialCodeFront.trim().toUpperCase();
+        if (SPECIAL_CODES[code]) {
+            const logoCode = SPECIAL_CODES[code];
+            const logos = PREDEFINED_LOGOS.filter(l => l.name === logoCode || l.code === code);
+            setFilteredLogos(logos);
+            setShowLogoGallery(true);
+            if (logos.length > 0) {
+                const url = Array.isArray(logos[0].url) ? logos[0].url[0] : logos[0].url;
+                setCodeLogoPreview(url);
+            }
+        } else {
+            setShowLogoGallery(false);
+            setFilteredLogos([]);
+            setCodeLogoPreview(null);
+        }
+        // Clear pending import when switching sides to allow fresh import
+        setUploadedLogoPreview(null);
+        setPendingElement(null);
+    }, [specialCodeFront, specialCodeBack, isBack]);
+
+    const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files?.[0]) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const res = ev.target?.result as string;
+                // DIRECT PLACEMENT (Bypass Cropping Modal)
+                // Use default 'center' placement logic manually or reuse logic
+                const defaults = {
+                    x: 50, y: 40, scale: 100
+                };
+
+                const targetIsBack = isBack;
+                const updates = targetIsBack ? {
+                    originalLogoUrlBack: res,
+                    processedLogoUrlBack_original: res,
+                    isPredefinedLogoBack: false,
+                    predefinedLogoUrlBack: null,
+                    logoPositionXBack: defaults.x, logoPositionYBack: defaults.y, logoSizeBack: defaults.scale,
+                    backgroundRemovedBack: false, logoInvertedBack: false
+                } : {
+                    originalLogoUrlFront: res,
+                    processedLogoUrlFront_original: res,
+                    isPredefinedLogoFront: false,
+                    predefinedLogoUrlFront: null,
+                    logoPositionXFront: defaults.x, logoPositionYFront: defaults.y, logoSizeFront: defaults.scale,
+                    backgroundRemovedFront: false, logoInvertedFront: false
+                };
+
+                updateItem(updates);
+                setUploadedLogoPreview(res);
+                setActiveEl('logo');
+
+                // Reset file input
+            };
+            reader.readAsDataURL(e.target.files[0]);
+            e.target.value = '';
+        }
+    };
+
+    const handleGarmentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files?.[0]) {
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                setUploadedGarment(ev.target?.result as string);
+            };
+            reader.readAsDataURL(e.target.files[0]);
+        }
+    };
+
+    const handlePredefinedLogoSelect = (url: string) => {
+        // Use proxy to ensure CORS headers for html2canvas
+        const proxiedUrl = getProxiedUrl(url);
+        setCodeLogoPreview(url); // Update the preview to show the selected logo
+        setPendingElement({ type: 'logo', content: proxiedUrl, predefined: true });
+        // Ensure panel stays open or correct state is maintained if needed
+    };
+
+    const applyPlacement = (zone: 'heart' | 'center', side: 'front' | 'back' = isBack ? 'back' : 'front') => {
+        if (!pendingElement) return;
+        const presets = PLACEMENT_PRESETS[item.productType] || PLACEMENT_PRESETS['default'];
+        const settings = presets[zone];
+
+        const targetIsBack = side === 'back';
+        if (targetIsBack !== isBack) {
+            setIsBack(targetIsBack);
+            setActiveEl(null);
+        }
+
+        if (pendingElement.type === 'logo') {
+            const updates = targetIsBack ? {
+                originalLogoUrlBack: pendingElement.predefined ? null : pendingElement.content,
+                processedLogoUrlBack_original: pendingElement.content!,
+                isPredefinedLogoBack: pendingElement.predefined,
+                predefinedLogoUrlBack: pendingElement.predefined ? pendingElement.content : null,
+                logoSizeBack: settings.scale, logoPositionXBack: settings.x, logoPositionYBack: settings.y,
+                backgroundRemovedBack: false, logoInvertedBack: false
+            } : {
+                originalLogoUrlFront: pendingElement.predefined ? null : pendingElement.content,
+                processedLogoUrlFront_original: pendingElement.content!,
+                isPredefinedLogoFront: pendingElement.predefined,
+                predefinedLogoUrlFront: pendingElement.predefined ? pendingElement.content : null,
+                logoSizeFront: settings.scale, logoPositionXFront: settings.x, logoPositionYFront: settings.y,
+                backgroundRemovedFront: false, logoInvertedFront: false
+            };
+            updateItem(updates);
+            setActiveEl('logo');
+        } else {
+            const newText = targetIsBack ? { ...item.textBack } : { ...item.textFront };
+            newText.text = 'VOTRE TEXTE';
+            newText.position = { x: 50, y: settings.y };
+            newText.fontSize = zone === 'heart' ? 16 : 24;
+            updateItem(targetIsBack ? { textBack: newText } : { textFront: newText });
+            setActiveEl('text');
+            setTextOptionsOpen(true);
+        }
+        setPendingElement(null);
+        setUploadedLogoPreview(null);
+        setActivePanel('none'); // Close panel to show result clearly
+    };
+
+    const updateSizeQuantity = (size: string, delta: number) => {
+        setSelectedSizes(prev => {
+            const currentQty = prev[size] || 0;
+            const newQty = Math.max(0, currentQty + delta);
+            const newSizes = { ...prev };
+            if (newQty === 0) delete newSizes[size];
+            else newSizes[size] = newQty;
+            return newSizes;
+        });
+    };
+
+    const generatePreview = async (forceIsBack?: boolean): Promise<string> => {
+        if (!previewRef.current) return '';
+        setActiveEl(null);
+        const originalZoom = zoomLevel;
+        setZoomLevel(1);
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        try {
+            const html2canvas = (await import('html2canvas')).default;
+            const canvas = await html2canvas(previewRef.current, {
+                useCORS: true, allowTaint: false, backgroundColor: null, scale: 2
+            });
+            setZoomLevel(originalZoom);
+            return canvas.toDataURL('image/png');
+        } catch (e) {
+            console.error("Preview Error", e);
+            setZoomLevel(originalZoom);
+            // FIX : On utilise le côté forcé s'il est fourni, sinon l'état actuel
+            const sideToCheck = forceIsBack !== undefined ? forceIsBack : isBack;
+            const fallbackUrl = getProxiedUrl(sideToCheck ? product.backImages[item.color] : product.images[item.color]);
+            return await urlToBase64(fallbackUrl);
+        }
+    };
+
+    const handleAiTryOn = async (userPhoto: string, promptOverride?: string) => {
+        // --- 1. VERIFICATIONS (Quotas & Validité) ---
+        if (!user) {
+            const storageKey = 'guest_ai_quota';
+            let data = { count: 0, resetTime: 0 };
+            try {
+                const stored = localStorage.getItem(storageKey);
+                if (stored) data = JSON.parse(stored);
+            } catch (e) { }
+
+            const now = Date.now();
+            const effectiveCount = (now > data.resetTime) ? 0 : data.count;
+
+            if (effectiveCount >= 4) {
+                setGuestLimitModalOpen(true);
+                return;
+            }
+        }
+
+        if (!userPhoto || userPhoto === 'data:,' || userPhoto.length < 100) {
+            alert("Erreur: Image source invalide.");
+            return;
+        }
+
+        setAiGenerating(true);
+        setLastUserImage(userPhoto);
+        setFeedbackGiven(false);
+        setShowFeedbackInput(false);
+        setFeedbackComment('');
+
+        try {
+            // --- 2. LOGIQUE DE VUE (On garde la sécurité du délai) ---
+            const targetPose = selectedPose || 'front';
+            const targetIsBack = targetPose === 'back';
+            const originalIsBack = isBack;
+            let swapped = false;
+
+            // Si la vue n'est pas la bonne, on change et on attend
+            if (isBack !== targetIsBack) {
+                console.log(`Changement de vue vers : ${targetPose}`);
+                setIsBack(targetIsBack);
+                swapped = true;
+                await new Promise(resolve => setTimeout(resolve, 2500)); // Délai de sécurité
+            } else {
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+
+            // Capture de l'image du produit (Face ou Dos)
+            const preview = await generatePreview(targetIsBack);
+
+            // Restauration de la vue pour l'utilisateur
+            if (swapped) {
+                setIsBack(originalIsBack);
+            }
+
+            const resizedUserPhoto = await resizeImage(userPhoto, 800);
+
+            // --- 3. PROMPT ENGINEERING (LA CORRECTION EST ICI) ---
+            let baseStyle = promptOverride || selectedStylePrompt || "Studio lighting";
+            if (!promptOverride && activeStyleCategory === 'Custom' && customStylePrompt.trim()) {
+                baseStyle = customStylePrompt;
+            }
+
+            // On construit un prompt autoritaire
+            let strictPrompt = baseStyle;
+            let strictDescription = `${item.color} ${product.name}`;
+
+            if (targetIsBack) {
+                // INSTRUCTIONS "VUE DE DOS" RENFORCÉES
+                const backInstructions = "VIEW FROM BEHIND. BACK VIEW. The person is turning their back to the camera. We must see the BACK of the garment with the design on the back. NO FACE VISIBLE.";
+                strictPrompt = `${backInstructions} ${baseStyle}`;
+                strictDescription = `BACK VIEW of ${item.color} ${product.name} with logo on the back`;
+            } else {
+                // Instructions Face
+                strictPrompt = `FRONT VIEW. ${baseStyle}`;
+                strictDescription = `FRONT VIEW of ${item.color} ${product.name}`;
+            }
+
+            // --- RETRIEVE EXPLICIT GLASSES PROMPT ---
+            let explicitGlasses: string | null = null;
+            if (!promptOverride) {
+                const found = allStyles.find(s => s.style.prompt === selectedStylePrompt);
+                if (found && found.style.glasses) {
+                    explicitGlasses = found.style.glasses;
+                } else if ((activeStyleCategory as string) === 'Paparazzi') {
+                    // Safety fallback for manual edits if not yet in STYLE_MATRIX/allStyles correctly
+                    explicitGlasses = "wearing stylish sunglasses";
+                }
+            }
+
+            // --- 4. APPEL API AVEC LE PROMPT RENFORCÉ ---
+            const result = await geminiService.generateTryOnImage(
+                resizedUserPhoto,
+                preview,
+                strictDescription,
+                strictPrompt,
+                activeStyleCategory, // [FIX] Insert missing styleCategory argument
+                targetPose as "front" | "back",
+                uploadedGarment,
+                explicitGlasses
+            );
+
+            // const watermarkedResult = await addWatermark(result);
+            setAiResult(result);
+
+            // --- 5. FINITION (Crédits, etc.) ---
+            if (user) {
+                onDeductCredits(1);
+            } else {
+                const storageKey = 'guest_ai_quota';
+                let data = { count: 0, resetTime: Date.now() + (48 * 60 * 60 * 1000) };
+                try {
+                    const stored = localStorage.getItem(storageKey);
+                    if (stored) data = JSON.parse(stored);
+                } catch (e) { }
+                const now = Date.now();
+                if (now > data.resetTime) data = { count: 0, resetTime: now + (48 * 60 * 60 * 1000) };
+                data.count += 1;
+                localStorage.setItem(storageKey, JSON.stringify(data));
+            }
+
+            setCapturedImage(null);
+
+            if (strictPrompt) {
+                // Nettoyage simple des tags pour la légende
+                const tags = strictPrompt.split('.')[0].split(' ').map(w => '#' + w.replace(/[^a-zA-Z0-9]/g, '')).join(' ');
+                setPublishCaption(prev => prev + ' ' + tags);
+            }
+
+        } catch (e: any) {
+            console.error("AI Error", e);
+            alert("Erreur de génération : " + e.message);
+        }
+        setAiGenerating(false);
+    };
+
+    const handleFeedback = async (isPositive: boolean) => {
+        if (feedbackGiven) return;
+        try {
+            await addDoc(collection(db, 'ai_feedback'), {
+                timestamp: serverTimestamp(),
+                userId: user ? user.id : 'guest',
+                stylePrompt: selectedStylePrompt,
+                styleCategory: activeStyleCategory,
+                isPositive: isPositive,
+                comment: feedbackComment || null,
+                resultImage: aiResult
+            });
+            setFeedbackGiven(true);
+        } catch (e) {
+            console.error("Feedback error", e);
+        }
+    };
+    useEffect(() => { return () => { if (cameraStream) cameraStream.getTracks().forEach(t => t.stop()); }; }, [cameraStream]);
+
+    const startCamera = async () => {
+        try {
+            if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facingMode } });
+            setCameraStream(stream);
+            setIsCameraOpen(true);
+            setCapturedImage(null);
+        } catch (err) { alert("Accès caméra refusé."); }
+    };
+    const stopCamera = () => { if (cameraStream) { cameraStream.getTracks().forEach(track => track.stop()); setCameraStream(null); } setIsCameraOpen(false); };
+    const toggleCamera = () => setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
+    // FIX: Add isCameraOpen to dependency array to trigger startCamera when modal opens
+    useEffect(() => { if (isCameraOpen) startCamera(); }, [facingMode, isCameraOpen]);
+
+    // [FIX] Assign stream to video element
+    useEffect(() => {
+        if (videoRef.current && cameraStream) {
+            videoRef.current.srcObject = cameraStream;
+        }
+    }, [cameraStream, isCameraOpen]);
+
+    const capturePhoto = async () => {
+        if (videoRef.current) {
+            // Helper to wait
+            const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+            // FLASH START
+            setIsFlashing(true);
+            await wait(200); // 1. Wait for screen to become white/bright
+
+            // DO CAPTURE
+            const canvas = document.createElement('canvas');
+            canvas.width = videoRef.current.videoWidth;
+            canvas.height = videoRef.current.videoHeight;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                // If using front camera (user facing), mirror the capture to match preview
+                if (facingMode === 'user') {
+                    ctx.translate(canvas.width, 0);
+                    ctx.scale(-1, 1);
+                }
+                ctx.drawImage(videoRef.current, 0, 0);
+            }
+            const dataUrl = canvas.toDataURL('image/png');
+            setCapturedImage(dataUrl);
+
+            // FLASH END (Short delay to keep the flash sensation)
+            await wait(100);
+            setIsFlashing(false);
+
+            setIsCameraOpen(false); // Close camera after capture
+            stopCamera(); // Stop stream
+        }
+    };
+
+    const changeProductType = (dir: 'next' | 'prev') => {
+        const types = Object.keys(productDatabase);
+        const idx = types.indexOf(item.productType);
+        const newIdx = dir === 'next' ? (idx + 1) % types.length : (idx - 1 + types.length) % types.length;
+        const newType = types[newIdx];
+        updateItem({ productType: newType, color: productDatabase[newType].images[item.color] ? item.color : Object.keys(productDatabase[newType].images)[0] });
+    };
+
+    // --- PRICE CALCULATION LOGIC ---
+
+    // [FIX] Access dimensions by product type
+    const productDims = productDimensions?.[item.productType];
+    const realHeightCm = productDims?.height || 70;
+    const realWidthCm = realHeightCm * 0.75;
+    const getDims = (sizePct: number, ratio: number) => {
+        const effectiveSize = sizePct || 50;
+        if (!ratio) return { w: 0, h: 0, area: 0 };
+        const w = realWidthCm * (effectiveSize / 100);
+        const h = w / ratio;
+        return { w, h, area: w * h };
+    };
+
+    const frontDims = getDims(item.logoSizeFront, item.logoAspectRatioFront || 1);
+    const backDims = getDims(item.logoSizeBack, item.logoAspectRatioBack || 1);
+
+    // Check for content presence
+    const hasFrontContent = item.originalLogoUrlFront || item.predefinedLogoUrlFront || item.processedLogoUrlFront;
+    const hasBackContent = item.originalLogoUrlBack || item.predefinedLogoUrlBack || item.processedLogoUrlBack;
+
+    const isFrontBig = hasFrontContent && (frontDims.w > 35 || frontDims.h > 35);
+    const isBackBig = hasBackContent && (backDims.w > 35 || backDims.h > 35);
+
+    const totalArea = (hasFrontContent ? frontDims.area : 0) + (hasBackContent ? backDims.area : 0);
+    const isTotalAreaBig = totalArea > 1250;
+
+    let extraCharge = 0;
+    if (isFrontBig || isBackBig || isTotalAreaBig) {
+        extraCharge += 5;
+    }
+    const basePrice = product ? product.price : 0;
+    const finalPrice = basePrice + extraCharge;
+
+    const handleAddToCartAction = async () => {
+        if (Object.keys(selectedSizes).length === 0) { alert('Sélectionnez une taille.'); return; }
+
+        // Capture logic: Force capture of both sides
+        const originalSide = isBack; // Save current side
+
+        // 1. Capture Front
+        if (isBack) {
+            setIsBack(false);
+            setActiveEl(null);
+            await new Promise(resolve => setTimeout(resolve, 800)); // Extended wait for image load
+        } else {
+            setActiveEl(null);
+            await new Promise(resolve => setTimeout(resolve, 100)); // Minimal wait if already on front
+        }
+        const frontPreview = await generatePreview();
+
+        // 2. Capture Back
+        setIsBack(true);
+        setActiveEl(null);
+        await new Promise(resolve => setTimeout(resolve, 800)); // Extended wait for image load
+        const backPreview = await generatePreview();
+
+        // Restore original side
+        if (isBack !== originalSide) {
+            setIsBack(originalSide);
+        }
+
+        // Create a separate item for each selected size
+        const itemsToAdd: CartItem[] = [];
+        Object.entries(selectedSizes).forEach(([size, qty]) => {
+            if ((qty as number) > 0) {
+                // Create a deep copy for each size to ensure they are unique items in cart
+                const newItem = {
+                    ...item,
+                    id: crypto.randomUUID(), // New ID for each cart line
+                    sizes: { [size]: qty },
+                    previewImageUrlFront: frontPreview,
+                    previewImageUrlBack: backPreview,
+                    calculatedPrice: finalPrice
+                };
+                itemsToAdd.push(newItem);
+            }
+        });
+
+        if (itemsToAdd.length > 0) {
+            onAddToCartBatch(itemsToAdd);
+        }
+
+        setSelectedSizes({});
+        // alert("Ajouté au panier !"); // Removed as onAddToCartBatch will likely switch view
+    };
+
+    const activeText = isBack ? item.textBack : item.textFront;
+
+    const handleTextButtonClick = () => {
+        // Toggle panel
+        setActivePanel(activePanel === 'text' ? 'none' : 'text');
+
+        if (!activeText.text) {
+            const newText = isBack ? { ...item.textBack } : { ...item.textFront };
+            newText.text = ''; // Default empty, visual placeholder handled by DraggableElement
+            newText.position = { x: 50, y: 40 };
+            updateItem(isBack ? { textBack: newText } : { textFront: newText });
+            setActiveEl('text');
+            setTextOptionsOpen(true);
+        } else {
+            setTextOptionsOpen(!textOptionsOpen);
+            setActiveEl('text');
+        }
+    };
+
+    const handleImportButtonClick = () => {
+        setActivePanel(activePanel === 'import' ? 'none' : 'import');
+    };
+
+    const handleCodeButtonClick = () => {
+        setActivePanel(activePanel === 'code' ? 'none' : 'code');
+    };
+
+    // --- UI HELPERS: History & Click Outside ---
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            // Close active panel if clicking on backdrop or canvas (handled by explicit canvas click, but this covers global)
+            // Checking if target is inside a panel
+            const target = e.target as HTMLElement;
+            const panel = target.closest('.animate-fade-in'); // Our panels have this class
+            const toggleBtn = target.closest('button'); // Don't close if clicking same toggle button (handled by toggle logic)
+
+            // If active panel open, and click is NOT in panel
+            if (activePanel !== 'none' && !panel && !toggleBtn) {
+                setActivePanel('none');
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [activePanel]);
+
+    // Handle Mobile Back Button
+    useEffect(() => {
+        const handlePopState = (e: PopStateEvent) => {
+            if (aiModalOpen) {
+                e.preventDefault();
+                setAiModalOpen(false);
+            } else if (activePanel !== 'none' || activeEl) {
+                e.preventDefault();
+                setActivePanel('none');
+                setActiveEl(null);
+            }
+        };
+
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, [activePanel, activeEl, aiModalOpen]);
+
+    // Push state when opening panel/selecting
+    // Push state when opening panel/selecting OR AI Modal
+    useEffect(() => {
+        if (activePanel !== 'none' || activeEl || aiModalOpen) {
+            history.pushState({ modal: true }, '');
+        }
+    }, [activePanel, activeEl, aiModalOpen]);
+
+    const handleCanvasClick = (e: React.MouseEvent) => {
+        if (e.target === e.currentTarget) {
+            // Clicked on empty canvas area
+            setActiveEl(null);
+            setActivePanel('none');
+        }
+    };
+
+    const handlePredefinedLogoClick = (logo: PredefinedLogo) => {
+        // Use proxied URL for predefined logos to avoid CORS issues if any (though usually strictly local or S3)
+        // But here we use the URL directly as it's likely from the public folder or absolute
+        const rawUrl = Array.isArray(logo.url) ? logo.url[0] : logo.url;
+        const logoUrl = getProxiedUrl(rawUrl);
+
+        setUploadedLogoPreview(logoUrl);
+        updateItem(isBack ? {
+            predefinedLogoUrlBack: logoUrl,
+            originalLogoUrlBack: null,
+            // processedLogoUrlBack: undefined, // Removed as not in CartItem
+            logoPositionXBack: 50, logoPositionYBack: 40, logoSizeBack: 100,
+            backgroundRemovedBack: false, logoInvertedBack: false // Reset flags
+        } : {
+            predefinedLogoUrlFront: logoUrl,
+            originalLogoUrlFront: null,
+            // processedLogoUrlFront: undefined, // Removed as not in CartItem
+            logoPositionXFront: 50, logoPositionYFront: 40, logoSizeFront: 100,
+            backgroundRemovedFront: false, logoInvertedFront: false // Reset flags
+        });
+        setActiveEl('logo');
+    };
+
+    const handleGuestNotification = async (email: string) => {
+        try {
+            await addDoc(collection(db, 'leads'), {
+                email: email,
+                origin: 'guest_limit_modal',
+                timestamp: serverTimestamp()
+            });
+        } catch (e) {
+            console.error("Error saving lead", e);
+        }
+    };
+
+    return (
+        <div className="flex flex-col h-[100dvh] bg-white overflow-hidden relative selection:bg-orange-100 selection:text-orange-900">
+            {/* --- HEADER --- */}
+            <div className="bg-white/80 backdrop-blur-md px-4 py-1 flex items-center justify-between sticky top-0 z-50 border-b border-gray-100 shadow-sm mt-0">
+                <button
+                    onClick={onBack}
+                    className="w-10 h-10 rounded-full hover:bg-gray-100 flex items-center justify-center transition-all bg-white border border-gray-100 shadow-sm"
+                >
+                    <i className="fa-solid fa-arrow-left text-gray-700"></i>
+                </button>
+                <div className="flex flex-col items-center">
+                    <h2 className="font-bold text-[1.4rem] uppercase tracking-wider text-gray-900 leading-none mt-1">{product.name}</h2>
+                    <span className="text-[10px] text-gray-400 font-medium tracking-widest -mt-0.5">{item.color}</span>
+                </div>
+                <div className="flex gap-2">
+                    <button
+                        onClick={onGoToRewards}
+                        className="h-10 px-3 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full flex items-center gap-2 shadow-lg hover:shadow-xl hover:scale-105 transition-all"
+                    >
+                        <i className="fa-solid fa-gift text-white animate-bounce-slow"></i>
+                        <span className="font-bold text-white text-xs">{Math.floor(userCredits || 0)}</span>
+                    </button>
+                    <button onClick={() => { setIsMenuOpen(!isMenuOpen); if (setIsMenuVisible) setIsMenuVisible(!isMenuOpen); }} className="w-10 h-10 rounded-full hover:bg-gray-100 flex items-center justify-center transition-all">
+                        <i className="fa-solid fa-bars text-gray-700"></i>
+                    </button>
+                </div>
+            </div>
+
+            {/* --- WORKSPACE --- */}
+            <div className="flex-1 relative bg-gray-50 overflow-hidden flex flex-col items-center justify-center">
+
+                {/* MAIN CANVAS CONTAINER */}
+                <div
+                    className="relative w-full max-w-[500px] aspect-[3/4] shadow-2xl transition-all duration-500 bg-white"
+                    ref={previewRef}
+                    onClick={handleCanvasClick}
+                >
+                    {/* PRODUCT IMAGE BASE */}
+                    <div className="absolute inset-0 w-full h-full">
+                        <LazyImage
+                            src={getProxiedUrl(isBack ? product.backImages[item.color] : product.images[item.color])}
+                            alt="Produit vêtement"
+                            className="w-full h-full object-contain"
+                            fetchPriority="high"
+                        />
+                    </div>
+                    {/* Shadow Overlay for Depth */}
+                    <div className="absolute inset-0 pointer-events-none mix-blend-multiply bg-black/5 opacity-10"></div>
+
+
+                    {/* --- DRAGGABLE ELEMENTS --- */}
+
+                    {/* 1. LOGOS */}
+                    {/* FRONT LOGO */}
+                    {!isBack && (
+                        <DraggableElement
+                            id="logo-front"
+                            type="logo"
+                            item={item}
+                            side="Front"
+                            isActive={activeEl === 'logo' && !isBack}
+                            setActive={() => { if (!isBack) setActiveEl('logo'); }}
+                            onUpdate={updateItem}
+                            onSaveHistory={() => { /* History logic if needed */ }}
+                            isEditable={true}
+                            realHeight={productDimensions?.['S']?.height || 70} // Default to 70cm if unknown
+                        />
+                    )}
+
+                    {/* BACK LOGO */}
+                    {isBack && (
+                        <DraggableElement
+                            id="logo-back"
+                            type="logo"
+                            item={item}
+                            side="Back"
+                            isActive={activeEl === 'logo' && isBack}
+                            setActive={() => { if (isBack) setActiveEl('logo'); }}
+                            onUpdate={updateItem}
+                            onSaveHistory={() => { }}
+                            isEditable={true}
+                            realHeight={productDimensions?.['S']?.height || 70}
+                        />
+                    )}
+
+                    {/* 2. TEXT */}
+                    {/* FRONT TEXT */}
+                    {!isBack && item.textFront.text && (
+                        <DraggableElement
+                            id="text-front"
+                            type="text"
+                            item={item}
+                            side="Front"
+                            isActive={activeEl === 'text' && !isBack}
+                            setActive={() => { if (!isBack) { setActiveEl('text'); setTextOptionsOpen(true); setActivePanel('text'); } }}
+                            onUpdate={updateItem}
+                            onSaveHistory={() => { }}
+                            isEditable={true}
+                            realHeight={productDimensions?.['S']?.height || 70}
+                        />
+                    )}
+
+                    {/* BACK TEXT */}
+                    {isBack && item.textBack.text && (
+                        <DraggableElement
+                            id="text-back"
+                            type="text"
+                            item={item}
+                            side="Back"
+                            isActive={activeEl === 'text' && isBack}
+                            setActive={() => { if (isBack) { setActiveEl('text'); setTextOptionsOpen(true); setActivePanel('text'); } }}
+                            onUpdate={updateItem}
+                            onSaveHistory={() => { }}
+                            isEditable={true}
+                            realHeight={productDimensions?.['S']?.height || 70}
+                        />
+                    )}
+
+
+                    {/* VIEW TOGGLE BUTTONS (Inside Canvas) */}
+                    <div className="absolute bottom-4 left-4 flex flex-col gap-2 z-30">
+                        <button
+                            onClick={() => { setIsBack(false); setActiveEl(null); }}
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg border-2 transition-all ${!isBack ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-white text-gray-400 hover:scale-110'}`}
+                        >
+                            <img src={getProxiedUrl(POSE_IMAGES.front)} className="w-6 h-6 object-contain invert-[.5]" style={{ filter: !isBack ? 'invert(1)' : 'none' }} alt="Face" />
+                        </button>
+                        <button
+                            onClick={() => { setIsBack(true); setActiveEl(null); }}
+                            className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg border-2 transition-all ${isBack ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-white text-gray-400 hover:scale-110'}`}
+                        >
+                            <img src={getProxiedUrl(POSE_IMAGES.back)} className="w-6 h-6 object-contain invert-[.5]" style={{ filter: isBack ? 'invert(1)' : 'none' }} alt="Dos" />
+                        </button>
+                    </div>
+
+                    {/* COLOR SWIPER INDICATORS */}
+                    {(Math.abs((touchStart?.x || 0) - (touchEnd?.x || 0)) > 20 && Math.abs((touchStart?.y || 0) - (touchEnd?.y || 0)) < 50) && (
+                        <div className="absolute inset-y-0 w-12 bg-black/5 flex items-center justify-center z-40 transition-opacity" style={{ left: (touchStart?.x || 0) > (touchEnd?.x || 0) ? 'auto' : 0, right: (touchStart?.x || 0) > (touchEnd?.x || 0) ? 0 : 'auto' }}>
+                            <i className={`fa-solid fa-chevron-${(touchStart?.x || 0) > (touchEnd?.x || 0) ? 'right' : 'left'} text-white/50 text-2xl`}></i>
+                        </div>
+                    )}
+                </div>
+
+                {/* COLOR DOTS (Quick Select) */}
+                <div className="absolute top-4 right-4 flex flex-col gap-2 z-20">
+                    {visibleIndices.map(idx => (
+                        <button
+                            key={colors[idx]}
+                            onClick={() => updateItem({ color: colors[idx] })}
+                            className={`w-6 h-6 rounded-full border-2 shadow-sm transition-all ${item.color === colors[idx] ? 'border-orange-500 scale-125' : 'border-white hover:scale-110'}`}
+                            style={{ backgroundColor: colors[idx] }}
+                        />
+                    ))}
+                    <button onClick={() => setWorkshopOpen(true)} className="w-6 h-6 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[10px] text-gray-500 shadow-sm hover:text-orange-500 mt-2">
+                        <i className="fa-solid fa-plus"></i>
+                    </button>
+                </div>
+
+                {/* TOUCH HANDLER OVERLAY (For Swiping) */}
+                <div
+                    className="absolute inset-0 z-0"
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                ></div>
+
+            </div>
+
+            {/* --- BOTTOM TOOLBAR --- */}
+            <div className="bg-white border-t border-gray-100 pb-safe z-40 relative">
+                {/* 1. SELECTION SIZE & ADD TO CART */}
+                <div className="p-4 border-b border-gray-50">
+                    <div className="flex items-end justify-between mb-3">
+                        <div className="flex flex-col">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Prix total</span>
+                            <div className="flex items-baseline gap-2">
+                                <span className="text-2xl font-black text-gray-900">{finalPrice}€</span>
+                                {extraCharge > 0 && <span className="text-xs font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded-md">+{extraCharge}€ (Design)</span>}
+                            </div>
+                        </div>
+                        <div className="flex gap-2">
+                            {/* SIZE SELECTOR - Compact */}
+                            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                                {['XS', 'S', 'M', 'L', 'XL', 'XXL'].map(size => (
+                                    <button
+                                        key={size}
+                                        onClick={() => updateSizeQuantity(size, 1)}
+                                        className={`w-8 h-8 rounded-md text-xs font-bold transition-all ${selectedSizes[size] > 0 ? 'bg-gray-900 text-white shadow-md' : 'text-gray-500 hover:bg-gray-200'}`}
+                                    >
+                                        {size}
+                                        {selectedSizes[size] > 0 && <span className="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full text-[8px] flex items-center justify-center border border-white">{selectedSizes[size]}</span>}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleAddToCartAction}
+                        className="w-full py-4 bg-gray-900 text-white text-sm font-bold uppercase tracking-widest rounded-xl hover:bg-gray-800 active:scale-[0.98] transition-all shadow-lg shadow-gray-200 flex items-center justify-center gap-3 group"
+                    >
+                        <i className="fa-solid fa-bag-shopping group-hover:animate-bounce-slow"></i>
+                        Ajouter au panier
+                    </button>
+                </div>
+
+
+                {/* 2. CREATIVE TOOLS */}
+                <div className="grid grid-cols-5 gap-1 p-2 bg-gray-50">
+                    {/* IMPORT */}
+                    <button
+                        onClick={handleImportButtonClick}
+                        className={`flex flex-col items-center justify-center py-2 rounded-xl transition-all ${activePanel === 'import' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500 hover:bg-white/50'}`}
+                    >
+                        <i className="fa-solid fa-cloud-arrow-up text-xl mb-1"></i>
+                        <span className="text-[10px] font-bold">Import</span>
+                    </button>
+
+                    {/* AI STUDIO */}
+                    <button
+                        onClick={() => setAiModalOpen(true)}
+                        className={`flex flex-col items-center justify-center py-2 rounded-xl transition-all relative overflow-hidden group ${aiModalOpen ? 'bg-gray-900 text-white' : 'bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-md'}`}
+                    >
+                        <div className="absolute inset-0 bg-white/20 group-hover:animate-pulse"></div>
+                        <i className="fa-solid fa-wand-magic-sparkles text-xl mb-1 relative z-10"></i>
+                        <span className="text-[10px] font-bold relative z-10">IA Studio</span>
+                    </button>
+
+                    {/* TEXT */}
+                    <button
+                        onClick={handleTextButtonClick}
+                        className={`flex flex-col items-center justify-center py-2 rounded-xl transition-all ${activePanel === 'text' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500 hover:bg-white/50'}`}
+                    >
+                        <i className="fa-solid fa-font text-xl mb-1"></i>
+                        <span className="text-[10px] font-bold">Texte</span>
+                    </button>
+
+                    {/* CODE */}
+                    <button
+                        onClick={handleCodeButtonClick}
+                        className={`flex flex-col items-center justify-center py-2 rounded-xl transition-all ${activePanel === 'code' ? 'bg-white shadow-sm text-orange-600' : 'text-gray-500 hover:bg-white/50'}`}
+                    >
+                        <i className="fa-solid fa-ticket text-xl mb-1"></i>
+                        <span className="text-[10px] font-bold">Codes</span>
+                    </button>
+
+                    {/* GALLERY (Legacy Predefined) */}
+                    {/* Can be merged with Import or Code, keeping for now or removing if redundant. Keeping as "Inspi" */}
+                    <button
+                        onClick={() => setWorkshopOpen(true)}
+                        className="flex flex-col items-center justify-center py-2 rounded-xl text-gray-500 hover:bg-white/50 transition-all"
+                    >
+                        <i className="fa-solid fa-palette text-xl mb-1"></i>
+                        <span className="text-[10px] font-bold">Couleurs</span>
+                    </button>
+                </div>
+            </div>
+
+            {/* --- PANELS (SLIDE UP) --- */}
+
+            {/* 1. IMPORT / COLOR PANEL */}
+            {activePanel === 'import' && (
+                <div className="absolute bottom-[140px] left-0 w-full bg-white rounded-t-2xl shadow-[0_-5px_20px_rgba(0,0,0,0.1)] p-4 animate-slide-up z-30 border-t border-gray-100">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-gray-900 flex items-center gap-2"><i className="fa-solid fa-image text-orange-500"></i> Import & Logo</h3>
+                        <button onClick={() => setActivePanel('none')} className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500"><i className="fa-solid fa-xmark"></i></button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                        <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-xl hover:border-orange-500 hover:bg-orange-50 transition-all cursor-pointer group">
+                            <i className="fa-solid fa-upload text-xl text-gray-400 group-hover:text-orange-500 mb-2"></i>
+                            <span className="text-xs font-bold text-gray-600">Mon Logo</span>
+                            <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                        </label>
+                        <button
+                            onClick={() => { /* Open Predefined Gallery logic if needed, or scroll to it */ setShowLogoGallery(!showLogoGallery); }}
+                            className="flex flex-col items-center justify-center p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all"
+                        >
+                            <i className="fa-solid fa-icons text-xl text-gray-400 mb-2"></i>
+                            <span className="text-xs font-bold text-gray-600">Galerie</span>
+                        </button>
+                    </div>
+
+                    {/* LOGO ACTIONS & PRESETS */}
+                    {(activeEl === 'logo' || uploadedLogoPreview) && (
+                        <div className="pt-3 border-t border-gray-100 animate-fade-in">
+                            <span className="text-xs font-bold text-gray-400 uppercase mb-2 block">Options Image</span>
+
+                            <div className="flex overflow-x-auto gap-3 pb-3 scrollbar-hide snap-x snap-mandatory">
+                                {/* REMOVE BG BUTTON */}
+                                <button
+                                    onClick={async () => {
+                                        const targetIsBack = isBack;
+                                        const currentRemoved = targetIsBack ? item.backgroundRemovedBack : item.backgroundRemovedFront;
+
+                                        // Define URL for processing
+                                        let url = targetIsBack ? (item.processedLogoUrlBack_original || item.originalLogoUrlBack || item.predefinedLogoUrlBack) : (item.processedLogoUrlFront_original || item.originalLogoUrlFront || item.predefinedLogoUrlFront);
+                                        if (Array.isArray(url)) url = url[0];
+
+                                        if (!currentRemoved && url) {
+                                            const processed = await removeBackground(url, (targetIsBack ? item.backgroundRemovalModeBack : item.backgroundRemovalModeFront) || 'white');
+                                            updateItem(targetIsBack
+                                                ? { backgroundRemovedBack: true, processedLogoUrlBack: processed }
+                                                : { backgroundRemovedFront: true, processedLogoUrlFront: processed }
+                                            );
+                                        } else {
+                                            updateItem(targetIsBack
+                                                ? { backgroundRemovedBack: false, processedLogoUrlBack: (item.processedLogoUrlBack_original || item.originalLogoUrlBack) } // Revert to previous processed or original
+                                                : { backgroundRemovedFront: false, processedLogoUrlFront: (item.processedLogoUrlFront_original || item.originalLogoUrlFront) }
+                                            );
+                                        }
+                                    }}
+                                    className={`flex-shrink-0 w-[70px] h-[70px] rounded-xl border flex flex-col items-center justify-center gap-1 transition-colors snap-start ${(isBack ? item.backgroundRemovedBack : item.backgroundRemovedFront)
+                                        ? 'bg-green-50 border-green-200 text-green-600'
+                                        : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-700'
+                                        }`}
+                                >
+                                    <i className="fa-solid fa-wand-magic-sparkles text-xl mb-1"></i>
+                                    <span className="text-[10px] font-bold">Détour.</span>
+                                </button>
+
+                                {/* BLACK */}
+                                <button
+                                    onClick={() => handleLogoColorChange('black')}
+                                    className={`flex-shrink-0 w-[70px] h-[70px] rounded-xl border flex flex-col items-center justify-center gap-1 transition-colors snap-start ${(isBack ? item.activeLogoColorBack : item.activeLogoColorFront) === 'black' ? 'bg-orange-50 border-orange-500' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
+                                >
+                                    <div className="w-8 h-8 rounded-full bg-black border border-gray-200 shadow-sm"></div>
+                                    <span className="text-[10px] font-bold mt-1">Noir</span>
+                                </button>
+
+                                {/* WHITE */}
+                                <button
+                                    onClick={() => handleLogoColorChange('white')}
+                                    className={`flex-shrink-0 w-[70px] h-[70px] rounded-xl border flex flex-col items-center justify-center gap-1 transition-colors snap-start ${(isBack ? item.activeLogoColorBack : item.activeLogoColorFront) === 'white' ? 'bg-orange-50 border-orange-500' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
+                                >
+                                    <div className="w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm"></div>
+                                    <span className="text-[10px] font-bold mt-1">Blanc</span>
+                                </button>
+
+                                {/* ORIGINAL */}
+                                <button
+                                    onClick={() => handleLogoColorChange('original')}
+                                    className="flex-shrink-0 w-[70px] h-[70px] rounded-xl border flex flex-col items-center justify-center gap-1 bg-white border-gray-200 hover:bg-gray-50 transition-colors snap-start"
+                                >
+                                    <i className="fa-solid fa-rotate-left text-xl text-gray-500 mb-1"></i>
+                                    <span className="text-[10px] font-bold">Original</span>
+                                </button>
+                            </div>
+
+                            {/* ACTIONS: COPY & DELETE */}
+                            <div className="flex flex-col gap-2">
+                                <button
+                                    onClick={() => {
+                                        const targetIsBack = !isBack;
+                                        if (targetIsBack) {
+                                            // Copy Front -> Back
+                                            updateItem({
+                                                originalLogoUrlBack: item.originalLogoUrlFront,
+                                                predefinedLogoUrlBack: item.predefinedLogoUrlFront,
+                                                processedLogoUrlBack: item.processedLogoUrlFront,
+                                                processedLogoUrlBack_original: item.processedLogoUrlFront_original,
+                                                isPredefinedLogoBack: item.isPredefinedLogoFront,
+                                                logoPositionXBack: item.logoPositionXFront,
+                                                logoPositionYBack: item.logoPositionYFront,
+                                                logoSizeBack: item.logoSizeFront,
+                                                activeLogoColorBack: item.activeLogoColorFront,
+                                                logoInvertedBack: item.logoInvertedFront,
+                                                backgroundRemovedBack: item.backgroundRemovedFront,
+                                                backgroundRemovalModeBack: item.backgroundRemovalModeFront
+                                            });
+                                            alert("Copié sur le dos !");
+                                        } else {
+                                            // Copy Back -> Front
+                                            updateItem({
+                                                originalLogoUrlFront: item.originalLogoUrlBack,
+                                                predefinedLogoUrlFront: item.predefinedLogoUrlBack,
+                                                processedLogoUrlFront: item.processedLogoUrlBack,
+                                                processedLogoUrlFront_original: item.processedLogoUrlBack_original,
+                                                isPredefinedLogoFront: item.isPredefinedLogoBack,
+                                                logoPositionXFront: item.logoPositionXBack,
+                                                logoPositionYFront: item.logoPositionYBack,
+                                                logoSizeFront: item.logoSizeBack,
+                                                activeLogoColorFront: item.activeLogoColorBack,
+                                                logoInvertedFront: item.logoInvertedFront,
+                                                backgroundRemovedFront: item.backgroundRemovedFront,
+                                                backgroundRemovalModeFront: item.backgroundRemovalModeBack
+                                            });
+                                            alert("Copié sur la face !");
+                                        }
+                                    }}
+                                    className="w-full py-3 bg-gray-100 text-gray-800 font-bold rounded-lg border border-gray-200 hover:bg-gray-200 flex items-center justify-center gap-2 text-sm"
+                                >
+                                    <i className="fa-regular fa-copy"></i> Copier sur {isBack ? 'la Face' : 'le Dos'}
+                                </button>
+
+                                <button
+                                    onClick={removeLogo}
+                                    className="w-full py-3 bg-red-50 text-red-500 font-bold rounded-lg border border-red-100 hover:bg-red-100 flex items-center justify-center gap-2 text-sm"
+                                >
+                                    <i className="fa-solid fa-trash"></i> Supprimer le design
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* 2. TEXT PANEL */}
+            {activePanel === 'text' && (
+                <div className="absolute bottom-[140px] left-0 w-full bg-white rounded-t-2xl shadow-[0_-5px_20px_rgba(0,0,0,0.1)] p-4 animate-slide-up z-30 border-t border-gray-100">
+                    <div className="flex justify-between items-center mb-3">
+                        <h3 className="font-bold text-gray-900 flex items-center gap-2"><i className="fa-solid fa-font text-orange-500"></i> Éditeur Texte</h3>
+                        <div className="flex gap-2">
+                            <button onClick={removeText} className="text-red-500 text-xs font-bold hover:bg-red-50 px-2 py-1 rounded">Supprimer</button>
+                            <button onClick={() => setActivePanel('none')} className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500"><i className="fa-solid fa-xmark"></i></button>
+                        </div>
+                    </div>
+
+                    {/* TEXT INPUT */}
+                    <textarea
+                        value={isBack ? item.textBack.text : item.textFront.text}
+                        onChange={(e) => updateText({ text: e.target.value })}
+                        placeholder="Votre texte ici..."
+                        className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl mb-4 text-sm focus:border-orange-500 outline-none resize-none h-20"
+                    />
+
+                    {/* TEXT CONTROLS - 4 HORIZONTAL SECTIONS STACKED */}
+                    <div className="flex flex-col gap-6 pb-2">
+
+                        {/* 1. STYLE (Buttons) */}
+                        <div className="flex flex-col gap-1">
+                            {/* <label className="text-[10px] text-gray-400 font-bold uppercase ml-1">Style</label> */}
+                            <div className="flex overflow-x-auto gap-3 scrollbar-hide pb-1 snap-x snap-mandatory">
+                                <button onClick={() => updateText({ fontWeight: (isBack ? item.textBack.fontWeight : item.textFront.fontWeight) === '700' ? '400' : '700' })} className={`flex-shrink-0 w-12 h-12 rounded-xl border flex items-center justify-center transition-all snap-start ${(isBack ? item.textBack.fontWeight : item.textFront.fontWeight) === '700' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white border-gray-200 text-gray-600'}`}>
+                                    <i className="fa-solid fa-bold text-lg"></i>
+                                </button>
+                                <button onClick={() => updateText({ fontStyle: (isBack ? item.textBack.fontStyle : item.textFront.fontStyle) === 'italic' ? 'normal' : 'italic' })} className={`flex-shrink-0 w-12 h-12 rounded-xl border flex items-center justify-center transition-all snap-start ${(isBack ? item.textBack.fontStyle : item.textFront.fontStyle) === 'italic' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white border-gray-200 text-gray-600'}`}>
+                                    <i className="fa-solid fa-italic text-lg"></i>
+                                </button>
+                                <button onClick={() => updateText({ textTransform: (isBack ? item.textBack.textTransform : item.textFront.textTransform) === 'uppercase' ? 'none' : 'uppercase' })} className={`flex-shrink-0 w-12 h-12 rounded-xl border flex items-center justify-center font-bold text-sm transition-all snap-start ${(isBack ? item.textBack.textTransform : item.textFront.textTransform) === 'uppercase' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white border-gray-200 text-gray-600'}`}>
+                                    AA
+                                </button>
+                                <div className="w-[1px] bg-gray-200 mx-1 h-8 self-center flex-shrink-0"></div>
+                                <button onClick={() => updateText({ shadow: !(isBack ? item.textBack.shadow : item.textFront.shadow) })} className={`flex-shrink-0 w-12 h-12 rounded-xl border flex items-center justify-center transition-all snap-start ${(isBack ? item.textBack.shadow : item.textFront.shadow) ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-gray-200 text-gray-400'}`}>
+                                    <i className="fa-solid fa-cloud shadow-sm text-lg"></i>
+                                </button>
+                                <button onClick={() => updateText({ outline: !(isBack ? item.textBack.outline : item.textFront.outline) })} className={`flex-shrink-0 w-12 h-12 rounded-xl border flex items-center justify-center transition-all snap-start ${(isBack ? item.textBack.outline : item.textFront.outline) ? 'bg-orange-500 text-white border-orange-500' : 'bg-white border-gray-200 text-gray-400'}`}>
+                                    <i className="fa-regular fa-square text-lg"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* 2. POLICES (Carousel) */}
+                        <div className="flex flex-col gap-1">
+                            {/* <label className="text-[10px] text-gray-400 font-bold uppercase ml-1">Police</label> */}
+                            <div ref={fontScrollRef} className="flex overflow-x-auto gap-2 scrollbar-hide py-1 snap-x snap-mandatory">
+                                {AVAILABLE_FONTS.map(font => (
+                                    <button
+                                        key={font.name}
+                                        onClick={() => { updateText({ fontFamily: font.name }); centerFontButton(font.name); }}
+                                        className={`flex-shrink-0 snap-start px-5 h-12 rounded-xl border text-sm transition-all whitespace-nowrap flex items-center justify-center min-w-[100px] ${(isBack ? item.textBack.fontFamily : item.textFront.fontFamily) === font.name
+                                            ? 'bg-orange-500 text-white border-orange-500 shadow-md transform scale-105'
+                                            : 'bg-white text-gray-700 border-gray-200'
+                                            }`}
+                                        style={{ fontFamily: font.style }}
+                                    >
+                                        {font.label}
+                                    </button>
+                                ))}
+                                {/* Indicator for more */}
+                                <div className="w-8 flex-shrink-0"></div>
+                            </div>
+                        </div>
+
+                        {/* 3. COULEURS (Selector) */}
+                        <div className="flex flex-col gap-1">
+                            {/* <label className="text-[10px] text-gray-400 font-bold uppercase ml-1">Couleur</label> */}
+                            <div className="flex overflow-x-auto gap-3 scrollbar-hide py-1 snap-x snap-mandatory px-1">
+                                {['#000000', '#FFFFFF', '#EF4444', '#3B82F6', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#6366F1', '#14B8A6'].map(c => (
+                                    <button
+                                        key={c}
+                                        onClick={() => updateText({ color: c })}
+                                        className={`flex-shrink-0 w-12 h-12 rounded-full border-2 transition-transform snap-start shadow-sm ${(isBack ? item.textBack.color : item.textFront.color) === c ? 'ring-2 ring-orange-500 scale-110 border-white' : 'border-white ring-1 ring-gray-100'}`}
+                                        style={{ backgroundColor: c }}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 4. REGLAGES (Align & Spacing) */}
+                        <div className="flex flex-col gap-1">
+                            {/* <label className="text-[10px] text-gray-400 font-bold uppercase ml-1">Réglages</label> */}
+                            <div className="flex overflow-x-auto gap-4 scrollbar-hide py-2 snap-x snap-mandatory px-1 items-center">
+                                {/* ALIGN */}
+                                <div className="flex bg-gray-100 p-1 rounded-lg snap-start flex-shrink-0">
+                                    <button onClick={() => updateText({ textAlign: 'left' })} className={`w-10 h-10 rounded-md flex items-center justify-center transition-colors ${(isBack ? item.textBack.textAlign : item.textFront.textAlign) === 'left' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-400'}`}><i className="fa-solid fa-align-left"></i></button>
+                                    <button onClick={() => updateText({ textAlign: 'center' })} className={`w-10 h-10 rounded-md flex items-center justify-center transition-colors ${(isBack ? item.textBack.textAlign : item.textFront.textAlign) === 'center' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-400'}`}><i className="fa-solid fa-align-center"></i></button>
+                                    <button onClick={() => updateText({ textAlign: 'right' })} className={`w-10 h-10 rounded-md flex items-center justify-center transition-colors ${(isBack ? item.textBack.textAlign : item.textFront.textAlign) === 'right' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-400'}`}><i className="fa-solid fa-align-right"></i></button>
+                                </div>
+
+                                <div className="w-[1px] h-8 bg-gray-200"></div>
+
+                                {/* SPACING SLIDERS COMPACT */}
+                                <div className="flex items-center gap-3 bg-white border border-gray-200 px-3 py-2 rounded-xl snap-start flex-shrink-0 min-w-[150px]">
+                                    <i className="fa-solid fa-text-width text-gray-400 text-xs"></i>
+                                    <input
+                                        type="range"
+                                        min="-2" max="10" step="1"
+                                        value={(isBack ? item.textBack.letterSpacing : item.textFront.letterSpacing) || 0}
+                                        onChange={(e) => updateText({ letterSpacing: parseInt(e.target.value) })}
+                                        className="w-24 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-3 bg-white border border-gray-200 px-3 py-2 rounded-xl snap-start flex-shrink-0 min-w-[150px]">
+                                    <i className="fa-solid fa-arrows-up-down text-gray-400 text-xs"></i>
+                                    <input
+                                        type="range"
+                                        min="0.8" max="2.5" step="0.1"
+                                        value={(isBack ? item.textBack.lineHeight : item.textFront.lineHeight) || 1.2}
+                                        onChange={(e) => updateText({ lineHeight: parseFloat(e.target.value) })}
+                                        className="w-24 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            )}
+
+            {/* 3. CODE PANEL */}
+            {activePanel === 'code' && (
+                <div className="absolute bottom-[140px] left-0 w-full bg-white rounded-t-2xl shadow-[0_-5px_20px_rgba(0,0,0,0.1)] p-4 animate-slide-up z-30 border-t border-gray-100">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-gray-900 flex items-center gap-2"><i className="fa-solid fa-ticket text-orange-500"></i> Code Spécial</h3>
+                        <button onClick={() => setActivePanel('none')} className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-500"><i className="fa-solid fa-xmark"></i></button>
+                    </div>
+
+                    <div className="relative mb-4">
+                        <input
+                            type="text"
+                            value={isBack ? specialCodeBack : specialCodeFront}
+                            onChange={(e) => isBack ? setSpecialCodeBack(e.target.value) : setSpecialCodeFront(e.target.value)}
+                            placeholder="Entrez votre code (ex: BDE, ASSO...)"
+                            className="w-full p-4 pl-12 bg-gray-50 border border-gray-200 rounded-xl font-mono text-lg tracking-widest uppercase focus:border-orange-500 outline-none"
+                        />
+                        <i className="fa-solid fa-key absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                        {/* Validation Indicator */}
+                        {(isBack ? specialCodeBack : specialCodeFront) && (
+                            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                {filteredLogos.length > 0 ? (
+                                    <i className="fa-solid fa-check-circle text-green-500 text-xl animate-bounce-short"></i>
+                                ) : (
+                                    <i className="fa-solid fa-circle-xmark text-red-300 text-xl"></i>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* 4. LOGO GALLERY OVERLAY (When Code Valid or 'Galerie' clicked) */}
+            {/* Can be integrated into Import/Code panels or separate overlay. Keeping separate for clarity as per design. */}
+            {(showLogoGallery || (activePanel === 'code' && filteredLogos.length > 0)) && (
+                <div className="absolute bottom-[280px] left-0 w-full p-2 z-20 pointer-events-none">
+                    <div className="bg-white/90 backdrop-blur-md p-2 rounded-2xl shadow-lg border border-gray-100 overflow-x-auto whitespace-nowrap pointer-events-auto snap-x mx-4">
+                        {filteredLogos.length > 0 ? filteredLogos.map((logo, idx) => (
+                            <button
+                                key={idx}
+                                onClick={() => handlePredefinedLogoClick(logo)}
+                                className="inline-block w-16 h-16 mr-2 rounded-lg border border-gray-200 overflow-hidden bg-white p-1 hover:border-orange-500 snap-start"
+                            >
+                                <img src={Array.isArray(logo.url) ? logo.url[0] : logo.url} className="w-full h-full object-contain" alt={logo.name} />
+                            </button>
+                        )) : (
+                            // Fallback: Show General Gallery if no code specific
+                            // Using PREDEFINED_LOGOS slice or similar
+                            PREDEFINED_LOGOS.slice(0, 10).map((logo, idx) => (
+                                <button
+                                    key={idx}
+                                    onClick={() => handlePredefinedLogoClick(logo)}
+                                    className="inline-block w-16 h-16 mr-2 rounded-lg border border-gray-200 overflow-hidden bg-white p-1 hover:border-orange-500 snap-start"
+                                >
+                                    <img src={Array.isArray(logo.url) ? logo.url[0] : logo.url} className="w-full h-full object-contain" alt={logo.name} />
+                                </button>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* --- PLACEMENT CONFIRMATION OVERLAY (When Pending Element) --- */}
+            {pendingElement && (
+                <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center p-6 animate-fade-in">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+                        <h3 className="text-xl font-bold text-center mb-6">Où placer ce design ?</h3>
+
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            {/* HEART */}
+                            <button onClick={() => applyPlacement('heart', isBack ? 'back' : 'front')} className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-transparent bg-gray-50 hover:border-orange-500 hover:bg-orange-50 transition-all">
+                                <div className="relative w-20 h-24 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+                                    <div className="absolute top-[25%] left-[65%] w-4 h-4 bg-orange-500 rounded-full animate-ping"></div>
+                                    <div className="absolute top-[25%] left-[65%] w-4 h-4 bg-orange-500 rounded-full"></div>
+                                    <img src={getProxiedUrl(isBack ? product.backImages[item.color] : product.images[item.color])} className="w-full h-full object-cover opacity-50" />
+                                </div>
+                                <span className="font-bold text-gray-700">Cœur</span>
+                            </button>
+
+                            {/* CENTER */}
+                            <button onClick={() => applyPlacement('center', isBack ? 'back' : 'front')} className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-transparent bg-gray-50 hover:border-orange-500 hover:bg-orange-50 transition-all">
+                                <div className="relative w-20 h-24 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-orange-500 rounded-full opacity-20 animate-pulse"></div>
+                                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-orange-500 rounded-full opacity-50"></div>
+                                    <img src={getProxiedUrl(isBack ? product.backImages[item.color] : product.images[item.color])} className="w-full h-full object-cover opacity-50" />
+                                </div>
+                                <span className="font-bold text-gray-700">Grand (Centre)</span>
+                            </button>
+                        </div>
+
+                        {/* Side Toggle inside Placement */}
+                        <div className="flex bg-gray-100 p-1 rounded-lg mb-4">
+                            <button onClick={() => setIsBack(false)} className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${!isBack ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}>Face</button>
+                            <button onClick={() => setIsBack(true)} className={`flex-1 py-2 rounded-md text-xs font-bold transition-all ${isBack ? 'bg-white shadow-sm text-gray-900' : 'text-gray-400'}`}>Dos</button>
+                        </div>
+
+                        <button onClick={() => { setPendingElement(null); setUploadedLogoPreview(null); }} className="w-full py-3 text-gray-500 font-bold hover:bg-gray-50 rounded-xl">Annuler</button>
+                    </div>
+                </div>
+            )}
+
+            {/* --- MODALS --- */}
+            {guestLimitModalOpen && (
+                <React.Suspense fallback={null}>
+                    <GuestLimitModal
+                        isOpen={guestLimitModalOpen}
+                        onClose={() => setGuestLimitModalOpen(false)}
+                        onJoinClub={() => navigate('/login')}
+                        onNotifyMe={(email) => { setGuestLimitModalOpen(false); handleGuestNotification(email); onAuthRequired(); }}
+                    />
+                </React.Suspense>
+            )}
+
+
+            {/* AI STUDIO "PAGE" OVERLAY */}
+            {
+                aiModalOpen && (
+                    <div className="fixed inset-0 z-[150] bg-white flex flex-col items-center justify-start animate-fade-in overflow-y-auto pb-safe">
+                        {/* STUDIO HEADER */}
+                        <div className="w-full bg-white border-b border-gray-100 p-4 flex items-center justify-between sticky top-0 z-50 shadow-sm">
+                            <button
+                                onClick={() => setAiModalOpen(false)}
+                                className="flex items-center gap-2 text-gray-600 font-bold hover:text-orange-500 transition-colors"
+                            >
+                                <i className="fa-solid fa-arrow-left"></i>
+                                <span>Retour Création</span>
+                            </button>
+                            <h3 className="text-lg font-black italic">Studio <span className="text-orange-500">IA</span></h3>
+                            <div className="w-20"></div> {/* Spacer for center alignment */}
+                        </div>
+
+                        <div className="w-full max-w-2xl p-4 space-y-6 text-center pt-8">
+                            {/* Content Body */}
+                            {!aiResult ? (
+                                <>
+                                    {!isCameraOpen && !capturedImage && !aiGenerating && (
+                                        <>
+
+                                            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm text-left w-full">
+                                                <p className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">
+                                                    <i className="fa-solid fa-palette"></i> 1. Style & Atmosphère
+                                                </p>
+
+                                                <div className="flex flex-wrap gap-2 mb-4 border-b border-gray-100 pb-2">
+                                                    {Object.keys(STYLE_MATRIX).concat(["Custom"]).map((category) => (
+                                                        <button
+                                                            key={category}
+                                                            onClick={() => {
+                                                                setActiveStyleCategory(category as StyleCategory);
+                                                                document.getElementById(`category-${category}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                            }}
+                                                            className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${activeStyleCategory === category ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                                        >
+                                                            {category}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <p className="text-xs text-gray-400 italic mb-2">
+                                                    Note : L'IA génère parfois des visages très similaires. Pour un rendu plus réaliste ou pour masquer les imperfections, nous vous recommandons d'intégrer l'option "Lunettes".
+                                                </p>
+
+                                                <div className="animate-fade-in relative group">
+                                                    {/* Left Arrow (Desktop Only) */}
+                                                    <button
+                                                        onClick={() => {
+                                                            const container = document.getElementById('style-container');
+                                                            if (container) container.scrollBy({ left: -300, behavior: 'smooth' });
+                                                        }}
+                                                        className="hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 z-20 w-10 h-10 bg-white/80 backdrop-blur rounded-full shadow-lg border border-gray-100 items-center justify-center text-gray-700 hover:text-orange-500 hover:scale-110 transition-all -ml-5 opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        <i className="fa-solid fa-chevron-left"></i>
+                                                    </button>
+
+                                                    {/* Right Arrow (Desktop Only) */}
+                                                    <button
+                                                        onClick={() => {
+                                                            const container = document.getElementById('style-container');
+                                                            if (container) container.scrollBy({ left: 300, behavior: 'smooth' });
+                                                        }}
+                                                        className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 z-20 w-10 h-10 bg-white/80 backdrop-blur rounded-full shadow-lg border border-gray-100 items-center justify-center text-gray-700 hover:text-orange-500 hover:scale-110 transition-all -mr-5 opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        <i className="fa-solid fa-chevron-right"></i>
+                                                    </button>
+
+                                                    <div
+                                                        className="flex overflow-x-auto gap-4 pb-4 -mx-2 px-4 scrollbar-hide snap-x snap-mandatory items-center"
+                                                        id="style-container"
+                                                        onScroll={handleStyleScroll}
+                                                    >
+                                                        {/* All Styles Flattened */}
+                                                        {allStyles.map((item, idx) => {
+                                                            const isFirstOfCategory = idx === 0 || allStyles[idx - 1].category !== item.category;
+                                                            return (
+                                                                <button
+                                                                    key={`${item.category}-${item.style.name}`}
+                                                                    id={isFirstOfCategory ? `category-${item.category}` : undefined}
+                                                                    data-category={item.category}
+                                                                    onClick={() => { setSelectedStylePrompt(item.style.prompt); setCustomStylePrompt(''); setActiveStyleCategory(item.category as StyleCategory); }}
+                                                                    className={`flex-shrink-0 w-40 h-52 rounded-xl border transition-all relative overflow-hidden group snap-start ${selectedStylePrompt === item.style.prompt ? 'border-orange-500 ring-2 ring-orange-500 ring-offset-2' : 'border-gray-200 hover:border-gray-300'}`}
+                                                                >
+                                                                    <LazyImage
+                                                                        src={getProxiedUrl(item.style.image)}
+                                                                        alt={item.style.name}
+                                                                        loading="lazy"
+                                                                        fetchPriority="low"
+                                                                        className="absolute inset-0 w-full h-full"
+                                                                        imageClassName="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                                                                    />
+                                                                    <div className={`absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent transition-opacity ${selectedStylePrompt === item.style.prompt ? 'opacity-90' : 'opacity-70 group-hover:opacity-80'}`} />
+
+                                                                    <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30">
+                                                                        <i className={`fa-solid ${item.style.icon || 'fa-star'} text-xs text-white`}></i>
+                                                                    </div>
+
+                                                                    <div className="absolute bottom-0 left-0 w-full p-3 text-left">
+                                                                        {selectedStylePrompt === item.style.prompt && (
+                                                                            <div className="mb-1 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                                                                                <i className="fa-solid fa-check text-[8px] text-white"></i>
+                                                                            </div>
+                                                                        )}
+                                                                        <span className={`text-xs font-bold uppercase text-white leading-tight block shadow-black drop-shadow-md`}>{item.style.name}</span>
+                                                                    </div>
+                                                                </button>
+                                                            );
+                                                        })}
+
+                                                        {/* Custom Prompt Section - Moved to End */}
+                                                        <div
+                                                            id="category-Custom"
+                                                            data-category="Custom"
+                                                            className="flex-shrink-0 w-72 h-52 bg-gray-50 rounded-xl border border-gray-200 p-4 flex flex-col justify-center snap-start relative"
+                                                        >
+                                                            <h4 className="text-sm font-bold text-gray-900 mb-2 flex items-center gap-2">
+                                                                <i className="fa-solid fa-pen-fancy text-orange-500"></i>
+                                                                Personnalisé
+                                                            </h4>
+                                                            <p className="text-[10px] text-gray-400 mb-2">Décrivez l'ambiance de vos rêves...</p>
+                                                            <textarea
+                                                                value={customStylePrompt}
+                                                                onChange={(e) => { setCustomStylePrompt(e.target.value); setSelectedStylePrompt(''); setActiveStyleCategory('Custom'); }}
+                                                                placeholder="Ex: Cyberpunk, Jungle, Vintage..."
+                                                                className="w-full p-2 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:border-orange-500 font-medium h-24 resize-none"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex flex-col w-full text-left">
+                                                <div className="flex justify-between items-center mb-3">
+                                                    <p className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2">
+                                                        <i className="fa-solid fa-camera"></i> 2. Votre Photo
+                                                    </p>
+                                                    {/* Integrated Pose Selection */}
+                                                    <div className="hidden"></div> {/* Removed Pose Selection Here */}
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4 flex-1">
+                                                    <button onClick={() => setIsCameraOpen(true)} className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-xl hover:border-orange-500 hover:bg-orange-50 transition-all group">
+                                                        <i className="fa-solid fa-camera text-2xl text-gray-400 group-hover:text-orange-500 mb-2"></i>
+                                                        <div className="font-bold text-gray-700 text-xs">Caméra</div>
+                                                    </button>
+                                                    <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-xl hover:border-orange-500 hover:bg-orange-50 transition-all group cursor-pointer">
+                                                        <i className="fa-solid fa-image text-2xl text-gray-400 group-hover:text-orange-500 mb-2"></i>
+                                                        <div className="font-bold text-gray-700 text-xs">Galerie</div>
+                                                        <input type="file" hidden accept="image/*" onChange={(e) => {
+                                                            if (e.target.files?.[0]) {
+                                                                const r = new FileReader();
+                                                                r.onload = (ev) => setPreviewImage(ev.target?.result as string);
+                                                                r.readAsDataURL(e.target.files[0]);
+                                                            }
+                                                        }} />
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </>
+                                    )}
+
+
+                                    {aiGenerating && (
+                                        <div className="mt-4">
+                                            <React.Suspense fallback={null}>
+                                                <PongGame />
+                                            </React.Suspense>
+                                        </div>
+                                    )}
+
+                                    {isCameraOpen && (
+                                        <div className="relative bg-black rounded-2xl overflow-hidden aspect-[3/4] shadow-2xl">
+                                            <video
+                                                ref={videoRef}
+                                                autoPlay
+                                                playsInline
+                                                className="w-full h-full object-cover"
+                                                style={{ transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }}
+                                            />
+                                            <div className="absolute top-4 left-0 w-full flex justify-center z-20">
+                                                <div className="flex gap-2 bg-black/50 p-1 rounded-xl backdrop-blur-md">
+                                                    <button
+                                                        onClick={() => setSelectedPose('front')}
+                                                        className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-2 ${selectedPose === 'front' ? 'bg-white text-orange-600' : 'text-gray-300 hover:text-white'}`}
+                                                    >
+                                                        <img src={getProxiedUrl(POSE_IMAGES.front)} className="w-5 h-5 object-contain" alt="Face" />
+                                                        Face
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setSelectedPose('back')}
+                                                        className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-2 ${selectedPose === 'back' ? 'bg-white text-orange-600' : 'text-gray-300 hover:text-white'}`}
+                                                    >
+                                                        <img src={getProxiedUrl(POSE_IMAGES.back)} className="w-5 h-5 object-contain" alt="Dos" />
+                                                        Dos
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div className="absolute bottom-6 left-0 w-full flex justify-center gap-8 items-center z-20">
+                                                <button onClick={stopCamera} className="w-12 h-12 rounded-full bg-white/20 backdrop-blur text-white"><i className="fa-solid fa-xmark"></i></button>
+                                                <button onClick={capturePhoto} className="w-20 h-20 rounded-full bg-white border-4 border-gray-300 flex items-center justify-center"><div className="w-16 h-16 bg-white rounded-full border-2 border-red-500"></div></button>
+                                                <button onClick={toggleCamera} className="w-12 h-12 rounded-full bg-white/20 backdrop-blur text-white"><i className="fa-solid fa-rotate"></i></button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {capturedImage && !aiGenerating && (
+                                        <div className="space-y-4">
+                                            <img src={capturedImage} className="w-full rounded-xl shadow-lg max-h-[60vh] object-contain bg-gray-100" alt="Captured" />
+                                            <button onClick={() => handleAiTryOn(capturedImage)} className="w-full py-4 bg-orange-600 text-white font-bold rounded-xl shadow-lg hover:bg-orange-500 animate-pulse-scale">{isGuest ? "Lancer l'IA" : "Lancer l'IA (1 crédit)"}</button>
+                                            <button onClick={() => setCapturedImage(null)} className="text-gray-500 underline">Reprendre</button>
+                                        </div>
+                                    )}
+
+                                    {/* Intermediate Preview Modal */}
+                                    {previewImage && !aiGenerating && (
+                                        <div className="fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-6 animate-fade-in">
+                                            <h3 className="text-2xl font-black text-gray-900 mb-4">Aperçu Photo</h3>
+                                            <div className="relative w-full max-w-sm aspect-[3/4] rounded-xl overflow-hidden shadow-2xl mb-6 bg-gray-100">
+                                                <img src={previewImage} className="w-full h-full object-cover" alt="Preview" />
+                                            </div>
+                                            <div className="w-full max-w-sm space-y-3">
+                                                {/* POSE SELECTION - BEFORE VALIDATION */}
+                                                <div className="flex gap-4 justify-center mb-4">
+                                                    <button
+                                                        onClick={() => setSelectedPose('front')}
+                                                        className={`flex-1 py-3 px-2 rounded-xl border-2 font-bold transition-all flex flex-col items-center gap-1 ${selectedPose === 'front' ? 'border-orange-500 bg-orange-50 text-orange-600' : 'border-gray-200 text-gray-500'}`}
+                                                    >
+                                                        <img src={getProxiedUrl(POSE_IMAGES.front)} className="w-8 h-8 object-contain" alt="Face" />
+                                                        <span>Face</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setSelectedPose('back')}
+                                                        className={`flex-1 py-3 px-2 rounded-xl border-2 font-bold transition-all flex flex-col items-center gap-1 ${selectedPose === 'back' ? 'border-orange-500 bg-orange-50 text-orange-600' : 'border-gray-200 text-gray-500'}`}
+                                                    >
+                                                        <img src={getProxiedUrl(POSE_IMAGES.back)} className="w-8 h-8 object-contain" alt="Dos" />
+                                                        <span>Dos</span>
+                                                    </button>
+                                                </div>
+
+                                                <button
+                                                    onClick={() => {
+                                                        if (!selectedPose) { alert('Veuillez d\'abord choisir une pose (Face ou Dos).'); return; }
+                                                        handleAiTryOn(previewImage)
+                                                    }}
+                                                    className="w-full py-4 bg-orange-600 text-white font-bold rounded-xl shadow-lg hover:bg-orange-500 flex items-center justify-center gap-2 animate-pulse"
+                                                >
+                                                    <i className="fa-solid fa-check"></i> {isGuest ? "Valider & Générer" : "Valider & Générer (1 crédit)"}
+                                                </button>
+                                                <button
+                                                    onClick={() => setPreviewImage(null)}
+                                                    className="w-full py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200"
+                                                >
+                                                    Annuler
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                    )}
+                                </>
+                            ) : (
+                                <div className="w-full max-w-lg bg-white p-6 rounded-2xl shadow-2xl border border-gray-100">
+                                    <h3 className="text-2xl font-bold text-gray-900 mb-4 text-center">Résultat IA</h3>
+                                    <div className="relative rounded-xl overflow-hidden shadow-inner bg-gray-50 mb-6">
+                                        <img src={aiResult} className="w-full h-auto" alt="Result" />
+                                        <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">Généré par Gemini</div>
+                                    </div>
+                                    <div className="space-y-3">
+                                        <input
+                                            type="text"
+                                            placeholder="Ajouter une légende..."
+                                            className="w-full p-3 border border-gray-300 rounded-xl focus:border-orange-500 outline-none bg-gray-50"
+                                            value={publishCaption}
+                                            onChange={e => setPublishCaption(e.target.value)}
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                onPublish(aiResult, publishCaption, item.productType, item, activeStyleCategory, activeStyleCategory === 'Custom' ? customStylePrompt : selectedStylePrompt);
+                                                setAiModalOpen(false);
+                                            }}
+                                            className="w-full py-4 bg-gray-900 text-white font-bold rounded-xl shadow-lg hover:bg-gray-800"
+                                        >
+                                            Publier sur le Feed
+                                        </button>
+
+                                        <button
+                                            onClick={() => {
+                                                if (window.confirm("Attention, l'image sera perdue. Voulez-vous continuer ?")) {
+                                                    setAiResult(null);
+                                                }
+                                            }}
+                                            className="w-full py-3 bg-white text-gray-500 font-bold rounded-xl border border-gray-200 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+                                        >
+                                            Ne pas publier (Retour Studio)
+                                        </button>
+
+                                        {/* FEEDBACK SYSTEM - REPLACES GENERATE NEW INITIALLY */}
+                                        {!feedbackGiven && (
+                                            <div className="flex flex-col gap-2 mt-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                                                <p className="text-center text-xs font-bold text-gray-500 uppercase">Donnez votre avis</p>
+                                                <div className="flex gap-4 justify-center">
+                                                    <button onClick={() => { setShowFeedbackInput(true); }} className="w-12 h-12 rounded-full bg-white border border-gray-200 hover:border-green-500 hover:text-green-500 shadow-sm flex items-center justify-center text-xl transition-colors">
+                                                        <i className="fa-solid fa-thumbs-up"></i>
+                                                    </button>
+                                                    <button onClick={() => { setShowFeedbackInput(true); }} className="w-12 h-12 rounded-full bg-white border border-gray-200 hover:border-red-500 hover:text-red-500 shadow-sm flex items-center justify-center text-xl transition-colors">
+                                                        <i className="fa-solid fa-thumbs-down"></i>
+                                                    </button>
+                                                </div>
+                                                {showFeedbackInput && (
+                                                    <div className="flex gap-2 mt-2 animate-fade-in">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Un commentaire (optionnel)..."
+                                                            className="flex-1 p-2 text-sm border border-gray-300 rounded-lg outline-none focus:border-orange-500"
+                                                            value={feedbackComment}
+                                                            onChange={(e) => setFeedbackComment(e.target.value)}
+                                                        />
+                                                        <button onClick={() => handleFeedback(true)} className="px-4 py-2 bg-orange-500 text-white font-bold rounded-lg text-xs">Envoyer</button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* MODIFY / ROTATE SECTION */}
+                                        {lastUserImage && (
+                                            <div className="mt-4">
+                                                {!isModifying ? (
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <button
+                                                            onClick={() => setIsModifying(true)}
+                                                            className="py-3 bg-white border-2 border-orange-100 text-orange-600 font-bold rounded-xl hover:bg-orange-50 hover:border-orange-200 transition-colors flex items-center justify-center gap-2"
+                                                        >
+                                                            <i className="fa-solid fa-wand-magic-sparkles"></i> Modifier
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setAiResult(null); handleAiTryOn(lastUserImage); }}
+                                                            className="py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 flex items-center justify-center gap-2"
+                                                        >
+                                                            <i className="fa-solid fa-rotate-right"></i> Refaire
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-col gap-3 p-4 bg-orange-50 rounded-xl border border-orange-100 animate-fade-in">
+                                                        <label className="text-xs font-bold text-orange-800 uppercase">Modifier la génération</label>
+                                                        <textarea
+                                                            className="w-full p-3 border border-orange-200 rounded-lg text-sm outline-none focus:border-orange-500 h-24 resize-none"
+                                                            placeholder="Ex: Ajouter un ciel étoilé, rendre plus sombre..."
+                                                            value={modificationPrompt}
+                                                            onChange={(e) => setModificationPrompt(e.target.value)}
+                                                        ></textarea>
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => setIsModifying(false)}
+                                                                className="flex-1 py-2 bg-white text-gray-600 font-bold rounded-lg border border-gray-200 hover:bg-gray-50"
+                                                            >
+                                                                Annuler
+                                                            </button>
+                                                            <button
+                                                                onClick={() => { handleAiTryOn(lastUserImage, modificationPrompt); setIsModifying(false); }}
+                                                                className="flex-1 py-2 bg-orange-500 text-white font-bold rounded-lg hover:bg-orange-600"
+                                                            >
+                                                                Générer
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                            )
+                            }
+                        </div>
+                    </div>
+                )
+            }
+
+
+            {/* CROPPER MODAL */}
+            {
+                croppingImage && (
+                    <div className="fixed inset-0 z-[110] bg-black md:bg-black/80 flex flex-col md:items-center md:justify-center animate-fade-in">
+                        <div className="relative flex-1 bg-black/90 w-full h-full md:max-w-[600px] md:max-h-[600px] md:rounded-t-2xl md:overflow-hidden">
+                            <React.Suspense fallback={<div>Loading Cropper...</div>}>
+                                <Cropper
+                                    image={croppingImage}
+                                    crop={crop}
+                                    zoom={zoom}
+                                    aspect={undefined} // Free crop
+                                    onCropChange={setCrop}
+                                    onCropComplete={onCropComplete}
+                                    onZoomChange={setZoom}
+                                />
+                            </React.Suspense>
+                        </div>
+                        <div className="p-4 bg-white flex flex-col gap-4 pb-safe border-t border-gray-100 md:w-[600px] md:rounded-b-2xl">
+                            <div className="flex items-center gap-4">
+                                <i className="fa-solid fa-magnifying-glass-minus text-gray-400"></i>
+                                <input
+                                    type="range"
+                                    value={zoom}
+                                    min={1}
+                                    max={3}
+                                    step={0.1}
+                                    onChange={(e) => setZoom(Number(e.target.value))}
+                                    className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                                />
+                                <i className="fa-solid fa-magnifying-glass-plus text-gray-400"></i>
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => { setCroppingImage(null); setUploadedLogoPreview(null); }}
+                                    className="flex-1 py-3 bg-gray-100 text-gray-500 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+                                >
+                                    Annuler
+                                </button>
+                                <button
+                                    onClick={handleCropSave}
+                                    className="flex-1 py-3 bg-gray-900 text-white font-bold rounded-xl shadow-lg border-2 border-transparent hover:border-orange-500 transition-all"
+                                >
+                                    <i className="fa-solid fa-crop-simple mr-2"></i>Valider
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+            {/* FLASH OVERLAY */}
+            {isFlashing && (
+                <div className="fixed inset-0 z-[200] bg-white transition-opacity duration-75"></div>
+            )}
+
+        </div >
+    );
+
+}

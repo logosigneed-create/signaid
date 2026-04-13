@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SIGNAID - Studio de Design IA & Impression Interactive</title>
+    <meta name="description"
+        content="Le futur de l'imprimerie en Wallonie. Créez vos designs uniques avec l'IA, utilisez l'essayage virtuel et imprimez sur textile de qualité. SIGNAID fusionne créativité et technologie.">
+    <meta name="keywords"
+        content="imprimerie, intelligence artificielle, IA, design textile, personnalisation vêtement, essayage virtuel, VTO, Wallonie, Belgique, t-shirt personnalisé, sweat personnalisé, PrintIA, SIGNAID">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://signaid.beer/">
+    <meta property="og:title" content="SIGNAID - Design & Impression Interactive">
+    <meta property="og:description"
+        content="Créez, personnalisez et visualisez votre style unique avec l'IA. Livraison rapide en Belgique.">
+    <meta property="og:image" content="/logo.png">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://signaid.beer/">
+    <meta property="twitter:title" content="SIGNAID - Studio IA & Impression">
+    <meta property="twitter:description"
+        content="Le futur de la personnalisation vêtement avec l'IA. Essayage virtuel immédiat.">
+    <meta property="twitter:image" content="/logo.png">
+
+    <!-- CRITICAL: Preconnect to key domains (saves ~310ms per domain) -->
+    <link rel="preconnect" href="https://signaid-d2d08.firebaseapp.com" crossorigin />
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://apis.google.com" crossorigin />
+    <link rel="preconnect" href="https://images.weserv.nl" crossorigin />
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin />
+    <link rel="preconnect" href="https://ui-avatars.com" crossorigin />
+    <link rel="preconnect" href="https://lh3.googleusercontent.com" crossorigin />
+    <link rel="preconnect" href="https://graph.facebook.com" crossorigin />
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Roboto:wght@400;700&family=Montserrat:wght@400;700&family=Playfair+Display:wght@400;700&family=Permanent+Marker&family=Lobster&family=Pacifico&family=Dancing+Script:wght@400;700&family=Oswald:wght@400;700&display=swap&text=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%E2%82%AC%C3%A9%C3%A8%C3%AA%C3%A0%C3%A2%C3%AE%C3%AF%C3%B4%C3%BB%C3%B9%C3%A7%C3%80%C3%88%C3%89%C3%8A%C3%8E%C3%AF%C3%94%C3%9B%C3%99%C3%87"
+        rel="stylesheet" media="print" onload="this.media='all'" />
+    <noscript>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet" />
+    </noscript>
+
+    <!-- FontAwesome Icons - ASYNC Load (non-blocking) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+        media="print" onload="this.media='all'" />
+    <noscript>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    </noscript>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        #root {
+            width: 100%;
+            min-height: 100vh;
+        }
+
+        /* Loading animation */
+        .pulse-animation {
+            animation: pulse 1.5s infinite ease-in-out;
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(0.95);
+                opacity: 0.7;
+            }
+
+            50% {
+                transform: scale(1.1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(0.95);
+                opacity: 0.7;
+            }
+        }
+
+        /* Tailwind-like utility classes for animations */
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+
+
+
+    <!-- Optimized Facebook Pixel Load (Deferred) -->
+    <script>
+        window.addEventListener('load', function () {
+            // Delay by 3 seconds to ensure React has fully rendered and main thread is free
+            setTimeout(function () {
+                !function (f, b, e, v, n, t, s) {
+                    if (f.fbq) return; n = f.fbq = function () {
+                        n.callMethod ?
+                            n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+                    };
+                    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+                    n.queue = []; t = b.createElement(e); t.async = !0;
+                    t.src = v; s = b.getElementsByTagName(e)[0];
+                    s.parentNode.insertBefore(t, s)
+                }(window, document, 'script',
+                    'https://connect.facebook.net/en_US/fbevents.js');
+                fbq('init', '783934498029261');
+                fbq('track', 'PageView');
+                console.log("[Performance] Facebook Pixel loaded (deferred).");
+            }, 3000);
+        });
+    </script>
+    <!-- End Optimized Facebook Pixel Code -->
+
+</head>
+
+<body>
+    <div id="root">
+        <div style="display:flex;justify-content:center;align-items:center;height:100vh;background-color:#ffffff;">
+            <img src="/logo.png" alt="Chargement..." class="pulse-animation" />
+        </div>
+    </div>
+    <script type="module" src="/src/index.tsx"></script>
+
+</body>
+
+</html>

@@ -1,0 +1,30 @@
+4856: <div className="absolute right-8 top-1/2 -translate-y-1/2 flex flex-col gap-4 z-50 w-64">
+4857: <button
+4858: onClick={() => {
+4859: if (aiResult) {
+4860: const cacheKey = `${item.productType}_${item.color}`;
+4861: setAiVariantCache(prev => ({
+4862: ...prev,
+4863: [cacheKey]: aiResult
+4864: }));
+4865: updateItem({
+4866: aiImageUrl: aiResult,
+4867: ...(isBack ? { aiImageUrlBack: aiResult } : { aiImageUrlFront: aiResult })
+4868: });
+4869: setIsAiViewVisible(true);
+4870: setAiModalOpen(false);
+4871: }
+4872: }}
+4873: className="w-full py-5 bg-orange-600 text-white rounded-2xl shadow-xl flex items-center justify-center gap-3 hover:bg-orange-500 hover:scale-[1.02] active:scale-95 transition-all border border-white/20 group"
+4874: >
+4875: <span className="font-black uppercase tracking-widest text-sm">GARDER CE MODÃˆLE</span>
+4876: <i className="fa-solid fa-check group-hover:translate-x-1 transition-transform"></i>
+4877: </button>
+4878: 
+4879: <button
+4880: onClick={() => { setAiResult && setAiResult(null); setAiStep('input'); }}
+4881: className="w-full py-4 bg-white/10 backdrop-blur-md border border-white/20 text-white rounded-2xl flex items-center justify-center gap-3 hover:bg-white/20 hover:scale-[1.02] active:scale-95 transition-all text-xs font-bold uppercase tracking-widest"
+4882: >
+4883: <span>RECOMMENCER</span>
+4884: <i className="fa-solid fa-rotate-left"></i>
+4885: </button>

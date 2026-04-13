@@ -1,0 +1,739 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Graduate&display=swap');
+
+html,
+body {
+  overflow-x: hidden;
+  overflow-y: hidden;
+  /* Prevent double scrollbars */
+  max-width: 100vw;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+#root {
+  overflow-x: hidden;
+  overflow-y: auto;
+  /* Only root should scroll */
+  max-width: 100vw;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  /* Avoids absolute child breaking layout */
+}
+
+/* Custom scrollbar hiding utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Custom Animations */
+@keyframes shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-5px);
+  }
+
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+.animate-shake {
+  animation: shake 0.2s ease-in-out 0s 2;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+.dark .animate-shimmer {
+  background: linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%);
+  background-size: 200% 100%;
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-33.33%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 15s linear infinite;
+}
+
+@keyframes slideUpMobile {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up-mobile {
+  animation: slideUpMobile 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (max-height: 600px) {
+  .short-screen-h {
+    max-height: 45vh !important;
+  }
+}
+
+/* Force perfect square for cart thumbnails */
+/* Force perfect square for cart thumbnails */
+/* Base styles for cart thumbnails (Mobile & Desktop) */
+.cart-thumbnail,
+.cart-item-img-wrapper,
+.generated-product-thumbnail,
+.cart-item-image-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  overflow: hidden;
+  /* margin-right: 0; Mobile default: no margin */
+}
+
+/* Desktop Fixed Sizing */
+@media (min-width: 768px) {
+
+  .cart-thumbnail,
+  .cart-item-img-wrapper,
+  .generated-product-thumbnail,
+  .cart-item-image-container {
+    width: 180px !important;
+    height: 180px !important;
+    max-width: 180px !important;
+    min-width: 180px !important;
+    flex: 0 0 180px !important;
+    margin-right: 12px;
+  }
+}
+
+/* Image adapts INSIDE the square */
+.cart-thumbnail img,
+.cart-item-img-wrapper img,
+.generated-product-thumbnail img,
+.cart-item-image-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain !important;
+}
+
+/* Ensure Design Overlay matches container exactly and is perfectly centered */
+.cart-design-overlay,
+.cart-design-layer,
+.design-layer {
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  /* Centers perfectly */
+
+  width: 100% !important;
+  /* Use 100% to match container by default, but object-fit: contain handles aspect ratio */
+  height: 100% !important;
+
+  max-width: 100% !important;
+  /* Prevent overflow */
+  max-height: 100% !important;
+
+  object-fit: contain !important;
+}
+
+/* FEED DESKTOP - Carousel Focus avec Design Aéré */
+@media (min-width: 1024px) {
+  .feed-container {
+    display: block !important;
+    overflow: hidden !important;
+    height: 100% !important;
+    position: relative !important;
+    background: #f8f9fa !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Carousel Track - Centrage et Défilement */
+  .feed-track {
+    display: flex !important;
+    align-items: center !important;
+    height: 100% !important;
+    transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    /* Padding pour voir les côtés */
+    /* Superposition activée par gap négatif ou très réduit */
+    gap: -150px !important;
+    /* Ajustez cette valeur pour contrôler le degré de superposition */
+    padding-left: 50% !important;
+    /* Pour centrer le premier élément */
+    transform-origin: center center !important;
+  }
+
+  /* Carte de base (Inactive/Latérale) */
+  .feed-card {
+    flex: 0 0 320px !important;
+    /* Réduit de 400px pour cartes plus compactes */
+    height: 480px !important;
+    /* Hauteur réduite proportionnellement */
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    opacity: 0.6 !important;
+    /* Un peu plus visible pour l'effet de profondeur */
+    transform: scale(0.8) !important;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    filter: brightness(60%) blur(2px) !important;
+    /* Plus sombre pour faire ressortir le héros */
+    pointer-events: none !important;
+    /* Désactive les clics sur les côtés */
+    background: transparent !important;
+    z-index: 1 !important;
+    /* Derrière le héros */
+    margin: 0 -50px !important;
+    /* Force le chevauchement */
+  }
+
+  /* Carte Active (Héros) */
+  .feed-card.active {
+    opacity: 1 !important;
+    transform: scale(1.15) !important;
+    /* Un peu plus grand */
+    filter: none !important;
+    z-index: 20 !important;
+    /* Devant tout le reste */
+    pointer-events: auto !important;
+    margin: 0 40px !important;
+    /* Espace autour du héros */
+    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  /* Zone Image */
+  .feed-card-media {
+    flex: 1 !important;
+    height: 100% !important;
+    border-radius: 24px !important;
+    overflow: hidden !important;
+    aspect-ratio: 9/16 !important;
+    position: relative !important;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.1) !important;
+    transition: box-shadow 0.3s ease !important;
+  }
+
+  .feed-card.active .feed-card-media {
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2) !important;
+  }
+
+  .feed-card-media img,
+  .feed-card-media video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+
+  /* Barre d'Actions (Visible uniquement sur l'Active) */
+  .feed-actions-sidebar {
+    width: 60px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 20px !important;
+    justify-content: center !important;
+    padding-left: 15px !important;
+    position: static !important;
+    opacity: 0 !important;
+    /* Caché par défaut */
+    transform: translateX(-10px) !important;
+    transition: all 0.4s ease 0.1s !important;
+    pointer-events: none !important;
+    visibility: hidden !important;
+  }
+
+  .feed-card.active .feed-actions-sidebar {
+    opacity: 1 !important;
+    transform: translateX(0) !important;
+    pointer-events: auto !important;
+    visibility: visible !important;
+  }
+
+  .feed-actions-sidebar .action-btn {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 50% !important;
+    background: white !important;
+    border: 1px solid #eee !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    color: #333 !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+  }
+
+  .feed-actions-sidebar .action-btn:hover {
+    background: #ff6b35 !important;
+    color: white !important;
+    border-color: #ff6b35 !important;
+    transform: scale(1.15) !important;
+    box-shadow: 0 6px 16px rgba(255, 107, 53, 0.3) !important;
+  }
+
+  .feed-actions-sidebar .action-label {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    color: #888 !important;
+    text-align: center !important;
+    margin-top: 4px !important;
+  }
+
+  /* Info overlay */
+  .feed-card-info {
+    position: absolute !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    padding: 24px !important;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent) !important;
+    color: white !important;
+    opacity: 0 !important;
+    transition: opacity 0.3s ease !important;
+  }
+
+  .feed-card.active .feed-card-info {
+    opacity: 1 !important;
+  }
+
+  /* Navigation Arrows - Premium Styling */
+  .nav-arrow {
+    position: fixed !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    z-index: 100 !important;
+    width: 60px !important;
+    height: 60px !important;
+    background: white !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08) !important;
+    border: 1px solid #eee !important;
+    cursor: pointer !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    font-size: 20px !important;
+    color: #333 !important;
+  }
+
+  .nav-arrow:hover {
+    background: #ff6b35 !important;
+    color: white !important;
+    border-color: #ff6b35 !important;
+    transform: translateY(-50%) scale(1.1) !important;
+    box-shadow: 0 15px 40px rgba(255, 107, 53, 0.25) !important;
+  }
+
+  .nav-arrow.left {
+    left: 60px !important;
+  }
+
+  .nav-arrow.right {
+    right: 60px !important;
+  }
+
+  /* Mobile actions cacher */
+  .feed-mobile-actions {
+    display: none !important;
+  }
+
+  [data-layout-id="feed-post-image"] {
+    width: 380px;
+    height: 513px;
+  }
+
+  div.bg-transparent.lg:bg-white.p-3.rounded-t-2xl.border-0.lg:border.border-gray-100.shadow-none.lg:shadow-sm.relative.z-20.mx-0 {
+    width: 629px;
+    height: 122px;
+    padding: 7px;
+    top: -15px;
+  }
+
+  [data-layout-id="add-to-cart-btn"] {
+    width: 322px !important;
+    height: 44px;
+    margin: 0px;
+    position: relative;
+  }
+
+  [data-layout-id="app-main"] {
+    width: 1451.13px !important;
+    height: 1000px !important;
+    top: 13px !important;
+    position: relative !important;
+    left: 50% !important;
+    margin-left: -725.57px !important;
+    transform: none !important;
+    margin-top: 0px !important;
+  }
+
+  [data-layout-id="ai-result-image"] {
+    width: 416px !important;
+    height: 671px !important;
+    top: 1px !important;
+    object-fit: cover !important;
+  }
+
+  [data-layout-id="garment-selector-desktop"] {
+    display: flex !important;
+    align-items: center !important;
+    gap: 32px !important;
+  }
+
+  [data-layout-id="garment-selector-next"] {
+    color: #ea580c !important;
+  }
+
+  [data-layout-id="main-canvas-container"] {
+    width: 373px;
+    height: 497px;
+    margin: 0 auto !important;
+  }
+
+  [data-layout-id="mobile-bottom-nav"] {
+    height: 48px !important;
+    font-size: 16px !important;
+  }
+
+  [data-layout-id="customizer-right-sidebar"] {
+    width: auto !important;
+    height: auto !important;
+    margin: 0px !important;
+    transform: none !important;
+  }
+
+  [data-layout-id="fullscreen-prompt-backdrop"] {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: rgba(0, 0, 0, 0.8) !important;
+    backdrop-filter: blur(8px) !important;
+    z-index: 10000 !important;
+  }
+
+  [data-layout-id="fullscreen-prompt-modal"] {
+    position: relative !important;
+    margin: 0 !important;
+  }
+
+  /* Utilisation d'un sélecteur plus simple pour le titre */
+
+}
+
+/* --- MOBILE IPHONE SE / SMALL PHONES FIXES --- */
+@media (max-width: 480px) {
+  [data-layout-id="garment-selector-mobile"] {
+    position: sticky !important;
+    top: 0px !important;
+    /* Keep it at top, but ensure it's not covered */
+    z-index: 100 !important;
+    background-color: white !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+    min-height: 50px !important;
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  /* If promo banner is present, push main content down */
+  [data-layout-id="promo-banner"]+main [data-layout-id="garment-selector-mobile"] {
+    /* Optional: top: 40px if we want it below banner when sticky, 
+       but currently banner is relative so it pushes main down naturally.
+       The issue is the t-shirt overlapping the header. */
+  }
+
+  .mobile-product-container {
+    padding-top: 5px !important;
+    margin-top: 10px !important;
+    width: 90vw !important;
+    height: auto !important;
+    max-width: 400px !important;
+    max-height: 50vh !important;
+    aspect-ratio: 3/4 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    position: relative !important;
+    z-index: 10 !important;
+    overflow: visible !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+
+  /* Ensure tools don't overlap with product */
+  .lg\:hidden.w-full.px-4.mt-2 {
+    margin-top: 10px !important;
+    position: relative !important;
+    z-index: 50 !important;
+    background: white !important;
+  }
+
+  /* Compact Toolbar Labels */
+  .lg\:hidden button span {
+    font-size: 0.6rem !important;
+  }
+
+  /* Make sure sizes and cart are visible */
+  .mobile-size-cart-container {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    width: 100% !important;
+    padding: 10px !important;
+    padding-bottom: 80px !important;
+    /* Space for bottom nav */
+  }
+}
+
+/* --- EXTRA SMALL VIEWPORT FIXES (FB BROWSER / SHORT SCREENS) --- */
+@media (max-height: 600px) and (max-width: 480px) {
+  .mobile-product-container {
+    margin-top: 5px !important;
+    width: 80vw !important;
+    /* More space for UI on short screens */
+    max-height: 35vh !important;
+    padding-top: 0 !important;
+  }
+
+  [data-layout-id="garment-selector-mobile"] {
+    min-height: 40px !important;
+  }
+
+  [data-layout-id="garment-selector-mobile"] h2 {
+    font-size: 0.9rem !important;
+  }
+
+  .lg\:hidden.w-full.px-4.mt-2 {
+    margin-top: 5px !important;
+    gap: 5px !important;
+  }
+
+  /* Compact Tools */
+  .lg\:hidden button i {
+    font-size: 1rem !important;
+  }
+
+  /* Compact Color Carousel */
+  .w-16.h-20.flex-shrink-0.relative.z-10 {
+    width: 3rem !important;
+    height: 4rem !important;
+  }
+
+  .w-9.h-12.flex-shrink-0 {
+    width: 2rem !important;
+    height: 3rem !important;
+  }
+
+  /* Compact Size/Cart */
+  .mobile-size-cart-container {
+    padding: 5px !important;
+    gap: 8px !important;
+    padding-bottom: 70px !important;
+  }
+
+  .mobile-size-cart-container .bg-white.p-3.rounded-2xl {
+    padding: 5px !important;
+  }
+
+  .mobile-size-cart-container button {
+    padding-top: 0.6rem !important;
+    padding-bottom: 0.6rem !important;
+    font-size: 0.8rem !important;
+  }
+}
+
+@keyframes pulsing-orb {
+
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes scanning-line {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+
+  10% {
+    opacity: 1;
+  }
+
+  90% {
+    opacity: 1;
+  }
+
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes magic-sparkle {
+  0% {
+    transform: scale(0) rotate(0deg);
+    opacity: 0;
+  }
+
+  50% {
+    transform: scale(1.5) rotate(180deg);
+    opacity: 1;
+    filter: drop-shadow(0 0 10px rgba(249, 115, 22, 0.8));
+  }
+
+  100% {
+    transform: scale(0) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.7;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes magic-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes glowing-border {
+  0% {
+    box-shadow: 0 0 5px rgba(249, 115, 22, 0.2), inset 0 0 5px rgba(249, 115, 22, 0.1);
+  }
+
+  50% {
+    box-shadow: 0 0 20px rgba(249, 115, 22, 0.6), inset 0 0 15px rgba(249, 115, 22, 0.4);
+  }
+
+  100% {
+    box-shadow: 0 0 5px rgba(249, 115, 22, 0.2), inset 0 0 5px rgba(249, 115, 22, 0.1);
+  }
+}
+
+.animate-pulsing-orb {
+  animation: pulsing-orb 2s ease-in-out infinite;
+}
+
+.animate-scanning-line {
+  animation: scanning-line 3s linear infinite;
+}
+
+.animate-magic-sparkle {
+  animation: magic-sparkle 1.5s ease-in-out infinite;
+}
+
+.magic-glow-garment {
+  animation: glowing-border 2s ease-in-out infinite;
+  position: relative;
+  border-radius: 1.5rem;
+  overflow: hidden;
+}
+
+.magic-glow-garment::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 165, 0, 0.1),
+      rgba(255, 255, 255, 0.2),
+      rgba(255, 165, 0, 0.1),
+      transparent);
+  background-size: 200% 100%;
+  animation: magic-shimmer 2s infinite linear;
+  z-index: 35;
+  pointer-events: none;
+}
+
+.magic-glow-garment::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  background: radial-gradient(circle, rgba(249, 115, 22, 0.4) 0%, transparent 70%);
+  z-index: -1;
+  animation: pulse 2s ease-in-out infinite;
+  filter: blur(10px);
+}

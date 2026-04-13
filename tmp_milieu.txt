@@ -1,0 +1,1 @@
+2916: // Calcule la position exacte pour que le bouton soit au milieu du conteneur

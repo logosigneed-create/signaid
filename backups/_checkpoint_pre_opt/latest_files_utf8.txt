@@ -1,0 +1,7 @@
+﻿C:\Partage\Projet\Signaid V24\src\CustomizerApp.tsx
+C:\Partage\Projet\Signaid V24\src\components\CartView.tsx
+C:\Partage\Projet\Signaid V24\src\components\CustomizerView.tsx
+C:\Partage\Projet\Signaid V24\src\components\DesktopNavbar.tsx
+C:\Partage\Projet\Signaid V24\src\components\LogoOptionsModal.tsx
+C:\Partage\Projet\Signaid V24\src\components\MobileBottomNav.tsx
+C:\Partage\Projet\Signaid V24\src\components\UniversalMenu.tsx

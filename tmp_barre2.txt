@@ -1,0 +1,55 @@
+3295: 
+3296: </>
+3297: )}
+3298: </div>
+3299: 
+3300: {/* BARRE DE CONTROLE MOBILE (ZOOM & VUE) - ANCRÃ‰E AU FLUX PRODUIT (Hidden if Catalogue) */}
+3301: {item.productType !== 'catalogue' && (
+3302: <div className="flex items-center justify-between w-[220px] mx-auto py-2 px-4 rounded-full bg-white/95 backdrop-blur-md shadow-2xl border border-gray-100 mt-[-30px] z-50 relative animate-slide-up no-drag overflow-visible shrink-0 pointer-events-auto">
+3303: <button
+3304: onClick={(e) => { e.stopPropagation(); setZoomLevel(prev => Math.max(prev - 0.15, 0.4)); }}
+3305: className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-orange-600 active:scale-75 transition-all text-xl font-bold group"
+3306: >
+3307: <i className="fa-solid fa-minus text-sm"></i>
+3308: </button>
+3309: 
+3310: <button
+3311: onClick={(e) => { e.stopPropagation(); setIsBack(!isBack); setActiveView(isBack ? 'front' : 'back'); autoCenterGarment(); }}
+3312: className="flex flex-col items-center justify-center gap-0.5 group pointer-events-auto"
+3313: >
+3314: <div className="w-10 h-10 bg-gray-900 text-white rounded-full flex items-center justify-center shadow-md group-active:scale-90 transition-transform">
+3315: <i className="fa-solid fa-arrows-rotate text-sm"></i>
+3316: </div>
+3317: <span className="text-[8px] font-black uppercase tracking-widest text-gray-900">{isBack ? 'FACE' : 'DOS'}</span>
+3318: </button>
+3319: 
+3320: <button
+3321: onClick={(e) => { e.stopPropagation(); setZoomLevel(prev => Math.min(prev + 0.15, 2.5)); }}
+3322: className="w-8 h-8 flex items-center justify-center text-gray-600 hover:text-orange-600 active:scale-75 transition-all text-xl font-bold group"
+3323: >
+3324: <i className="fa-solid fa-plus text-sm"></i>
+3325: </button>
+3326: </div>
+3327: )}
+3328: </div>
+3329: </div>
+3330: 
+3331: {/* RIGHT SELECTOR - LAYERS */}
+3332: <div className="w-full lg:flex-1 flex flex-col gap-8 px-6 pb-20 justify-center min-h-[40vh]">
+3333: {colors.length > 1 && (
+3334: <>
+3335: {/* Layer 1: Thumbnail */}
+3336: <button
+3337: onClick={(e) => { e.stopPropagation(); handleColorChangeRequest(colors[nextIndex]); }}
+3338: className="absolute top-1/2 -translate-y-1/2 -right-8 z-0 scale-75 opacity-70 transition-all group flex flex-col items-center gap-3 pointer-events-auto"
+3339: >
+3340: <div className="w-24 lg:w-40 h-56 flex items-center justify-center p-1">
+3341: <img
+3342: src={getProxiedUrl(getOptimizedImageUrl(isBack ? product.backImages[colors[nextIndex]] : product.images[colors[nextIndex]], 200))}
+3343: className="w-full h-full object-contain transition-opacity drop-shadow-md"
+3344: alt="Suivant"
+3345: />
+3346: </div>
+3347: </button>
+3348: {/* Layer 2: Arrow */}
+3349: <button
