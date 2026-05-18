@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
@@ -6,8 +6,8 @@ import 'react-image-crop/dist/ReactCrop.css';
 
 import { getProxiedUrl, resizeImage, hexToRgb, tintImage, removeBackground, removeSpecificColor, getCroppedImg, urlToBase64, addWatermark, cleanCartItem, compressCartForStorage, isSameModel, calculateBaseUnitPrice, calculateMarkingFee, dataURLtoBlob, trimImage } from '../utils/helpers';
 import { getOptimizedImageUrl } from '../utils/imageUtils';
-import CreationToolbar, { ToolItem } from '../components/CreationToolbar';
-import { LazyImage } from '../components/LazyImage';
+import CreationToolbar, { ToolItem } from './CreationToolbar';
+import { LazyImage } from './LazyImage';
 
 import {
     SPECIAL_CODES,
@@ -30,10 +30,10 @@ import {
 } from '../types';
 
 
-import { DraggableElement } from '../components/DraggableElement';
-import { TextRenderer } from '../components/TextRenderer';
-import { PongGame } from '../components/PongGame';
-import { LoadingScreen } from '../components/LoadingScreen';
+import { DraggableElement } from './DraggableElement';
+import { TextRenderer } from './TextRenderer';
+import { PongGame } from './PongGame';
+import { LoadingScreen } from './LoadingScreen';
 import { geminiService } from '../services/geminiService';
 import { db } from '../firebaseConfig';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, increment } from 'firebase/firestore';
@@ -41,7 +41,7 @@ import { postService } from '../services/postService';
 import { uploadImageBlob } from '../services/storageService';
 import { vtonService } from '../services/vtonService';
 import { designSharingService } from '../services/designSharingService';
-import { ShareDesignModal } from '../components/ShareDesignModal';
+import { ShareDesignModal } from './ShareDesignModal';
 
 // @ts-ignore
 // html2canvas dynamic import
@@ -49,8 +49,8 @@ import { ShareDesignModal } from '../components/ShareDesignModal';
 // import html2canvas from 'html2canvas';
 
 // Lazy load GuestLimitModal to avoid circular dependencies if any, or just import
-import { GuestLimitModal } from '../components/GuestLimitModal';
-import { SignPongRewardModal } from '../components/SignPongRewardModal';
+import { GuestLimitModal } from './GuestLimitModal';
+import { SignPongRewardModal } from './SignPongRewardModal';
 import { logAnalyticsEvent, AnalyticsEvents } from '../services/analyticsService';
 
 // Polyfill for crypto.randomUUID() for Safari/iOS compatibility
@@ -145,7 +145,7 @@ export
         initialUploadOpen?: boolean;
         aiGenerating?: boolean;
         aiResult?: string | null;
-        onGenerateAi?: (params: any) => Promise<void>;
+        onGenerateAi?: (params: any) => Promise<any>;
         setAiResult?: (val: string | null) => void;
         cartCount?: number;
         onGoToCart?: () => void;
@@ -161,7 +161,6 @@ export
     const [isUpdatingPost, setIsUpdatingPost] = useState(false);
     const navigate = useNavigate();
     const sizeSelectionRef = useRef<HTMLDivElement>(null);
-    const captureRef = useRef<any>(null);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isAiViewVisible, setIsAiViewVisible] = useState(false); // New state for AI View Toggle
     const [showAiResultModal, setShowAiResultModal] = useState(false);
@@ -180,8 +179,8 @@ export
     const [isGeneratingLocal, setIsGeneratingLocal] = useState(false);
     const [sharingLoading, setSharingLoading] = useState(false);
     const [shareShortId, setShareShortId] = useState<string | null>(null);
-    const [aiResults, setAiResults] = useState<{ front?: string, back?: string } | null>(null);
-    const [generatingSide, setGeneratingSide] = useState<'front' | 'back' | null>(null);
+    const [showAiLossWarning, setShowAiLossWarning] = useState(false);
+    const pendingActionRef = useRef<(() => void) | null>(null);
 
 
     // Load saved AI Result
@@ -194,11 +193,6 @@ export
     });
 
     // Initialize aiResult with prop or saved
-    useEffect(() => {
-        if (aiResult && generatingSide) {
-            setAiResults(prev => ({ ...prev, [generatingSide]: aiResult }));
-        }
-    }, [aiResult, generatingSide]);
     // We can't easily change the prop-based initialization if 'aiResult' is passed from parent, 
     // but 'setAiResult' is likely local if not controlled.
     // However, CustomizerView receives 'aiResult' as prop.
@@ -363,32 +357,48 @@ export
                         setCapturedImage(result);
                         setAiStep('input'); // Confirm step
                     } else {
-                        // STANDARD UPLOAD MODE (Option A / Direct Import)
-                        console.log(`[Standard Upload] Direct placement (Crop skipped by default).`);
+                        // STANDARD UPLOAD MODE
+                        console.log(`[Standard Upload] Smart placement and setup crop.`);
 
-                        // Directly place the image
+                        let targetSlot = activeEl || 'logo';
+                        const hasL1 = isBack ? item.originalLogoUrlBack || item.predefinedLogoUrlBack : item.originalLogoUrlFront || item.predefinedLogoUrlFront;
+                        const hasL2 = isBack ? item.logoBack2?.originalUrl || item.logoBack2?.predefinedUrl : item.logoFront2?.originalUrl || item.logoFront2?.predefinedUrl;
+                        const hasL3 = isBack ? item.logoBack3?.originalUrl || item.logoBack3?.predefinedUrl : item.logoFront3?.originalUrl || item.logoFront3?.predefinedUrl;
+
+                        if (targetSlot === 'logo' && hasL1) {
+                            if (!hasL2) targetSlot = 'logo2';
+                            else if (!hasL3) targetSlot = 'logo3';
+                        } else if (targetSlot === 'logo2' && hasL2) {
+                            if (!hasL1) targetSlot = 'logo';
+                            else if (!hasL3) targetSlot = 'logo3';
+                        } else if (targetSlot === 'logo3' && hasL3) {
+                            if (!hasL1) targetSlot = 'logo';
+                            else if (!hasL2) targetSlot = 'logo2';
+                        }
+
                         const finalImage = result;
-                        const targetIsBack = isBack; // Assuming existing state
+                        let updates: any = {};
+                        const defaults = { x: 50, y: 40, scale: 50 };
 
-                        const updates = targetIsBack ? {
-                            originalLogoUrlBack: finalImage,
-                            processedLogoUrlBack_original: finalImage,
-                            processedLogoUrlBack: null,
-                            backgroundRemovedBack: false, logoInvertedBack: false,
-                            activeLogoColorBack: 'original',
-                            processedLogoUrlBack_white: null, processedLogoUrlBack_black: null, processedLogoUrlBack_noBackground: null
-                        } : {
-                            originalLogoUrlFront: finalImage,
-                            processedLogoUrlFront_original: finalImage,
-                            processedLogoUrlFront: null,
-                            backgroundRemovedFront: false, logoInvertedFront: false,
-                            activeLogoColorFront: 'original',
-                            processedLogoUrlFront_white: null, processedLogoUrlFront_black: null, processedLogoUrlFront_noBackground: null
-                        };
+                        if (targetSlot === 'logo2') {
+                            const key = isBack ? 'logoBack2' : 'logoFront2';
+                            updates[key] = { ...item[key], originalUrl: finalImage, processedUrl_original: finalImage, isPredefined: false, predefinedUrl: null, processedUrl: null, backgroundRemoved: false, inverted: false, activeColor: 'original', processedUrl_noBackground: null }; 
+                            if (!item[key]?.position) { updates[key].position = defaults; updates[key].size = defaults.scale; }
+                        } else if (targetSlot === 'logo3') {
+                            const key = isBack ? 'logoBack3' : 'logoFront3';
+                            updates[key] = { ...item[key], originalUrl: finalImage, processedUrl_original: finalImage, isPredefined: false, predefinedUrl: null, processedUrl: null, backgroundRemoved: false, inverted: false, activeColor: 'original', processedUrl_noBackground: null }; 
+                            if (!item[key]?.position) { updates[key].position = defaults; updates[key].size = defaults.scale; }
+                        } else {
+                            if (isBack) {
+                                updates = { originalLogoUrlBack: finalImage, processedLogoUrlBack_original: finalImage, isPredefinedLogoBack: false, predefinedLogoUrlBack: null, processedLogoUrlBack: null, backgroundRemovedBack: false, logoInvertedBack: false, activeLogoColorBack: 'original', processedLogoUrlBack_white: null, processedLogoUrlBack_black: null, processedLogoUrlBack_noBackground: null };
+                            } else {
+                                updates = { originalLogoUrlFront: finalImage, processedLogoUrlFront_original: finalImage, isPredefinedLogoFront: false, predefinedLogoUrlFront: null, processedLogoUrlFront: null, backgroundRemovedFront: false, logoInvertedFront: false, activeLogoColorFront: 'original', processedLogoUrlFront_white: null, processedLogoUrlFront_black: null, processedLogoUrlFront_noBackground: null };
+                            }
+                        }
 
                         updateItem(updates);
                         setUploadedLogoPreview(finalImage);
-                        setActiveEl('logo');
+                        setActiveEl(targetSlot);
                         setPendingElement(null);
                         setCroppingImage(result);
                     }
@@ -476,9 +486,6 @@ export
         }
     }, [initialColor]);
 
-    // Save to local storage on change
-
-    // Save to local storage on change
     // Save to local storage on change with DEBOUNCE
     useEffect(() => {
         const timer = setTimeout(() => {
@@ -790,6 +797,17 @@ export
     const [selectedStylePrompt, setSelectedStylePrompt] = useState(initialStylePrompt || "");
     const [customStylePrompt, setCustomStylePrompt] = useState(initialStylePrompt || '');
 
+    const executeWithAiGuard = (action: () => void) => {
+        if (aiResult) {
+            // L'image IA existe, on bloque l'action et on affiche l'avertissement
+            pendingActionRef.current = action;
+            setShowAiLossWarning(true);
+        } else {
+            // Pas d'image IA, on exécute l'action normalement
+            action();
+        }
+    };
+
     // Update state if props change
     useEffect(() => {
         if (initialStyleCategory) setActiveStyleCategory(initialStyleCategory as StyleCategory);
@@ -864,23 +882,31 @@ export
         }
     }, [initialMode]);
 
-    const handleAddToCart = () => {
-        // Validation for Sizes
-        const totalQty = Object.values(selectedSizes).reduce((acc, qty) => acc + qty, 0);
+    const checkSizeBeforeProceeding = (): boolean => {
+        const totalQty = Object.values(selectedSizes).reduce((acc, qty) => acc + (qty as number), 0);
         if (totalQty === 0) {
-            setShowSizeError(true);
-            // Flash shake
             setShakeSizes(true);
-            setTimeout(() => setShakeSizes(false), 500);
-
-            // If on mobile, scroll to size selector
-            if (window.innerWidth < 1024) {
-                const el = document.getElementById('size-selector-mobile');
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setShowSizeError(true);
+            showToast("Veuillez sélectionner une taille pour continuer !", "error");
+            
+            const isMobile = window.innerWidth < 1024;
+            const sizeSelector = document.getElementById(isMobile ? 'size-selector-mobile' : 'size-selector-desktop');
+            if (sizeSelector) {
+                sizeSelector.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }
-            return;
+            
+            setTimeout(() => {
+                setShowSizeError(false);
+                setShakeSizes(false);
+            }, 3000);
+            
+            return false;
         }
+        return true;
+    };
 
+    const handleAddToCart = () => {
+        if (!checkSizeBeforeProceeding()) return;
         onAddToCart(item);
     };
     const [uploadedLogoPreview, setUploadedLogoPreview] = useState<string | null>(null);
@@ -910,9 +936,14 @@ export
     const [feedbackGiven, setFeedbackGiven] = useState(false);
     const [feedbackComment, setFeedbackComment] = useState('');
     const [showFeedbackInput, setShowFeedbackInput] = useState(false);
+
+    // AI DOUBLE GENERATION STATES
+    const [aiResults, setAiResults] = useState<{ front?: string, back?: string } | null>(null);
+    const [activeAiView, setActiveAiView] = useState<'front' | 'back'>('front');
+
     // AI RESULT PERSISTENCE
     useEffect(() => {
-        const saved = localStorage.getItem('lastAiResult');
+        const saved = localStorage.getItem('stylelink_draft_ai_result');
         if (saved && !aiResult) {
             // Optional: Auto-restore or just set a flag? 
             // Let's just log it or have a state "canRestore"
@@ -922,18 +953,31 @@ export
     // Save Result
     useEffect(() => {
         if (aiResult) {
-            localStorage.setItem('lastAiResult', aiResult);
+            try {
+                localStorage.setItem('stylelink_draft_ai_result', aiResult);
+            } catch (e) {
+                console.warn("Could not save AI result to local storage (quota exceeded)", e);
+            }
         }
     }, [aiResult]);
 
     const restoreLastAiResult = () => {
-        const saved = localStorage.getItem('lastAiResult');
+        const saved = localStorage.getItem('stylelink_draft_ai_result');
         if (saved && setAiResult) setAiResult(saved);
     };
 
 
 
     const currentAiResult = (isBack ? item.aiImageUrlBack : item.aiImageUrlFront);
+
+    // Détecte s'il y a le moindre élément sur le dos
+    const hasAnyBackContent = !!(
+        item.originalLogoUrlBack || item.predefinedLogoUrlBack ||
+        item.logoBack2?.originalUrl || item.logoBack3?.originalUrl ||
+        (item.textBack && item.textBack.text) ||
+        (item.textBack2 && item.textBack2.text) ||
+        (item.textBack3 && item.textBack3.text)
+    );
 
     // --- GUEST AI CACHE (Contextual Persistence) ---
     // Stores the last AI generation result for guests, per view (Front/Back).
@@ -1049,30 +1093,25 @@ export
 
                 // Auto-place the cropped logo
                 const targetIsBack = isBack;
+                const targetSlot = activeEl || 'logo';
+                let updates: any = {};
 
-                const updates = targetIsBack ? {
-                    // Update processed version AND original for display
-                    processedLogoUrlBack_original: finalImage,
-                    originalLogoUrlBack: finalImage,
-
-                    // Reset other processed states
-                    backgroundRemovedBack: false, logoInvertedBack: false,
-                    processedLogoUrlBack: null, // Clear active processed image
-                    activeLogoColorBack: 'original', // RESET COLOR
-                    processedLogoUrlBack_white: null, processedLogoUrlBack_black: null, processedLogoUrlBack_noBackground: null
-                } : {
-                    processedLogoUrlFront_original: finalImage,
-                    originalLogoUrlFront: finalImage,
-
-                    backgroundRemovedFront: false, logoInvertedFront: false,
-                    processedLogoUrlFront: null, // Clear active processed image
-                    activeLogoColorFront: 'original', // RESET COLOR
-                    processedLogoUrlFront_white: null, processedLogoUrlFront_black: null, processedLogoUrlFront_noBackground: null
-                };
+                if (targetSlot === 'logo2') {
+                    const key = targetIsBack ? 'logoBack2' : 'logoFront2';
+                    updates[key] = { ...item[key], processedUrl_original: finalImage, originalUrl: finalImage, processedUrl: null, backgroundRemoved: false, inverted: false, activeColor: 'original', processedUrl_noBackground: null };
+                } else if (targetSlot === 'logo3') {
+                    const key = targetIsBack ? 'logoBack3' : 'logoFront3';
+                    updates[key] = { ...item[key], processedUrl_original: finalImage, originalUrl: finalImage, processedUrl: null, backgroundRemoved: false, inverted: false, activeColor: 'original', processedUrl_noBackground: null };
+                } else {
+                    updates = targetIsBack ? {
+                        processedLogoUrlBack_original: finalImage, originalLogoUrlBack: finalImage, backgroundRemovedBack: false, logoInvertedBack: false, processedLogoUrlBack: null, activeLogoColorBack: 'original', processedLogoUrlBack_white: null, processedLogoUrlBack_black: null, processedLogoUrlBack_noBackground: null
+                    } : {
+                        processedLogoUrlFront_original: finalImage, originalLogoUrlFront: finalImage, backgroundRemovedFront: false, logoInvertedFront: false, processedLogoUrlFront: null, activeLogoColorFront: 'original', processedLogoUrlFront_white: null, processedLogoUrlFront_black: null, processedLogoUrlFront_noBackground: null
+                    };
+                }
 
                 updateItem(updates);
                 setUploadedLogoPreview(finalImage);
-                setActiveEl('logo');
 
                 setPendingElement(null); // Clear any pending
                 setCroppingImage(null); // Close modal
@@ -1191,6 +1230,12 @@ export
     };
 
     const handleDragStart = (id: string) => {
+        if (aiResult) {
+            executeWithAiGuard(() => {
+                // L'utilisateur devra valider la perte de l'IA pour pouvoir recommencer à draguer
+            });
+            return; // On annule le drag initial
+        }
         if (isBack) {
             dragSnapshots.current = {
                 logo: { x: item.logoPositionXBack, y: item.logoPositionYBack },
@@ -1456,33 +1501,83 @@ export
 
     // Unified handler for both File Input and Camera
     const processLogoUpdate = (dataUrl: string) => {
+        let targetSlot = activeEl || 'logo';
+        const hasL1 = isBack ? item.originalLogoUrlBack || item.predefinedLogoUrlBack : item.originalLogoUrlFront || item.predefinedLogoUrlFront;
+        const hasL2 = isBack ? item.logoBack2?.originalUrl || item.logoBack2?.predefinedUrl : item.logoFront2?.originalUrl || item.logoFront2?.predefinedUrl;
+        const hasL3 = isBack ? item.logoBack3?.originalUrl || item.logoBack3?.predefinedUrl : item.logoFront3?.originalUrl || item.logoFront3?.predefinedUrl;
+
+        if (targetSlot === 'logo' && hasL1) {
+            if (!hasL2) targetSlot = 'logo2';
+            else if (!hasL3) targetSlot = 'logo3';
+        } else if (targetSlot === 'logo2' && hasL2) {
+            if (!hasL1) targetSlot = 'logo';
+            else if (!hasL3) targetSlot = 'logo3';
+        } else if (targetSlot === 'logo3' && hasL3) {
+            if (!hasL1) targetSlot = 'logo';
+            else if (!hasL2) targetSlot = 'logo2';
+        }
+
         const defaults = { x: 50, y: 40, scale: 50 };
-        const updates = isBack ? {
-            originalLogoUrlBack: dataUrl,
-            processedLogoUrlBack_original: dataUrl,
-            isPredefinedLogoBack: false,
-            predefinedLogoUrlBack: null,
-            logoPositionXBack: defaults.x, logoPositionYBack: defaults.y, logoSizeBack: defaults.scale,
-            backgroundRemovedBack: false, logoInvertedBack: false,
-            processedLogoUrlBack: null,
-            processedLogoUrlBack_white: null, processedLogoUrlBack_black: null, processedLogoUrlBack_noBackground: null,
-            activeLogoColorBack: 'original'
-        } : {
-            originalLogoUrlFront: dataUrl,
-            processedLogoUrlFront_original: dataUrl,
-            isPredefinedLogoFront: false,
-            predefinedLogoUrlFront: null,
-            logoPositionXFront: defaults.x, logoPositionYFront: defaults.y, logoSizeFront: defaults.scale,
-            backgroundRemovedFront: false, logoInvertedFront: false,
-            processedLogoUrlFront: null,
-            processedLogoUrlFront_white: null, processedLogoUrlFront_black: null, processedLogoUrlFront_noBackground: null,
-            activeLogoColorFront: 'original'
-        };
+        let updates: any = {};
+
+        if (targetSlot === 'logo2') {
+            const key = isBack ? 'logoBack2' : 'logoFront2';
+            updates[key] = { originalUrl: dataUrl, processedUrl_original: dataUrl, isPredefined: false, predefinedUrl: null, position: defaults, size: defaults.scale, backgroundRemoved: false, inverted: false, activeColor: 'original', processedUrl: null, processedUrl_noBackground: null };
+        } else if (targetSlot === 'logo3') {
+            const key = isBack ? 'logoBack3' : 'logoFront3';
+            updates[key] = { originalUrl: dataUrl, processedUrl_original: dataUrl, isPredefined: false, predefinedUrl: null, position: defaults, size: defaults.scale, backgroundRemoved: false, inverted: false, activeColor: 'original', processedUrl: null, processedUrl_noBackground: null };
+        } else {
+            if (isBack) {
+                updates = { originalLogoUrlBack: dataUrl, processedLogoUrlBack_original: dataUrl, isPredefinedLogoBack: false, predefinedLogoUrlBack: null, logoPositionXBack: defaults.x, logoPositionYBack: defaults.y, logoSizeBack: defaults.scale, backgroundRemovedBack: false, logoInvertedBack: false, activeLogoColorBack: 'original', processedLogoUrlBack: null, processedLogoUrlBack_noBackground: null };
+            } else {
+                updates = { originalLogoUrlFront: dataUrl, processedLogoUrlFront_original: dataUrl, isPredefinedLogoFront: false, predefinedLogoUrlFront: null, logoPositionXFront: defaults.x, logoPositionYFront: defaults.y, logoSizeFront: defaults.scale, backgroundRemovedFront: false, logoInvertedFront: false, activeLogoColorFront: 'original', processedLogoUrlFront: null, processedLogoUrlFront_noBackground: null };
+            }
+        }
+
         updateItem(updates);
         setUploadedLogoPreview(dataUrl);
-        setActiveEl('logo');
+        setActiveEl(targetSlot);
+        setPendingElement(null);
         logAnalyticsEvent('upload_design', { user_type: isGuest ? 'guest' : 'member' });
         setCameraModalOpen(false);
+    };
+
+    const handlePredefinedLogoSelect = (url: string) => {
+        const rawUrl = Array.isArray(url) ? url[0] : url;
+        const proxiedUrl = getProxiedUrl(rawUrl);
+        setCodeLogoPreview(proxiedUrl);
+
+        let targetSlot = activeEl || 'logo';
+        const hasL1 = isBack ? item.originalLogoUrlBack || item.predefinedLogoUrlBack : item.originalLogoUrlFront || item.predefinedLogoUrlFront;
+        const hasL2 = isBack ? item.logoBack2?.originalUrl || item.logoBack2?.predefinedUrl : item.logoFront2?.originalUrl || item.logoFront2?.predefinedUrl;
+        const hasL3 = isBack ? item.logoBack3?.originalUrl || item.logoBack3?.predefinedUrl : item.logoFront3?.originalUrl || item.logoFront3?.predefinedUrl;
+
+        if (targetSlot === 'logo' && hasL1) {
+            if (!hasL2) targetSlot = 'logo2';
+            else if (!hasL3) targetSlot = 'logo3';
+        } else if (targetSlot === 'logo2' && hasL2) {
+            if (!hasL1) targetSlot = 'logo';
+            else if (!hasL3) targetSlot = 'logo3';
+        } else if (targetSlot === 'logo3' && hasL3) {
+            if (!hasL1) targetSlot = 'logo';
+            else if (!hasL2) targetSlot = 'logo2';
+        }
+
+        const defaults = { x: 50, y: 40, scale: 100 };
+
+        if (targetSlot === 'logo2') {
+            const key = isBack ? 'logoBack2' : 'logoFront2';
+            updateItemUndoable({ [key]: { originalUrl: null, processedUrl_original: proxiedUrl, processedUrl: null, processedUrl_noBackground: null, isPredefined: true, predefinedUrl: proxiedUrl, position: defaults, size: defaults.scale, activeColor: 'original', backgroundRemoved: false } as any });
+        } else if (targetSlot === 'logo3') {
+            const key = isBack ? 'logoBack3' : 'logoFront3';
+            updateItemUndoable({ [key]: { originalUrl: null, processedUrl_original: proxiedUrl, processedUrl: null, processedUrl_noBackground: null, isPredefined: true, predefinedUrl: proxiedUrl, position: defaults, size: defaults.scale, activeColor: 'original', backgroundRemoved: false } as any });
+        } else {
+            updateItemUndoable(isBack
+                ? { predefinedLogoUrlBack: proxiedUrl, originalLogoUrlBack: null, processedLogoUrlBack: null, processedLogoUrlBack_original: proxiedUrl, processedLogoUrlBack_noBackground: null, isPredefinedLogoBack: true, logoPositionXBack: defaults.x, logoPositionYBack: defaults.y, logoSizeBack: defaults.scale, activeLogoColorBack: 'original', backgroundRemovedBack: false }
+                : { predefinedLogoUrlFront: proxiedUrl, originalLogoUrlFront: null, processedLogoUrlFront: null, processedLogoUrlFront_original: proxiedUrl, processedLogoUrlFront_noBackground: null, isPredefinedLogoFront: true, logoPositionXFront: defaults.x, logoPositionYFront: defaults.y, logoSizeFront: defaults.scale, activeLogoColorFront: 'original', backgroundRemovedFront: false }
+            );
+        }
+        setActiveEl(targetSlot);
     };
 
     const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1507,14 +1602,6 @@ export
         }
     };
 
-    const handlePredefinedLogoSelect = (url: string) => {
-        updateItemUndoable(isBack
-            ? { predefinedLogoUrlBack: url, originalLogoUrlBack: null, processedLogoUrlBack: null, processedLogoUrlBack_original: url, isPredefinedLogoBack: true, logoPositionXBack: 50, logoPositionYBack: 50, activeLogoColorBack: 'original' }
-            : { predefinedLogoUrlFront: url, originalLogoUrlFront: null, processedLogoUrlFront: null, processedLogoUrlFront_original: url, isPredefinedLogoFront: true, logoPositionXFront: 50, logoPositionYFront: 50, activeLogoColorFront: 'original' }
-        );
-        setCodeLogoPreview(url);
-        setActiveEl('logo');
-    };
 
     const handleLogoColorChange = async (colorName: string) => {
         const sideKey = isBack ? 'Back' : 'Front';
@@ -1731,33 +1818,31 @@ export
         onAuthRequired(); // Trigger Auth Modal
     };
 
-    const handleAiTryOn = async (userPhoto: string, promptOverride?: string) => {
+    const handleAiTryOn = async (mode: 'front' | 'both' = 'front', promptOverride?: string) => {
         // --- 1. VERIFICATIONS (Quotas & Validité) ---
-
-        // BYPASS CHECK (Admin/IP)
+        const userPhoto = previewImage || capturedImage;
         const isBypassed = ADMIN_IPS.includes(userIp) || (user && user.email === 'logosigneed@gmail.com');
 
         if (!isBypassed) {
-            // CHECK REGISTERED USER CREDITS
+            const neededCredits = mode === 'both' ? 2 : 1;
             if (user) {
-                if ((userCredits || 0) <= 0) {
+                if ((userCredits || 0) < neededCredits) {
                     setGuestLimitModalOpen(true);
                     return;
                 }
-            }
-            // CHECK GUEST QUOTA
-            else {
+            } else {
+                if (mode === 'both') {
+                    setGuestLimitModalOpen(true);
+                    return;
+                }
                 const storageKey = 'guest_ai_quota';
                 let data = { count: 0, resetTime: 0 };
                 try {
                     const stored = localStorage.getItem(storageKey);
                     if (stored) data = JSON.parse(stored);
                 } catch (e) { }
-
                 const now = Date.now();
-                // Reset if time expired
                 const effectiveCount = (now > data.resetTime) ? 0 : data.count;
-
                 if (effectiveCount >= 1) {
                     setGuestLimitModalOpen(true);
                     return;
@@ -1766,152 +1851,125 @@ export
         }
 
         if (!userPhoto || userPhoto === 'data:,' || userPhoto.length < 100) {
-            alert("Erreur: Impossible de récupérer l'image. Veuillez réessayer ou utiliser une autre méthode (Upload/Caméra).");
+            alert("Erreur: Impossible de récupérer l'image. Veuillez réessayer.");
             return;
         }
 
-        if (!isGuest) {
-            setAiModalOpen(false); // Close modal only for members to show progress on main page
-        }
-        setFeedbackGiven(false); // Reset feedback for new generation
+        if (!isGuest) setAiModalOpen(false);
+        setFeedbackGiven(false);
         setShowFeedbackInput(false);
         setFeedbackComment('');
-        setPongScore(0); // Reset Pong Score
-        setPreviewImage(null); // CRITICAL: Close preview overlay to unlock scroll 
+        setPongScore(0);
+        setPreviewImage(null);
 
         logAnalyticsEvent(AnalyticsEvents.GENERATE_AI_START, {
             category: activeStyleCategory,
             style: selectedStylePrompt || 'custom',
+            mode: mode,
             user_type: isGuest ? 'guest' : 'member'
         });
 
         try {
-            const preview = await generatePreview();
-            const resizedUserPhoto = await resizeImage(userPhoto, 800);
+            setAiStep('result');
+            setIsGeneratingLocal(true);
+            const initialIsBack = isBack;
+            const initialActiveView = activeView;
 
-            let finalStyle = promptOverride;
+            const resizedUserPhoto = await resizeImage(userPhoto, 800);
+            let finalStyle = promptOverride || selectedStylePrompt || customStylePrompt;
             let finalCategory = activeStyleCategory as string;
 
-            if (!finalStyle) {
-                if (!selectedStylePrompt && customStylePrompt.trim()) {
-                    finalStyle = customStylePrompt;
-                    finalCategory = 'Custom';
-                } else {
-                    finalStyle = selectedStylePrompt;
-                    const found = allStyles.find(s => s.style.prompt === selectedStylePrompt);
-                    if (found && found.style.glasses) {
-                        finalStyle += `. ${found.style.glasses}`;
+            // HELPER: Single Generation Logic
+            const generateSide = async (side: 'front' | 'back', preview: string) => {
+                if (finalCategory === 'Sans Filtre') {
+                    const currentLogoUrl = side === 'back'
+                        ? (item.processedLogoUrlBack || item.originalLogoUrlBack || item.predefinedLogoUrlBack)
+                        : (item.processedLogoUrlFront || item.originalLogoUrlFront || item.predefinedLogoUrlFront);
+                    let logoBase64 = null;
+                    if (currentLogoUrl) {
+                        try {
+                            logoBase64 = await urlToBase64(getProxiedUrl(Array.isArray(currentLogoUrl) ? currentLogoUrl[0] : currentLogoUrl));
+                        } catch (e) { }
                     }
+                    return await vtonService.generateVTONImage(resizedUserPhoto, preview, finalStyle || 'Standard', logoBase64 || undefined);
+                } else if (onGenerateAi) {
+                    const res = await onGenerateAi({
+                        userPhoto: resizedUserPhoto,
+                        preview,
+                        productName: product.name,
+                        color: item.color,
+                        style: finalStyle || '',
+                        category: finalCategory,
+                        side: side,
+                        currentItemState: item
+                    });
+                    return typeof res === 'string' ? res : res?.imageUrl || res;
                 }
-            }
+                return null;
+            };
 
-            if (onGenerateAi) {
-                setAiStep('result'); 
-                try {
-                    const needsBack = (item.originalLogoUrlBack || item.predefinedLogoUrlBack || (item.textBack?.text && item.textBack?.text !== ''));
-                    const needsFront = (item.originalLogoUrlFront || item.predefinedLogoUrlFront || (item.textFront?.text && item.textFront?.text !== ''));
-                    
-                    const sessionResults: { front?: string, back?: string } = {};
+            if (mode === 'both') {
+                // 1. Capture Front
+                setIsBack(false);
+                setActiveView('front');
+                await new Promise(r => setTimeout(r, 600));
+                const frontPreview = await generatePreview();
 
-                    // 1. Generate Front view if applicable
-                    if (needsFront) {
-                        const startSide = isBack;
-                        if (startSide) {
-                            setIsBack(false);
-                            await new Promise(resolve => setTimeout(resolve, 800));
-                        }
-                        const previewFront = await generatePreview();
-                        if (previewFront) {
-                            setGeneratingSide('front');
-                            await onGenerateAi({
-                                userPhoto: resizedUserPhoto,
-                                preview: previewFront,
-                                side: 'front',
-                                style: finalStyle || '',
-                                category: finalCategory || 'Sans Filtre',
-                                productName: product.name,
-                                color: item.color,
-                                currentItemState: item
-                            });
-                        }
-                        if (startSide) {
-                            setIsBack(true);
-                            await new Promise(resolve => setTimeout(resolve, 800));
-                        }
-                    }
+                // 2. Capture Back
+                setIsBack(true);
+                setActiveView('back');
+                await new Promise(r => setTimeout(r, 600));
+                const backPreview = await generatePreview();
 
-                    // 2. Generate Back view if applicable
-                    if (needsBack) {
-                        const startSide = isBack;
-                        if (!startSide) {
-                            setIsBack(true);
-                            await new Promise(resolve => setTimeout(resolve, 800));
-                        }
-                        const previewBack = await generatePreview();
-                        if (previewBack) {
-                            setGeneratingSide('back');
-                            await onGenerateAi({
-                                userPhoto: resizedUserPhoto,
-                                preview: previewBack,
-                                side: 'back',
-                                style: finalStyle || '',
-                                category: finalCategory || 'Sans Filtre',
-                                productName: product.name,
-                                color: item.color,
-                                currentItemState: item
-                            });
-                        }
-                        if (!startSide) {
-                            setIsBack(false);
-                            await new Promise(resolve => setTimeout(resolve, 800));
-                        }
-                    }
+                // Deduct Credits
+                onDeductCredits(2);
 
-                    if (!isGuest) {
-                        setShowAiResultModal(true);
-                    }
-                } catch (err) {
-                    console.error("AI Generation failed inside Studio IA:", err);
-                    alert("La génération IA a échoué.");
-                    setAiStep('input');
-                } finally {
-                    setIsGeneratingLocal(false);
-                }
-            }
+                const [frontRes, backRes] = await Promise.all([
+                    generateSide('front', frontPreview),
+                    generateSide('back', backPreview)
+                ]);
 
-            // --- QUOTA DEDUCTION ---
-            if (user) {
-                onDeductCredits(1);
+                setAiResults({ front: frontRes || undefined, back: backRes || undefined });
+                if (setAiResult && frontRes) setAiResult(frontRes);
+                setActiveAiView('front');
+
             } else {
-                const storageKey = 'guest_ai_quota';
-                let data = { count: 0, resetTime: Date.now() + (48 * 60 * 60 * 1000) };
-                try {
-                    const stored = localStorage.getItem(storageKey);
-                    if (stored) data = JSON.parse(stored);
-                } catch (e) { }
+                const currentSide = isBack ? 'back' : 'front';
+                const preview = await generatePreview();
+                onDeductCredits(1);
 
-                const now = Date.now();
-                if (now > data.resetTime) {
-                    data = { count: 0, resetTime: now + (48 * 60 * 60 * 1000) };
+                const finalResult = await generateSide(currentSide, preview);
+
+                if (finalResult) {
+                    setAiResults({ [currentSide]: finalResult });
+                    if (setAiResult) setAiResult(finalResult);
+                    setActiveAiView(currentSide);
                 }
 
-                data.count += 1;
-                localStorage.setItem(storageKey, JSON.stringify(data));
+                if (!user) {
+                    const storageKey = 'guest_ai_quota';
+                    let data = { count: 0, resetTime: Date.now() + (48 * 60 * 60 * 1000) };
+                    try {
+                        const stored = localStorage.getItem(storageKey);
+                        if (stored) data = JSON.parse(stored);
+                    } catch (e) { }
+                    data.count++;
+                    localStorage.setItem(storageKey, JSON.stringify(data));
+                }
             }
 
-            // For Guests, we KEEP the modal open to show the Result directly in it!
-            // And we DO NOT change the activeView (meaning the product stays visible behind the modal)
-            if (!isGuest) {
-                setAiModalOpen(false);
-                setIsAiViewVisible(true);
-                // setActiveView('model'); // Removed: Invalid type
-            }
+            // Restore
+            setIsBack(initialIsBack);
+            setActiveView(initialActiveView);
 
-            setCapturedImage(null);
-            setPreviewImage(null);
+            if (!isGuest) setShowAiResultModal(true);
 
-        } catch (e: any) {
-            console.error("AI Error Trigger:", e);
+        } catch (err) {
+            console.error("AI Generation failed:", err);
+            alert("La génération IA a échoué. Cause: " + (err instanceof Error ? err.message : String(err)));
+            setAiStep('input');
+        } finally {
+            setIsGeneratingLocal(false);
         }
     };
 
@@ -1943,7 +2001,8 @@ export
             return;
         }
 
-        if (!aiResult) return;
+        const currentResult = aiResults?.[activeAiView] || aiResult;
+        if (!currentResult) return;
 
         setIsSavingPost(true);
         try {
@@ -2099,10 +2158,6 @@ export
     const hasFrontContent = item.originalLogoUrlFront || item.predefinedLogoUrlFront || item.processedLogoUrlFront;
     const hasBackContent = item.originalLogoUrlBack || item.predefinedLogoUrlBack || item.processedLogoUrlBack;
 
-    // Vérifie si au moins un article a été sélectionné dans les tailles
-    const totalQtySelected = Object.values(selectedSizes).reduce((acc, qty) => acc + (qty as number), 0);
-    const hasAnySize = totalQtySelected > 0;
-
     const isFrontBig = hasFrontContent && (frontDims.w > 35 || frontDims.h > 35);
     const isBackBig = hasBackContent && (backDims.w > 35 || backDims.h > 35);
 
@@ -2249,40 +2304,12 @@ export
             console.warn("Cart Click Blocked: Capture in progress");
             return;
         }
+
+        if (!checkSizeBeforeProceeding()) return;
         setIsCapturing(true);
         try {
-            const hasSizes = Object.values(selectedSizes).some(qty => (qty as number) > 0);
-            if (!hasSizes) {
-                setShakeSizes(true);
-                setShowSizeError(true);
-                setTimeout(() => {
-                    setShowSizeError(false);
-                    setShakeSizes(false);
-                }, 3000);
-
-                // Show new tooltip
-                setShowCartTooltip(true);
-                setTimeout(() => setShowCartTooltip(false), 3000);
-
-                // Toast/Alert to force feedback
-                if (showToast) showToast("Veuillez sélectionner une taille !", "error");
-                else alert("Veuillez sélectionner une taille !");
-
-                // Scroll to size selector
-                // Scroll to size selector
-                const isMobile = window.innerWidth < 1024;
-                const sizeSelector = document.getElementById(isMobile ? 'size-selector-mobile' : 'size-selector-desktop');
-
-                if (sizeSelector) {
-                    sizeSelector.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    sizeSelector.style.animation = 'pulse 0.5s ease-in-out';
-                    setTimeout(() => {
-                        sizeSelector.style.animation = '';
-                    }, 500);
-                }
-                setIsCapturing(false);
-                return;
-            }
+            // Capture and proceed
+            console.log("[HandleAddToCart] Starting capture and add to cart flow");
 
 
 
@@ -2448,83 +2475,87 @@ export
             : (isBack ? item.textBack : item.textFront);
 
     const handleTextButtonClick = () => {
-        // Toggle Panel Check
-        const isTextOpen = activePanel === 'text';
+        executeWithAiGuard(() => {
+            // Toggle Panel Check
+            const isTextOpen = activePanel === 'text';
 
-        if (isTextOpen) {
-            // FIX: If already open, clicking "Text" again should "Reset" view, not close.
-            // Users think it's broken if it closes.
-            setPanelOffsets(prev => ({ ...prev, text: { x: 0, y: 0 } })); // Force visible
-            if (!activeEl) {
-                setActiveEl('text'); // Select default text
-            }
-        } else {
-            // Open Logic
-            setActivePanel('text');
-
-            if (!activeText.text) {
-                const isText2 = activeEl === 'text2';
-                const targetKey = isBack ? (isText2 ? 'textBack2' : 'textBack') : (isText2 ? 'textFront2' : 'textFront');
-                // @ts-ignore
-                const newText = { ...(item[targetKey] || getDefaultText()) };
-                newText.text = '';
-                newText.position = { x: 50, y: isText2 ? 60 : 40 };
-                // @ts-ignore
-                updateItem({ [targetKey]: newText });
-                setActiveEl(isText2 ? 'text2' : 'text');
-                setTextOptionsOpen(true);
-                setPanelOffsets(prev => ({ ...prev, text: { x: 0, y: 0 } }));
+            if (isTextOpen) {
+                // FIX: If already open, clicking "Text" again should "Reset" view, not close.
+                // Users think it's broken if it closes.
+                setPanelOffsets(prev => ({ ...prev, text: { x: 0, y: 0 } })); // Force visible
+                if (!activeEl) {
+                    setActiveEl('text'); // Select default text
+                }
             } else {
-                setTextOptionsOpen(!textOptionsOpen);
-                setActiveEl('text');
-                setPanelOffsets(prev => ({ ...prev, text: { x: 0, y: 0 } }));
+                // Open Logic
+                setActivePanel('text');
+
+                if (!activeText.text) {
+                    const isText2 = activeEl === 'text2';
+                    const targetKey = isBack ? (isText2 ? 'textBack2' : 'textBack') : (isText2 ? 'textFront2' : 'textFront');
+                    // @ts-ignore
+                    const newText = { ...(item[targetKey] || getDefaultText()) };
+                    newText.text = '';
+                    newText.position = { x: 50, y: isText2 ? 60 : 40 };
+                    // @ts-ignore
+                    updateItem({ [targetKey]: newText });
+                    setActiveEl(isText2 ? 'text2' : 'text');
+                    setTextOptionsOpen(true);
+                    setPanelOffsets(prev => ({ ...prev, text: { x: 0, y: 0 } }));
+                } else {
+                    setTextOptionsOpen(!textOptionsOpen);
+                    setActiveEl('text');
+                    setPanelOffsets(prev => ({ ...prev, text: { x: 0, y: 0 } }));
+                }
             }
-        }
+        });
     };
 
     const handleImportButtonClick = (e?: any) => {
-        // Force stop propagation to prevent carousel drag interference
-        if (e) {
-            e.stopPropagation();
-            e.preventDefault();
-        }
+        executeWithAiGuard(() => {
+            // Force stop propagation to prevent carousel drag interference
+            if (e) {
+                e.stopPropagation();
+                e.preventDefault();
+            }
 
-        const hasLogo = isBack
-            ? (item.predefinedLogoUrlBack || item.originalLogoUrlBack || item.processedLogoUrlBack)
-            : (item.originalLogoUrlFront || item.predefinedLogoUrlFront || item.processedLogoUrlFront);
+            const hasLogo = isBack
+                ? (item.predefinedLogoUrlBack || item.originalLogoUrlBack || item.processedLogoUrlBack)
+                : (item.originalLogoUrlFront || item.predefinedLogoUrlFront || item.processedLogoUrlFront);
 
-        console.log("Mobile Option Clicked", { hasLogo, activePanel });
+            console.log("Mobile Option Clicked", { hasLogo, activePanel });
 
-        // LOGIC FIX: If panel is already open AND activeEl matches, then close. Otherwise OPEN.
-        const isPanelOpen = activePanel === 'import';
+            // LOGIC FIX: If panel is already open AND activeEl matches, then close. Otherwise OPEN.
+            const isPanelOpen = activePanel === 'import';
 
-        if (isPanelOpen) {
-            // USER REQUEST FIX: If panel is already "open", clicking the button again means "SHOW ME THE OPTIONS" (Reset/Verify).
-            // It should NOT close it, because users get confused if they lost the panel.
-            // Force reset visibility and ensure selection.
-            setPanelOffsets(prev => ({ ...prev, import: { x: 0, y: 0 } }));
+            if (isPanelOpen) {
+                // USER REQUEST FIX: If panel is already "open", clicking the button again means "SHOW ME THE OPTIONS" (Reset/Verify).
+                // It should NOT close it, because users get confused if they lost the panel.
+                // Force reset visibility and ensure selection.
+                setPanelOffsets(prev => ({ ...prev, import: { x: 0, y: 0 } }));
 
-            // Re-assert selection if logo exists
-            if (hasLogo) {
-                // Determine which logo to select? Usually 'logo'.
-                // If activeEl is already 'logo', maybe blink it?
-                if (activeEl !== 'logo') {
-                    setActiveEl('logo');
+                // Re-assert selection if logo exists
+                if (hasLogo) {
+                    // Determine which logo to select? Usually 'logo'.
+                    // If activeEl is already 'logo', maybe blink it?
+                    if (activeEl !== 'logo') {
+                        setActiveEl('logo');
+                    }
+                }
+                // Do NOT close.
+            } else {
+                // OPEN PANEL & RESET POSITION
+                setPanelOffsets(prev => ({ ...prev, import: { x: 0, y: 0 } }));
+
+                if (hasLogo) {
+                    // Delayed selection to allow panel open animation/render to start
+                    setTimeout(() => setActiveEl('logo'), 50);
+                    setActivePanel('import');
+                } else {
+                    setActivePanel('import'); // Show upload
                 }
             }
-            // Do NOT close.
-        } else {
-            // OPEN PANEL & RESET POSITION
-            setPanelOffsets(prev => ({ ...prev, import: { x: 0, y: 0 } }));
-
-            if (hasLogo) {
-                // Delayed selection to allow panel open animation/render to start
-                setTimeout(() => setActiveEl('logo'), 50);
-                setActivePanel('import');
-            } else {
-                setActivePanel('import'); // Show upload
-            }
-        }
+        });
     };
 
     const handleCameraButtonClick = () => {
@@ -2642,12 +2673,14 @@ export
         {
             id: 'ai',
             icon: 'fa-wand-magic-sparkles',
-            label: aiResult ? 'Voir IA' : 'Essayage',
+            label: aiResult ? 'Voir IA' : 'IA',
             action: () => {
                 if (aiResult) {
                     setShowAiResultModal(true);
                 } else {
-                    setAiModalOpen(true);
+                    if (checkSizeBeforeProceeding()) {
+                        setAiModalOpen(true);
+                    }
                 }
             },
             className: `animate-bounce-ia !bg-orange-600 !text-white !scale-110 shadow-lg`
@@ -2700,7 +2733,9 @@ export
     };
 
     const handleColorChangeRequest = (newColor: string) => {
-        updateItem({ color: newColor });
+        executeWithAiGuard(() => {
+            updateItem({ color: newColor });
+        });
     };
 
     const nextColor = () => {
@@ -2800,7 +2835,7 @@ export
                 className="sr-only" // Changed from 'hidden' to ensure label triggers work reliably
                 onChange={handleImageUpload}
                 tabIndex={-1}
-            />
+             />
             {/* Hidden Input for Desktop/File Upload (No Capture) */}
             <input
                 type="file"
@@ -2827,9 +2862,7 @@ export
                                     <a href={product.supplierLink} target="_blank" rel="noopener noreferrer" className="text-[10px] flex items-center gap-1 text-gray-400 hover:text-blue-600 transition-colors" title="Fiche Technique">
                                         <i className="fa-solid fa-file-contract"></i> Info
                                     </a>
-                                )}
-                            </div>
-                        </div>
+                                )}</div>
                         <button onClick={() => changeProductType('next')} className="text-orange-600 hover:text-orange-800 p-2 font-black text-2xl transition-transform hover:scale-120">
                             <i data-layout-id="garment-selector-next" className="fa-solid fa-chevron-right"></i>
                         </button>
@@ -2890,7 +2923,7 @@ export
                                                 src={getProxiedUrl(getOptimizedImageUrl(isBack ? product.backImages[colors[prevIndex]] : product.images[colors[prevIndex]], 200))}
                                                 className="w-full h-full object-contain transition-opacity dropdown-shadow-md"
                                                 alt="Précédent"
-                                            />
+                                             />
                                         </div>
                                     </button>
                                     {/* Layer 2: Arrow (In Front and further out) */}
@@ -2917,7 +2950,7 @@ export
                                             src={getProxiedUrl(getOptimizedImageUrl(isBack ? product.backImages[colors[prevIndex]] : product.images[colors[prevIndex]], 200))}
                                             className="absolute inset-0 w-full h-full object-cover opacity-90"
                                             alt="Précédent"
-                                        />
+                                         />
                                         <div className="absolute inset-0 flex items-center justify-center bg-black/10">
                                             <i className="fa-solid fa-chevron-left text-white drop-shadow-md text-xs font-bold"></i>
                                         </div>
@@ -2980,11 +3013,22 @@ export
                                 className="relative w-full h-full lg:aspect-[3/4] bg-transparent lg:bg-transparent select-none p-0 lg:p-6 flex items-center justify-center z-20"
                                 style={{ transform: `scale(${zoomLevel})` }}
                             >
-                                <div
+                                <div 
                                     id="preview-container"
-                                    className="w-full h-full relative"
+                                    className={`w-full h-full relative ${aiResult ? 'pointer-events-none opacity-80' : ''}`}
                                     style={{ top: '0px' }}
                                 >
+                                    {/* Contenu du canvas (logos, textes...) */}
+                                    
+                                    {/* Overlay de verrouillage visuel si aiResult existe */}
+                                    {aiResult && (
+                                        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-white/10 backdrop-blur-[2px] rounded-2xl">
+                                            <div className="bg-gray-900/80 text-white px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-2xl">
+                                                <i className="fa-solid fa-lock text-orange-500"></i>
+                                                Édition verrouillée (Rendu IA actif)
+                                            </div>
+                                        </div>
+                                    )}
                                     {/* ALIGNMENT GUIDES (6x6 Grid) */}
                                     {showGuides && (
                                         <div className="absolute inset-0 z-[100] pointer-events-none overflow-hidden">
@@ -3022,7 +3066,7 @@ export
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <PongGame onScore={setPongScore} transparent={true} />
+                                                    <PongGame onScore={setPongScore} transparent={true}  />
                                                 )}
                                             </div>
                                         </div>
@@ -3124,6 +3168,34 @@ export
                                             )}
                                             {/* Legacy Slot 1 Helper (already handled above) */}
 
+                                            {/* Slot 2 Logo */}
+                                            {(isBack ? item.logoBack2?.originalUrl || item.logoBack2?.predefinedUrl : item.logoFront2?.originalUrl || item.logoFront2?.predefinedUrl) && (
+                                                <DraggableElement
+                                                    id={isBack ? "logoBack2" : "logoFront2"} type="logo" item={item} side={isBack ? "Back" : "Front"}
+                                                    isActive={activeEl === 'logo2'} setActive={() => setActiveEl('logo2')}
+                                                    onOpenOptions={() => setActivePanel('import')} onUpdate={updateItem} onSaveHistory={saveHistory}
+                                                    isEditable={true} realHeight={productDimensions?.[item.productType]?.[previewSize]}
+                                                    showDimensions={isMeasureToolActive}
+                                                    onDragStart={() => handleDragStart(isBack ? "logoBack2" : "logoFront2")}
+                                                    onDragUpdate={handleDragUpdate}
+                                                    onReportDimensions={(w, h) => handleReportDimensions('logo2', w, h)}
+                                                />
+                                            )}
+
+                                            {/* Slot 3 Logo */}
+                                            {(isBack ? item.logoBack3?.originalUrl || item.logoBack3?.predefinedUrl : item.logoFront3?.originalUrl || item.logoFront3?.predefinedUrl) && (
+                                                <DraggableElement
+                                                    id={isBack ? "logoBack3" : "logoFront3"} type="logo" item={item} side={isBack ? "Back" : "Front"}
+                                                    isActive={activeEl === 'logo3'} setActive={() => setActiveEl('logo3')}
+                                                    onOpenOptions={() => setActivePanel('import')} onUpdate={updateItem} onSaveHistory={saveHistory}
+                                                    isEditable={true} realHeight={productDimensions?.[item.productType]?.[previewSize]}
+                                                    showDimensions={isMeasureToolActive}
+                                                    onDragStart={() => handleDragStart(isBack ? "logoBack3" : "logoFront3")}
+                                                    onDragUpdate={handleDragUpdate}
+                                                    onReportDimensions={(w, h) => handleReportDimensions('logo3', w, h)}
+                                                />
+                                            )}
+
                                             {(isBack ? item.textBack.text : item.textFront.text) && (
                                                 <DraggableElement
                                                     id={isBack ? "textBack" : "textFront"} type="text" item={item} side={isBack ? "Back" : "Front"}
@@ -3216,7 +3288,7 @@ export
                                                 src={getProxiedUrl(getOptimizedImageUrl(isBack ? product.backImages[colors[nextIndex]] : product.images[colors[nextIndex]], 200))}
                                                 className="w-full h-full object-contain transition-opacity drop-shadow-md"
                                                 alt="Suivant"
-                                            />
+                                             />
                                         </div>
                                     </button>
                                     {/* Layer 2: Arrow */}
@@ -3243,7 +3315,7 @@ export
                                             src={getProxiedUrl(getOptimizedImageUrl(isBack ? product.backImages[colors[nextIndex]] : product.images[colors[nextIndex]], 200))}
                                             className="absolute inset-0 w-full h-full object-cover opacity-90"
                                             alt="Suivant"
-                                        />
+                                         />
                                         <div className="absolute inset-0 flex items-center justify-center bg-black/10">
                                             <i className="fa-solid fa-chevron-right text-white drop-shadow-md text-xs font-bold"></i>
                                         </div>
@@ -3286,15 +3358,20 @@ export
                                                 </div>
                                             </button>
                                             <button
-                                                onClick={() => { setShowValidateOptions(false); setAiModalOpen(true); }}
+                                                onClick={() => { 
+                                                    setShowValidateOptions(false); 
+                                                    if (checkSizeBeforeProceeding()) {
+                                                        setAiModalOpen(true); 
+                                                    }
+                                                }}
                                                 className="w-full px-5 py-4 flex items-center gap-3 hover:bg-orange-50 transition-colors border-t border-gray-100 group"
                                             >
                                                 <div className="w-12 h-12 rounded-xl bg-orange-600 text-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
                                                     <i className="fa-solid fa-wand-sparkles text-lg"></i>
                                                 </div>
                                                 <div className="text-left">
-                                                    <span className="text-sm font-black text-gray-900 block">Essayage intelligent</span>
-                                                    <span className="text-[10px] text-gray-400 font-bold">Preview 1:1 sur votre photo</span>
+                                                    <span className="text-sm font-black text-gray-900 block">Essayage Intelligent</span>
+                                                    <span className="text-[10px] text-gray-400 font-bold">Essayage virtuel & preview</span>
                                                 </div>
                                             </button>
                                         </div>
@@ -3577,20 +3654,20 @@ export
                                                 onClick={() => setShowAiResultModal(true)}
                                                 className="w-24 aspect-[9/16] rounded-2xl border-2 border-orange-500 overflow-hidden shadow-2xl cursor-pointer transform hover:scale-110 transition-all relative group bg-white"
                                             >
-                                                <img src={aiResult} className="w-full h-full object-cover" alt="AI Preview" />
+                                                <img src={aiResult} className="w-full h-full object-cover" alt="AI Preview"  />
                                                 <div className="absolute inset-0 bg-black/10 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                                                     <i className="fa-solid fa-expand text-white text-xl"></i>
                                                 </div>
                                             </div>
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); if (setAiResult) setAiResult(null); }}
+                                                onClick={(e) => { e.stopPropagation(); if (setAiResult) setAiResult(null); setAiResults(null); }}
                                                 className="absolute -top-3 -right-3 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 z-10"
-                                                title="Supprimer la création IA"
+                                                title="Supprimer l'essayage virtuel"
                                             >
                                                 <i className="fa-solid fa-times text-sm"></i>
                                             </button>
                                         </div>
-                                        <span className="text-[11px] font-black text-orange-600 uppercase tracking-widest">Voir ma création IA en HD</span>
+                                        <span className="text-[11px] font-black text-orange-600 uppercase tracking-widest">Voir mon essayage virtuel en HD</span>
                                     </>
                                 ) : null}
                             </div>
@@ -3643,26 +3720,15 @@ export
                                     {sharingLoading ? 'Partager' : 'Partager'}
                                 </button>
                                 <button
-                                    onClick={handleAddToCartAction}
-                                    disabled={isCapturing}
-                                    className={`flex-[2] py-5 rounded-2xl font-black uppercase tracking-widest text-sm shadow-xl transition-all flex items-center justify-center gap-3 active:scale-95 ${
-                                        hasAnySize 
-                                            ? 'bg-green-500 text-white hover:bg-green-400 hover:shadow-green-500/20 hover:scale-[1.02]' 
-                                            : 'bg-gray-900 text-white hover:bg-black hover:shadow-gray-900/40'
-                                    }`}
+                                    onClick={handleAddToCart}
+                                    disabled={Object.values(selectedSizes).every(q => q === 0)}
+                                    className={`flex-[2] py-5 rounded-2xl font-black uppercase tracking-widest text-sm shadow-xl transition-all flex items-center justify-center gap-3 active:scale-95 ${Object.values(selectedSizes).every(q => q === 0)
+                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
+                                        : 'bg-gray-900 text-white hover:bg-black hover:shadow-gray-900/40'
+                                        }`}
                                 >
-                                    <i className={`fa-solid ${
-                                        isCapturing ? 'fa-circle-notch fa-spin' : 
-                                        hasAnySize ? 'fa-cart-shopping' : 'fa-check-double'
-                                    }`}></i>
-                                    <span>
-                                        {isCapturing 
-                                            ? 'Patientez...' 
-                                            : hasAnySize 
-                                                ? 'AJOUTER AU PANIER' 
-                                                : 'VALIDER MON DESIGN'
-                                        }
-                                    </span>
+                                    <span>Ajouter</span>
+                                    <i className="fa-solid fa-cart-shopping"></i>
                                 </button>
                             </div>
 
@@ -3696,13 +3762,14 @@ export
 
                     {/* --- MOBILE TOOLS & COLORS (INLINE) --- */}
                     <div className="lg:hidden w-full px-4 mt-auto mb-6 flex flex-col gap-4 relative z-50">
+                        <Fragment>
 
                         {/* 2.5 AI RESULT THUMBNAIL (MOVED ABOVE TOOLBAR) */}
 
 
                         {/* 1. TOOLS BAR CAROUSEL OR STEP 3 HERO */}
                         {currentStep === 3 ? (
-                            <div className="flex items-center justify-between gap-4 w-full h-[85px] px-4 bg-white/40 backdrop-blur-xl rounded-3xl border border-white/20 shadow-2xl animate-fade-in mt-4">
+                                                        <div className="flex items-center justify-between gap-2 w-full h-[85px] px-4 bg-white/40 backdrop-blur-xl rounded-3xl border border-white/20 shadow-2xl animate-fade-in mt-4">
                                 <button
                                     onClick={() => {
                                         const nextState = !isMeasureToolActive;
@@ -3717,7 +3784,19 @@ export
                                 </button>
 
                                 <button
-                                    onClick={handleAddToCartAction}
+                                    onClick={() => {
+                                        if (checkSizeBeforeProceeding()) setAiModalOpen(true);
+                                    }}
+                                    className="w-14 h-14 flex flex-col items-center justify-center rounded-2xl bg-orange-600 text-white shadow-lg animate-bounce-ia transition-all active:scale-95"
+                                >
+                                    <i className="fa-solid fa-wand-magic-sparkles text-lg"></i>
+                                    <span className="text-[8px] font-bold mt-1 uppercase">Essayer</span>
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        if (checkSizeBeforeProceeding()) setShowValidateOptions(true);
+                                    }}
                                     disabled={isCapturing}
                                     className="relative flex-1 h-[60px] bg-gray-900 text-white font-black rounded-2xl shadow-xl flex flex-col items-center justify-center gap-0 hero-btn-glow transform active:scale-95 transition-all"
                                 >
@@ -3761,14 +3840,16 @@ export
                                     tools={mobileTools}
                                     activeToolId={activePanel}
                                     onToolSelect={() => { }}
-                                />
-                            </div>)}
+                                 />
+                            </div>
+                        )}
 
                         <div className="hidden">
                             <input id="hidden-file-input" type="file" accept="image/*" onChange={handleLogoUpload} />
                             <input id="hidden-camera-input" type="file" accept="image/*" capture="environment" onChange={handleLogoUpload} />
                         </div>
 
+                        {/* 3. MOBILE SIZE SELECTOR & CART */}
                         {/* 3. MOBILE SIZE SELECTOR & CART */}
                         <div className="mobile-size-cart-container lg:hidden" id="size-selector-mobile">
                             <div className="bg-white p-3 rounded-2xl border border-gray-100 shadow-sm w-full">
@@ -3798,13 +3879,13 @@ export
                                         return (
                                             <div key={size} className={`flex items-center rounded-lg border transition-all overflow-hidden ${qty > 0 ? 'bg-gray-900 border-gray-900 shadow-md' : 'bg-white border-gray-200'}`}>
                                                 {qty > 0 ? (
-                                                    <>
+                                                    <Fragment key={size}>
                                                         <button onClick={() => updateSizeQuantity(size, -1)} className="w-8 h-8 flex items-center justify-center text-white font-bold">-</button>
                                                         <div className="h-8 px-2 flex items-center justify-center bg-gray-900 text-white font-bold text-[10px] min-w-[2.5rem]">
                                                             {size}<span className="text-[8px] ml-0.5 opacity-70">x{qty}</span>
                                                         </div>
                                                         <button onClick={() => updateSizeQuantity(size, 1)} className="w-8 h-8 flex items-center justify-center text-white font-bold">+</button>
-                                                    </>
+                                                    </Fragment>
                                                 ) : (
                                                     <button onClick={() => updateSizeQuantity(size, 1)} className="w-10 h-8 flex items-center justify-center text-gray-600 font-bold text-[10px]">
                                                         {size}
@@ -3813,21 +3894,12 @@ export
                                             </div>
                                         );
                                     })}
-
-                                    {/* TOGGLE BUTTON FOR MORE SIZES */}
-                                    <button
-                                        onClick={() => setShowAllSizes(!showAllSizes)}
-                                        className="h-8 px-3 flex items-center justify-center bg-gray-100 text-gray-600 font-bold text-[10px] rounded-lg border border-gray-200 hover:bg-gray-200 transition-colors"
-                                    >
+                                    <button onClick={() => setShowAllSizes(!showAllSizes)} className="h-8 px-3 flex items-center justify-center bg-gray-100 text-gray-600 font-bold text-[10px] rounded-lg border border-gray-200 hover:bg-gray-200 transition-colors">
                                         {showAllSizes ? 'Voir -' : 'Voir +'}
                                     </button>
                                 </div>
                             </div>
-
-                            {/* Size guide link moved to top */}
                         </div>
-
-                        {/* MOBILE AI STUDIO RESULT & LOADING STATE */}
                         {(aiGenerating || isGeneratingLocal || aiResult) && (
                             <div className="w-full bg-white/80 backdrop-blur-md rounded-2xl border border-white/20 shadow-lg px-4 py-3 flex flex-col gap-2 lg:hidden mt-2">
                                 <div className="flex items-center justify-between mb-1">
@@ -3849,7 +3921,7 @@ export
                                             onClick={() => setShowAiResultModal(true)}
                                             className="relative w-32 aspect-[9/16] rounded-xl overflow-hidden border-2 border-orange-500 cursor-pointer group shadow-sm bg-gray-50"
                                         >
-                                            <img src={aiResult!} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="AI Generated Result" />
+                                            <img src={aiResult!} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" alt="AI Generated Result"  />
                                             <div className="absolute inset-0 bg-black/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <i className="fa-solid fa-expand text-white text-3xl drop-shadow-md"></i>
                                             </div>
@@ -3859,9 +3931,9 @@ export
                                             </div>
                                         </div>
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); if (setAiResult) setAiResult(null); }}
+                                            onClick={(e) => { e.stopPropagation(); if (setAiResult) setAiResult(null); setAiResults(null); }}
                                             className="absolute -top-3 -right-3 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 z-10"
-                                            title="Supprimer la création IA"
+                                            title="Supprimer l'essayage virtuel"
                                         >
                                             <i className="fa-solid fa-times text-sm"></i>
                                         </button>
@@ -3916,6 +3988,7 @@ export
                                 </div>
                             )}
                         </div>
+                        </Fragment>
                         {/* END ATELIER */}
                     </div>
 
@@ -4001,108 +4074,7 @@ export
                     document.body
                 )}
 
-                {/* AI RESULT PREVIEW MODAL - PREMIUM DOUBLE VIEW */}
-                {showAiResultModal && (aiResults || aiResult) && createPortal(
-                    <div className="fixed inset-0 z-[10001] bg-black/95 backdrop-blur-md flex items-center justify-center animate-fade-in p-4 md:p-8">
-                        <button
-                            onClick={() => setShowAiResultModal(false)}
-                            className="absolute top-4 right-4 md:top-8 md:right-8 w-12 h-12 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-full text-white z-50 transition-colors"
-                        >
-                            <i className="fa-solid fa-xmark text-xl"></i>
-                        </button>
-
-                        <div className="flex flex-col md:flex-row w-full h-full max-w-7xl mx-auto gap-6 md:gap-12 items-center justify-center overflow-y-auto">
-                            {/* IMAGE CONTAINER(S) */}
-                            <div className="flex-1 w-full flex flex-col md:flex-row items-center justify-center gap-6 overflow-visible py-10">
-                                {aiResults?.front && (
-                                    <div className="h-[50vh] md:h-[70vh] aspect-[9/16] relative rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/10 bg-black/20 group animate-slide-up">
-                                        <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/40 backdrop-blur-md rounded-full border border-white/20">
-                                            <span className="text-[10px] font-black text-white uppercase tracking-widest">Face</span>
-                                        </div>
-                                        <img src={aiResults.front} className="w-full h-full object-cover" alt="AI Front" />
-                                    </div>
-                                )}
-                                
-                                {aiResults?.back && (
-                                    <div className="h-[50vh] md:h-[70vh] aspect-[9/16] relative rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/10 bg-black/20 group animate-slide-up" style={{ animationDelay: '0.2s' }}>
-                                        <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/40 backdrop-blur-md rounded-full border border-white/20">
-                                            <span className="text-[10px] font-black text-white uppercase tracking-widest">Dos</span>
-                                        </div>
-                                        <img src={aiResults.back} className="w-full h-full object-cover" alt="AI Back" />
-                                    </div>
-                                )}
-
-                                {!aiResults && aiResult && (
-                                    <div className="h-[65vh] md:h-[85vh] aspect-[9/16] relative rounded-3xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/10 bg-black/20 animate-fade-in">
-                                        <img src={aiResult} className="w-full h-full object-cover" alt="AI Single" />
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* ACTIONS PANEL */}
-                            <div className="w-full md:w-96 flex-shrink-0 flex flex-col gap-4 bg-white/5 backdrop-blur-2xl p-8 rounded-[40px] border border-white/10 shadow-2xl">
-                                <div className="text-center mb-4">
-                                    <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4 border border-green-500/30">
-                                        <i className="fa-solid fa-wand-magic-sparkles text-2xl text-green-400"></i>
-                                    </div>
-                                    <h3 className="text-3xl font-black text-white tracking-tight uppercase">C'est Prêt !</h3>
-                                    <p className="text-white/50 font-bold uppercase tracking-widest text-[10px] mt-2">Votre design personnalisé par l'IA</p>
-                                </div>
-
-                                <button
-                                    onClick={() => {
-                                        setCapturedImage(null);
-                                        setShowAiResultModal(false);
-                                        if (onAddToCart) onAddToCart(item);
-                                    }}
-                                    className="w-full py-6 bg-gradient-to-r from-green-600 to-green-400 text-white font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-green-900/40 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center justify-center gap-4 group"
-                                >
-                                    <span>Commander ce design</span>
-                                    <i className="fa-solid fa-cart-shopping text-xl group-hover:translate-x-1 transition-transform"></i>
-                                </button>
-
-                                <button
-                                    onClick={() => {
-                                        if (setAiResult) setAiResult(null);
-                                        setAiResults(null);
-                                        setShowAiResultModal(false);
-                                        setAiStep('input');
-                                    }}
-                                    className="w-full py-4 bg-white/10 text-white/80 font-bold rounded-2xl hover:bg-white/20 hover:text-white transition-all flex items-center justify-center gap-3 border border-white/5"
-                                >
-                                    <i className="fa-solid fa-rotate-left"></i>
-                                    RECOMMENCER
-                                </button>
-                                
-                                <button
-                                    id="btn-save-profile-studio"
-                                    onClick={async () => {
-                                        if (!user) {
-                                            onAuthRequired();
-                                        } else {
-                                            const btn = document.getElementById('btn-save-profile-studio');
-                                            if (btn) {
-                                                const original = btn.innerHTML;
-                                                btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i>';
-                                                try {
-                                                    await onSaveToProfile(aiResult || aiResults?.front || '', selectedAiPrompt || customStylePrompt, selectedStyleName || activeStyleCategory, item);
-                                                    btn.innerHTML = '<i class="fa-solid fa-check"></i> SAUVEGARDÉ';
-                                                } catch(e) {
-                                                    btn.innerHTML = original;
-                                                }
-                                            }
-                                        }
-                                    }}
-                                    className="w-full py-3 bg-white/5 text-white/50 text-[10px] font-bold rounded-xl border border-white/10 hover:bg-white/10 transition-all uppercase tracking-widest"
-                                >
-                                    {user ? 'Sauvegarder dans mon profil' : 'Se connecter pour sauvegarder'}
-                                </button>
-                            </div>
-                        </div>
-                    </div>,
-                    document.body
-                )}
-
+/* MODAL MOVED */
 
 
                 {/* IMPORT/COLOR PANEL */}
@@ -4111,34 +4083,84 @@ export
                         <div data-layout-id="desktop-panel-import" className="fixed inset-0 z-[9999] flex items-end lg:items-start justify-center lg:justify-end bg-transparent lg:pt-16 p-0 lg:p-4 pointer-events-none" style={{ display: 'flex', opacity: 1, visibility: 'visible', top: 0 }}>
                             <div
                                 className="w-full lg:max-w-sm bg-white lg:border border-gray-200 p-6 rounded-t-2xl lg:rounded-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] lg:shadow-2xl flex flex-col gap-4 relative pointer-events-auto touch-none select-none cursor-grab active:cursor-grabbing lg:translate-x-0 lg:translate-y-0"
-                                style={{
-                                    // MOBILE SAFETY: Ignore offsets on mobile, fix at bottom. Desktop uses transform.
-                                    transform: window.innerWidth >= 1024 ? `translate(${panelOffsets.import.x}px, ${panelOffsets.import.y}px)` : 'none',
-                                    marginTop: '0'
-                                }}
+                                style={window.innerWidth >= 1024 ? { transform: 'translate(' + panelOffsets.import.x + 'px, ' + panelOffsets.import.y + 'px)', marginTop: '0' } : { transform: 'none', marginTop: '0' }}
                                 onPointerDown={(e) => handlePanelDragStart(e, 'import')}
                                 onPointerMove={handlePanelDragMove}
                                 onPointerUp={handlePanelDragEnd}
                             >
-                                {/* NEW: Handle visual indicator */}
                                 <div className="absolute top-2 left-1/2 -translate-x-1/2 w-8 h-1 bg-gray-200 rounded-full cursor-grab active:cursor-grabbing"></div>
 
-                                <button onClick={() => setActivePanel('none')} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full hover:bg-gray-200 transition-colors no-drag"><i className="fa-solid fa-times text-gray-500"></i></button>
+                                <div className="flex justify-between items-center mb-2 no-drag">
+                                    <h3 className="font-bold text-gray-800 text-lg">Options Image</h3>
+                                    <button onClick={() => setActivePanel('none')} className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"><i className="fa-solid fa-times text-gray-500"></i></button>
+                                </div>
 
-                                {/* LOGO SLOTS REMOVED - FORCED SINGLE LOGO */}
+                                {/* ONGLETS MULTI-LOGOS */}
+                                <div className="flex bg-gray-100 p-1 rounded-lg gap-1 no-drag">
+                                    <button
+                                        onClick={(e) => { e.preventDefault(); setActiveEl('logo'); }}
+                                        className={"flex-1 py-1.5 text-xs font-bold rounded-md transition-all " + ((activeEl !== 'logo2' && activeEl !== 'logo3') ? "bg-white shadow text-orange-600" : "text-gray-500 hover:bg-gray-200")}
+                                    >
+                                        Logo 1
+                                    </button>
+                                    <button
+                                        onClick={(e) => { e.preventDefault(); setActiveEl('logo2'); }}
+                                        className={"flex-1 py-1.5 text-xs font-bold rounded-md transition-all " + (activeEl === 'logo2' ? "bg-white shadow text-orange-600" : "text-gray-500 hover:bg-gray-200")}
+                                    >
+                                        Logo 2
+                                    </button>
+                                    <button
+                                        onClick={(e) => { e.preventDefault(); setActiveEl('logo3'); }}
+                                        className={"flex-1 py-1.5 text-xs font-bold rounded-md transition-all " + (activeEl === 'logo3' ? "bg-white shadow text-orange-600" : "text-gray-500 hover:bg-gray-200")}
+                                    >
+                                        Logo 3
+                                    </button>
+                                </div>
 
                                 {(() => {
-                                    const logoData = {
-                                        originalUrl: isBack ? item.originalLogoUrlBack : item.originalLogoUrlFront,
-                                        predefinedUrl: isBack ? item.predefinedLogoUrlBack : item.predefinedLogoUrlFront,
-                                        processedUrl: isBack ? item.processedLogoUrlBack : item.processedLogoUrlFront,
-                                        processedUrl_original: isBack ? item.processedLogoUrlBack_original : item.processedLogoUrlFront_original,
-                                        backgroundRemoved: isBack ? item.backgroundRemovedBack : item.backgroundRemovedFront,
-                                        activeColor: isBack ? item.activeLogoColorBack : item.activeLogoColorFront,
-                                        inverted: isBack ? item.logoInvertedBack : item.logoInvertedFront
+                                    // LOGIQUE MULTI-LOGOS INTERNE
+                                    const getActiveLogoData = () => {
+                                        if (activeEl === 'logo2') {
+                                            const data = isBack ? item.logoBack2 : item.logoFront2;
+                                            return { originalUrl: data?.originalUrl || null, processedUrl_original: data?.processedUrl_original || null, processedUrl_noBackground: data?.processedUrl_noBackground || null, predefinedUrl: data?.predefinedUrl || null, backgroundRemoved: data?.backgroundRemoved || false, activeColor: data?.activeColor || 'original' };
+                                        } else if (activeEl === 'logo3') {
+                                            const data = isBack ? item.logoBack3 : item.logoFront3;
+                                            return { originalUrl: data?.originalUrl || null, processedUrl_original: data?.processedUrl_original || null, processedUrl_noBackground: data?.processedUrl_noBackground || null, predefinedUrl: data?.predefinedUrl || null, backgroundRemoved: data?.backgroundRemoved || false, activeColor: data?.activeColor || 'original' };
+                                        } else {
+                                            return { originalUrl: isBack ? item.originalLogoUrlBack : item.originalLogoUrlFront, processedUrl_original: isBack ? item.processedLogoUrlBack_original : item.processedLogoUrlFront_original, processedUrl_noBackground: isBack ? item.processedLogoUrlBack_noBackground : item.processedLogoUrlFront_noBackground, predefinedUrl: isBack ? item.predefinedLogoUrlBack : item.predefinedLogoUrlFront, backgroundRemoved: isBack ? item.backgroundRemovedBack : item.backgroundRemovedFront, activeColor: isBack ? item.activeLogoColorBack : item.activeLogoColorFront };
+                                        }
                                     };
 
-                                    const hasContent = !!(logoData.originalUrl || logoData.predefinedUrl || logoData.processedUrl);
+                                    // Upload intelligent
+                                    const triggerSmartUpload = (e: any) => {
+                                        executeWithAiGuard(() => {
+                                            if (e) e.stopPropagation();
+
+                                            let target = activeEl || 'logo';
+                                            const hasL1 = isBack ? item.originalLogoUrlBack || item.predefinedLogoUrlBack : item.originalLogoUrlFront || item.predefinedLogoUrlFront;
+                                            const hasL2 = isBack ? item.logoBack2?.originalUrl || item.logoBack2?.predefinedUrl : item.logoFront2?.originalUrl || item.logoFront2?.predefinedUrl;
+                                            const hasL3 = isBack ? item.logoBack3?.originalUrl || item.logoBack3?.predefinedUrl : item.logoFront3?.originalUrl || item.logoFront3?.predefinedUrl;
+
+                                            if (target === 'logo' && hasL1) {
+                                                if (!hasL2) target = 'logo2';
+                                                else if (!hasL3) target = 'logo3';
+                                            } else if (target === 'logo2' && hasL2) {
+                                                if (!hasL1) target = 'logo';
+                                                else if (!hasL3) target = 'logo3';
+                                            } else if (target === 'logo3' && hasL3) {
+                                                if (!hasL1) target = 'logo';
+                                                else if (!hasL2) target = 'logo2';
+                                            }
+
+                                            setActiveEl(target);
+
+                                            // On utilise le input natif de CustomizerView, processLogoUpdate fera le reste!
+                                            document.getElementById('hidden-file-input-desktop')?.click();
+                                        });
+                                    };
+
+                                    const logoData = getActiveLogoData();
+                                    const hasContent = !!(logoData.originalUrl || logoData.predefinedUrl || logoData.processedUrl_original);
 
                                     if (croppingImage) {
                                         return (
@@ -4162,13 +4184,8 @@ export
                                                 </div>
 
                                                 <div className="flex-1 overflow-hidden bg-gray-50 rounded-xl flex items-center justify-center border border-gray-200 relative min-h-[300px]">
-                                                    <ReactCrop
-                                                        crop={crop}
-                                                        onChange={(c) => setCrop(c)}
-                                                        onComplete={(c) => setCompletedCrop(c)}
-                                                        className="max-h-full"
-                                                    >
-                                                        <img ref={cropImgRef} src={croppingImage} alt="Crop target" className="max-h-[40vh] object-contain mx-auto" style={{ maxWidth: '100%' }} />
+                                                    <ReactCrop crop={crop} onChange={(c) => setCrop(c)} onComplete={(c) => setCompletedCrop(c)} className="max-h-full">
+                                                        <img ref={cropImgRef} src={croppingImage} alt="Crop target" className="max-h-[40vh] object-contain mx-auto" style={{ maxWidth: '100%' }}  />
                                                     </ReactCrop>
                                                 </div>
                                             </div>
@@ -4178,24 +4195,13 @@ export
                                     if (hasContent) {
                                         return (
                                             <>
-                                                {/* LOGO ACTIVE: COLOR OPTIONS */}
                                                 <div className="flex items-center justify-between gap-4 mb-2 pr-10">
                                                     <h3 className="font-bold text-gray-800 text-lg">Options Logo</h3>
                                                     <div className="flex items-center gap-2">
-                                                        <button
-                                                            onClick={undo}
-                                                            disabled={undoStack.length === 0}
-                                                            className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all ${undoStack.length === 0 ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed' : 'bg-white text-gray-600 border-gray-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm active:scale-90'}`}
-                                                            title="Annuler"
-                                                        >
+                                                        <button onClick={undo} disabled={undoStack.length === 0} className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all ${undoStack.length === 0 ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed' : 'bg-white text-gray-600 border-gray-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm active:scale-90'}`} title="Annuler">
                                                             <i className="fa-solid fa-rotate-left"></i>
                                                         </button>
-                                                        <button
-                                                            onClick={redo}
-                                                            disabled={redoStack.length === 0}
-                                                            className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all ${redoStack.length === 0 ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed' : 'bg-white text-gray-600 border-gray-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm active:scale-90'}`}
-                                                            title="Répéter"
-                                                        >
+                                                        <button onClick={redo} disabled={redoStack.length === 0} className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all ${redoStack.length === 0 ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed' : 'bg-white text-gray-600 border-gray-200 hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 shadow-sm active:scale-90'}`} title="Répéter">
                                                             <i className="fa-solid fa-rotate-right"></i>
                                                         </button>
                                                     </div>
@@ -4220,15 +4226,24 @@ export
                                                                 const eyeDropper = new window.EyeDropper();
                                                                 const result = await eyeDropper.open();
                                                                 const hex = result.sRGBHex;
-
                                                                 const processed = await removeSpecificColor(url, hex, 30);
 
-                                                                updateItem(isBack
-                                                                    ? { backgroundRemovedBack: true, processedLogoUrlBack: processed, processedLogoUrlBack_original: processed, processedLogoUrlBack_noBackground: processed }
-                                                                    : { backgroundRemovedFront: true, processedLogoUrlFront: processed, processedLogoUrlFront_original: processed, processedLogoUrlFront_noBackground: processed }
-                                                                );
+                                                                if (activeEl === 'logo2') {
+                                                                    const targetKey = isBack ? 'logoBack2' : 'logoFront2';
+                                                                    // @ts-ignore
+                                                                    updateItem({ [targetKey]: { ...item[targetKey], backgroundRemoved: true, processedUrl: processed, processedUrl_original: processed, processedUrl_noBackground: processed } });
+                                                                } else if (activeEl === 'logo3') {
+                                                                    const targetKey = isBack ? 'logoBack3' : 'logoFront3';
+                                                                    // @ts-ignore
+                                                                    updateItem({ [targetKey]: { ...item[targetKey], backgroundRemoved: true, processedUrl: processed, processedUrl_original: processed, processedUrl_noBackground: processed } });
+                                                                } else {
+                                                                    updateItem(isBack
+                                                                        ? { backgroundRemovedBack: true, processedLogoUrlBack: processed, processedLogoUrlBack_original: processed, processedLogoUrlBack_noBackground: processed }
+                                                                        : { backgroundRemovedFront: true, processedLogoUrlFront: processed, processedLogoUrlFront_original: processed, processedLogoUrlFront_noBackground: processed }
+                                                                    );
+                                                                }
                                                             } catch (e: any) {
-                                                                console.error("Color picking/removal failed", e);
+                                                                console.error("Color picking failed", e);
                                                             } finally {
                                                                 setIsPickingColor(false);
                                                             }
@@ -4252,38 +4267,32 @@ export
                                                     <button
                                                         onClick={() => {
                                                             const sourceIsBack = isBack;
-                                                            if (sourceIsBack) {
-                                                                // Copy BACK -> FRONT
-                                                                updateItem({
-                                                                    originalLogoUrlFront: item.originalLogoUrlBack,
-                                                                    predefinedLogoUrlFront: item.predefinedLogoUrlBack,
-                                                                    processedLogoUrlFront: item.processedLogoUrlBack,
-                                                                    processedLogoUrlFront_original: item.processedLogoUrlBack_original,
-                                                                    processedLogoUrlFront_noBackground: item.processedLogoUrlBack_noBackground,
-                                                                    backgroundRemovedFront: item.backgroundRemovedBack,
-                                                                    activeLogoColorFront: item.activeLogoColorBack,
-                                                                    logoInvertedFront: item.logoInvertedBack,
-                                                                    logoSizeFront: item.logoSizeBack,
-                                                                    logoPositionXFront: item.logoPositionXBack,
-                                                                    logoPositionYFront: item.logoPositionYBack,
-                                                                    logoAspectRatioFront: item.logoAspectRatioBack
-                                                                });
+                                                            if (activeEl === 'logo2') {
+                                                                if (sourceIsBack) updateItem({ logoFront2: item.logoBack2 });
+                                                                else updateItem({ logoBack2: item.logoFront2 });
+                                                            } else if (activeEl === 'logo3') {
+                                                                if (sourceIsBack) updateItem({ logoFront3: item.logoBack3 });
+                                                                else updateItem({ logoBack3: item.logoFront3 });
                                                             } else {
-                                                                // Copy FRONT -> BACK
-                                                                updateItem({
-                                                                    originalLogoUrlBack: item.originalLogoUrlFront,
-                                                                    predefinedLogoUrlBack: item.predefinedLogoUrlFront,
-                                                                    processedLogoUrlBack: item.processedLogoUrlFront,
-                                                                    processedLogoUrlBack_original: item.processedLogoUrlFront_original,
-                                                                    processedLogoUrlBack_noBackground: item.processedLogoUrlFront_noBackground,
-                                                                    backgroundRemovedBack: item.backgroundRemovedFront,
-                                                                    activeLogoColorBack: item.activeLogoColorFront,
-                                                                    logoInvertedBack: item.logoInvertedFront,
-                                                                    logoSizeBack: item.logoSizeFront,
-                                                                    logoPositionXBack: item.logoPositionXFront,
-                                                                    logoPositionYBack: item.logoPositionYFront,
-                                                                    logoAspectRatioBack: item.logoAspectRatioFront
-                                                                });
+                                                                if (sourceIsBack) {
+                                                                    updateItem({
+                                                                        originalLogoUrlFront: item.originalLogoUrlBack, predefinedLogoUrlFront: item.predefinedLogoUrlBack,
+                                                                        processedLogoUrlFront: item.processedLogoUrlBack, processedLogoUrlFront_original: item.processedLogoUrlBack_original,
+                                                                        processedLogoUrlFront_noBackground: item.processedLogoUrlBack_noBackground, backgroundRemovedFront: item.backgroundRemovedBack,
+                                                                        activeLogoColorFront: item.activeLogoColorBack, logoInvertedFront: item.logoInvertedBack,
+                                                                        logoSizeFront: item.logoSizeBack, logoPositionXFront: item.logoPositionXBack,
+                                                                        logoPositionYFront: item.logoPositionYBack, logoAspectRatioFront: item.logoAspectRatioBack
+                                                                    });
+                                                                } else {
+                                                                    updateItem({
+                                                                        originalLogoUrlBack: item.originalLogoUrlFront, predefinedLogoUrlBack: item.predefinedLogoUrlFront,
+                                                                        processedLogoUrlBack: item.processedLogoUrlFront, processedLogoUrlBack_original: item.processedLogoUrlFront_original,
+                                                                        processedLogoUrlBack_noBackground: item.processedLogoUrlFront_noBackground, backgroundRemovedBack: item.backgroundRemovedFront,
+                                                                        activeLogoColorBack: item.activeLogoColorFront, logoInvertedBack: item.logoInvertedFront,
+                                                                        logoSizeBack: item.logoSizeFront, logoPositionXBack: item.logoPositionXFront,
+                                                                        logoPositionYBack: item.logoPositionYFront, logoAspectRatioBack: item.logoAspectRatioFront
+                                                                    });
+                                                                }
                                                             }
                                                         }}
                                                         className="flex-1 h-14 rounded-xl border border-gray-200 bg-white font-bold text-gray-600 transition-all flex flex-col items-center justify-center gap-1 hover:bg-gray-50 active:scale-95"
@@ -4293,20 +4302,18 @@ export
                                                     </button>
                                                     <button
                                                         onClick={() => {
-                                                            const cleanup = isBack ? {
-                                                                originalLogoUrlBack: null, processedLogoUrlBack_original: null,
-                                                                isPredefinedLogoBack: false, predefinedLogoUrlBack: null,
-                                                                processedLogoUrlBack: null, processedLogoUrlBack_noBackground: null,
-                                                                processedLogoUrlBack_white: null, processedLogoUrlBack_black: null
-                                                            } : {
-                                                                originalLogoUrlFront: null, processedLogoUrlFront_original: null,
-                                                                isPredefinedLogoFront: false, predefinedLogoUrlFront: null,
-                                                                processedLogoUrlFront: null, processedLogoUrlFront_noBackground: null,
-                                                                processedLogoUrlFront_white: null, processedLogoUrlFront_black: null
-                                                            };
-                                                            updateItem(cleanup);
+                                                            if (activeEl === 'logo2') {
+                                                                updateItem({ [isBack ? 'logoBack2' : 'logoFront2']: undefined });
+                                                            } else if (activeEl === 'logo3') {
+                                                                updateItem({ [isBack ? 'logoBack3' : 'logoFront3']: undefined });
+                                                            } else {
+                                                                updateItem(isBack
+                                                                    ? { originalLogoUrlBack: null, processedLogoUrlBack_original: null, isPredefinedLogoBack: false, predefinedLogoUrlBack: null, processedLogoUrlBack: null, processedLogoUrlBack_noBackground: null, processedLogoUrlBack_white: null, processedLogoUrlBack_black: null }
+                                                                    : { originalLogoUrlFront: null, processedLogoUrlFront_original: null, isPredefinedLogoFront: false, predefinedLogoUrlFront: null, processedLogoUrlFront: null, processedLogoUrlFront_noBackground: null, processedLogoUrlFront_white: null, processedLogoUrlFront_black: null }
+                                                                );
+                                                            }
                                                             setActiveEl(null);
-                                                            setUploadedLogoPreview(null);
+                                                            if (typeof setUploadedLogoPreview === 'function') setUploadedLogoPreview(null);
                                                         }}
                                                         className="flex-1 h-14 rounded-xl border border-red-100 bg-red-50 font-bold text-red-500 flex flex-col items-center justify-center gap-1"
                                                     >
@@ -4315,12 +4322,28 @@ export
                                                     </button>
                                                 </div>
 
-                                                {/* LOGO COLOR PALETTE */}
                                                 <div className="flex flex-col gap-2 mt-4 no-drag">
                                                     <label className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Couleur du Logo</label>
                                                     <div className="flex flex-wrap gap-2">
                                                         <button
-                                                            onClick={() => handleLogoColorChange('original')}
+                                                            onClick={async () => {
+                                                                const sourceUrl = (logoData.backgroundRemoved && logoData.processedUrl_noBackground) ? logoData.processedUrl_noBackground : (logoData.processedUrl_original || logoData.originalUrl || logoData.predefinedUrl);
+                                                                if (!sourceUrl) return;
+                                                                let newProcessedUrl = logoData.processedUrl_noBackground || logoData.processedUrl_original;
+
+                                                                if (activeEl === 'logo2') {
+                                                                    const targetKey = isBack ? 'logoBack2' : 'logoFront2';
+                                                                    // @ts-ignore
+                                                                    updateItemUndoable({ [targetKey]: { ...item[targetKey], activeColor: 'original', processedUrl: newProcessedUrl } });
+                                                                } else if (activeEl === 'logo3') {
+                                                                    const targetKey = isBack ? 'logoBack3' : 'logoFront3';
+                                                                    // @ts-ignore
+                                                                    updateItemUndoable({ [targetKey]: { ...item[targetKey], activeColor: 'original', processedUrl: newProcessedUrl } });
+                                                                } else {
+                                                                    const sideKey = isBack ? 'Back' : 'Front';
+                                                                    updateItemUndoable({ [`activeLogoColor${sideKey}`]: 'original', [`processedLogoUrl${sideKey}`]: newProcessedUrl });
+                                                                }
+                                                            }}
                                                             className={`w-10 h-10 rounded-xl border-2 transition-all hover:scale-105 shadow-sm flex flex-col items-center justify-center ${logoData.activeColor === 'original' || !logoData.activeColor ? 'bg-orange-500 border-orange-500 text-white shadow-md' : 'bg-white border-gray-100 text-gray-400 hover:border-orange-200'}`}
                                                             title="Original"
                                                         >
@@ -4330,18 +4353,36 @@ export
                                                         {['#000000', '#FFFFFF', '#EF4444', '#3B82F6', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#FFD700'].map(c => (
                                                             <button
                                                                 key={c}
-                                                                onClick={() => handleLogoColorChange(c)}
-                                                                className={`w-10 h-10 rounded-xl border-2 transition-all hover:scale-105 shadow-sm ${logoData.activeColor === c ? 'ring-2 ring-orange-500 ring-offset-2 scale-105 border-white' : 'border-gray-100'}`}
+                                                                onClick={async () => {
+                                                                    const sourceUrl = (logoData.backgroundRemoved && logoData.processedUrl_noBackground) ? logoData.processedUrl_noBackground : (logoData.processedUrl_original || logoData.originalUrl || logoData.predefinedUrl);
+                                                                    if (!sourceUrl) return;
+                                                                    let newProcessedUrl = null;
+                                                                    try { newProcessedUrl = await processLogoColor(sourceUrl, c); } catch (e) { }
+
+                                                                    if (activeEl === 'logo2') {
+                                                                        const targetKey = isBack ? 'logoBack2' : 'logoFront2';
+                                                                        // @ts-ignore
+                                                                        updateItemUndoable({ [targetKey]: { ...item[targetKey], activeColor: c, processedUrl: newProcessedUrl } });
+                                                                    } else if (activeEl === 'logo3') {
+                                                                        const targetKey = isBack ? 'logoBack3' : 'logoFront3';
+                                                                        // @ts-ignore
+                                                                        updateItemUndoable({ [targetKey]: { ...item[targetKey], activeColor: c, processedUrl: newProcessedUrl } });
+                                                                    } else {
+                                                                        const sideKey = isBack ? 'Back' : 'Front';
+                                                                        updateItemUndoable({ [`activeLogoColor${sideKey}`]: c, [`processedLogoUrl${sideKey}`]: newProcessedUrl });
+                                                                    }
+                                                                }}
+                                                                className={`flex-shrink-0 w-10 h-10 rounded-xl border-2 transition-all hover:scale-105 shadow-sm ${logoData.activeColor === c ? 'ring-2 ring-orange-500 ring-offset-2 scale-105 border-white' : 'border-gray-100'}`}
                                                                 style={{ backgroundColor: c }}
                                                                 title={c}
-                                                            />
+                                                             />
                                                         ))}
                                                     </div>
                                                 </div>
 
                                                 <div className="mt-auto pt-4 border-t border-gray-100 no-drag">
                                                     <button
-                                                        onClick={() => triggerUniversalInput(null, true)}
+                                                        onClick={triggerSmartUpload}
                                                         className="w-full py-4 bg-orange-500 text-white font-bold rounded-2xl shadow-lg shadow-orange-200 hover:bg-orange-600 transition-all flex items-center justify-center gap-3"
                                                     >
                                                         <i className="fa-solid fa-cloud-arrow-up text-xl"></i>
@@ -4350,49 +4391,33 @@ export
                                                 </div>
                                             </>
                                         );
-                                    } else {
-                                        return (
-                                            <div className="flex flex-col gap-4 py-2 no-drag">
-                                                <div className="text-center">
-                                                    <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-2">
-                                                        <i className="fa-solid fa-image text-2xl text-orange-500"></i>
-                                                    </div>
-                                                    <h3 className="text-lg font-bold text-gray-800">Logo</h3>
-                                                    <p className="text-gray-500 text-xs">Importez une image pour personnaliser</p>
-                                                </div>
-
-                                                <button
-                                                    onClick={() => triggerUniversalInput(null, true)}
-                                                    className="w-full py-4 bg-orange-500 text-white font-black rounded-2xl shadow-xl shadow-orange-100 hover:bg-orange-600 transition-all flex items-center justify-center gap-4"
-                                                >
-                                                    <i className="fa-solid fa-cloud-arrow-up text-xl"></i>
-                                                    CHARGER MON LOGO
-                                                </button>
-
-                                                <div className="flex flex-col gap-3">
-                                                    <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Atelier Logo</h4>
-                                                    <button
-                                                        onClick={onOpenAtelier || (() => { })}
-                                                        className="flex flex-row items-center text-left p-4 rounded-xl border-2 border-indigo-100 bg-indigo-50/30 hover:border-indigo-500 transition-all group gap-4 relative"
-                                                    >
-                                                        <div className="absolute top-2 right-2 bg-indigo-600 text-white text-[8px] font-black px-2 py-1 rounded-full uppercase">Offre</div>
-                                                        <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center shrink-0 text-indigo-600"><i className="fa-solid fa-wand-magic-sparkles"></i></div>
-                                                        <div className="flex flex-col">
-                                                            <h3 className="text-xs font-black text-indigo-600 uppercase">Logo Service</h3>
-                                                            <p className="text-[10px] text-gray-500 leading-tight">Refonte par nos graphistes.</p>
-                                                        </div>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        );
                                     }
+
+                                    return (
+                                        <div className="flex flex-col gap-4 py-2 no-drag">
+                                            <div className="text-center">
+                                                <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-2">
+                                                    <i className="fa-solid fa-image text-2xl text-orange-500"></i>
+                                                </div>
+                                                <h3 className="text-lg font-bold text-gray-800">Logo</h3>
+                                                <p className="text-gray-500 text-xs">Importez une image pour personnaliser</p>
+                                            </div>
+
+                                            <button
+                                                onClick={triggerSmartUpload}
+                                                className="w-full py-4 bg-orange-500 text-white font-black rounded-2xl shadow-xl shadow-orange-100 hover:bg-orange-600 transition-all flex items-center justify-center gap-4"
+                                            >
+                                                <i className="fa-solid fa-cloud-arrow-up text-xl"></i>
+                                                CHARGER MON LOGO
+                                            </button>
+                                        </div>
+                                    );
                                 })()}
                             </div>
                         </div>,
                         document.body
                     )
                 }
-
                 {/* TEXT PANEL */}
                 {
                     activePanel === 'text' && createPortal(
@@ -4426,7 +4451,7 @@ export
                                             onChange={(e) => updateText({ text: e.target.value })}
                                             className="w-full h-16 p-3 bg-transparent outline-none focus:ring-0 text-gray-800 resize-none text-center font-medium"
                                             placeholder="Écrivez votre texte ici..."
-                                        />
+                                         />
                                     </div>
                                 </div>
 
@@ -4458,7 +4483,7 @@ export
                                         <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Couleur</label>
                                         <div className="flex overflow-x-auto gap-2 pb-1 scrollbar-none">
                                             {['#000000', '#FFFFFF', '#EF4444', '#3B82F6', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#F97316', '#6B7280'].map(c => (
-                                                <button key={c} onClick={() => updateText({ color: c })} className={`flex-shrink-0 w-8 h-8 rounded-full border-2 transition-all ${activeText.color === c ? 'ring-2 ring-orange-500 ring-offset-2 scale-110' : 'border-gray-200 hover:scale-110'}`} style={{ backgroundColor: c }} />
+                                                <button key={c} onClick={() => updateText({ color: c })} className={`flex-shrink-0 w-8 h-8 rounded-full border-2 transition-all ${activeText.color === c ? 'ring-2 ring-orange-500 ring-offset-2 scale-110' : 'border-gray-200 hover:scale-110'}`} style={{ backgroundColor: c }}  />
                                             ))}
                                         </div>
                                     </div>
@@ -4480,7 +4505,7 @@ export
                                             <label className="text-[10px] text-gray-400 font-bold uppercase mb-1 block">Couleur Contour</label>
                                             <div className="flex overflow-x-auto gap-2 pb-1 scrollbar-none">
                                                 {['#000000', '#FFFFFF', '#EF4444', '#3B82F6', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#F97316', '#6B7280'].map(c => (
-                                                    <button key={c} onClick={() => updateText({ outlineColor: c })} className={`flex-shrink-0 w-6 h-6 rounded-full border-2 transition-all ${activeText.outlineColor === c ? 'ring-2 ring-orange-500 ring-offset-2 scale-110' : 'border-gray-200 hover:scale-110'}`} style={{ backgroundColor: c }} />
+                                                    <button key={c} onClick={() => updateText({ outlineColor: c })} className={`flex-shrink-0 w-6 h-6 rounded-full border-2 transition-all ${activeText.outlineColor === c ? 'ring-2 ring-orange-500 ring-offset-2 scale-110' : 'border-gray-200 hover:scale-110'}`} style={{ backgroundColor: c }}  />
                                                 ))}
                                             </div>
                                         </div>
@@ -4507,7 +4532,7 @@ export
                                             value={activeText.curve || 0}
                                             onChange={(e) => updateText({ curve: parseInt(e.target.value) })}
                                             className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-orange-500"
-                                        />
+                                         />
                                     </div>
 
                                     {/* ROW 4: Espacement */}
@@ -4615,130 +4640,14 @@ export
                                                     <p className="text-xs font-bold text-gray-500 uppercase mb-2">Galerie</p>
                                                     <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
                                                         {filteredLogos.map((logo: any, idx: number) => (
-                                                            <button key={idx} onClick={() => handlePredefinedLogoSelect(Array.isArray(logo.url) ? logo.url[0] : logo.url)} className="flex-shrink-0 w-16 h-16 border rounded-lg p-2 bg-gray-800 hover:border-orange-500"><img src={getProxiedUrl(Array.isArray(logo.url) ? logo.url[0] : logo.url)} className="max-w-full max-h-full object-contain" /></button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>,
-                        document.body
-                    )
-                }
-
-                {/* AI STUDIO "PAGE" OVERLAY - FULLSCREEN FLOW */}
-                {
-                    aiModalOpen && createPortal(
-                        <div data-layout-id="ai-modal-fullscreen" className="fixed inset-0 h-[100dvh] z-[10000] bg-white animate-fade-in flex flex-col overflow-hidden">
-                            {/* HEADER - Always visible */}
-                            <div className="flex-none p-4 flex justify-between items-center border-b border-gray-100 bg-white/95 backdrop-blur-md sticky top-0 z-50">
-                                <h3 className="text-lg font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                                    <i className="fa-solid fa-wand-magic-sparkles text-orange-500"></i>
-                                    Studio IA
-                                </h3>
-                                <button
-                                    onClick={() => setAiModalOpen(false)}
-                                    className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
-                                >
-                                    <i className="fa-solid fa-times text-gray-500"></i>
-                                </button>
-                            </div>
-
-                            {/* CONTENT AREA */}
-                            <div className="flex-1 overflow-y-auto overflow-x-hidden relative bg-white">
-
-                                {/* STEP 1: PROMPT SELECTION */}
-                                {aiStep === 'prompt' && (
-                                    <div className="flex-1 flex flex-col p-4 pb-32 animate-fade-in">
-                                        <div className="text-center mb-6 mt-2">
-                                            <h2 className="text-2xl font-black text-gray-900 mb-1 uppercase tracking-tight">Studio Créatif IA</h2>
-                                            <p className="text-gray-500 text-xs font-medium uppercase tracking-widest">Étape 1 : Choisis ton style</p>
-                                        </div>
-
-                                        <div className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm text-left w-full mb-6">
-                                            <p className="text-[10px] font-black text-gray-400 uppercase mb-3 tracking-widest flex items-center gap-2">
-                                                <i className="fa-solid fa-layer-group text-orange-500"></i>
-                                                Catégories & Ambiances
-                                            </p>
-
-                                            <div className="relative group/cat">
-                                                <div className="flex overflow-x-auto gap-2 mb-4 border-b border-gray-100 pb-3 scrollbar-hide scroll-smooth" ref={aiCategoryScrollRef}>
-                                                    {Object.keys(STYLE_MATRIX)
-                                                        .filter(cat => STYLE_MATRIX[cat].some(s => s.image)) // Filter out empty/image-less categories
-                                                        .concat(["Custom"]).map((category) => (
-                                                            <button
-                                                                key={category}
-                                                                onClick={() => {
-                                                                    setActiveStyleCategory(category as StyleCategory);
-                                                                    document.getElementById(`category-${category}`)?.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'center' });
-                                                                }}
-                                                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border-2 ${activeStyleCategory === category ? 'bg-orange-500 border-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-gray-50 border-transparent text-gray-500 hover:bg-gray-100'}`}
+                                                            <button 
+                                                                key={idx} 
+                                                                onClick={() => handlePredefinedLogoSelect(Array.isArray(logo.url) ? logo.url[0] : logo.url)} 
+                                                                className="flex-shrink-0 w-16 h-16 border rounded-lg p-2 bg-gray-800 hover:border-orange-500"
                                                             >
-                                                                {category}
+                                                                <img src={getProxiedUrl(Array.isArray(logo.url) ? logo.url[0] : logo.url)} className="max-w-full max-h-full object-contain" />
                                                             </button>
                                                         ))}
-                                                </div>
-
-                                                {/* Category Nav Arrows */}
-                                                <button
-                                                    onClick={() => scrollCarousel(aiCategoryScrollRef, 'left')}
-                                                    className="absolute left-0 top-1/2 -translate-y-full z-10 w-8 h-8 flex items-center justify-center bg-white/90 backdrop-blur-sm border border-gray-200 rounded-full shadow-md text-gray-800 opacity-0 group-hover/cat:opacity-100 transition-opacity translate-x-1 lg:flex hidden"
-                                                >
-                                                    <i className="fa-solid fa-chevron-left text-[10px]"></i>
-                                                </button>
-                                                <button
-                                                    onClick={() => scrollCarousel(aiCategoryScrollRef, 'right')}
-                                                    className="absolute right-0 top-1/2 -translate-y-full z-10 w-8 h-8 flex items-center justify-center bg-white/90 backdrop-blur-sm border border-gray-200 rounded-full shadow-md text-gray-800 opacity-0 group-hover/cat:opacity-100 transition-opacity -translate-x-1 lg:flex hidden"
-                                                >
-                                                    <i className="fa-solid fa-chevron-right text-[10px]"></i>
-                                                </button>
-                                            </div>
-
-                                            <div className="relative group">
-                                                {/* Styles Carousel */}
-                                                <div
-                                                    className="flex overflow-x-auto gap-4 pb-4 -mx-2 px-2 scrollbar-hide snap-x snap-mandatory items-center scroll-smooth"
-                                                    id="style-container"
-                                                    onScroll={handleStyleScroll}
-                                                    ref={aiStyleScrollRef}
-                                                >
-                                                    {allStyles.map((item, idx) => {
-                                                        const isFirstOfCategory = idx === 0 || allStyles[idx - 1].category !== item.category;
-                                                        return (
-                                                            <button
-                                                                key={`${item.category}-${item.style.name}`}
-                                                                id={isFirstOfCategory ? `category-${item.category}` : undefined}
-                                                                data-category={item.category}
-                                                                onClick={() => {
-                                                                    setSelectedStylePrompt(item.style.prompt);
-                                                                    setCustomStylePrompt(item.style.prompt);
-                                                                    setActiveStyleCategory(item.category as StyleCategory);
-                                                                }}
-                                                                className={`flex-shrink-0 w-36 h-48 rounded-2xl border-4 transition-all relative overflow-hidden group snap-start ${selectedStylePrompt === item.style.prompt ? 'border-orange-500 shadow-xl scale-95' : 'border-transparent bg-gray-100 hover:border-gray-200'}`}
-                                                            >
-                                                                <LazyImage
-                                                                    src={getProxiedUrl(item.style.image)}
-                                                                    alt={item.style.name}
-                                                                    loading="lazy"
-                                                                    className="absolute inset-0 w-full h-full"
-                                                                    imageClassName="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                                                />
-                                                                <div className={`absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent transition-opacity ${selectedStylePrompt === item.style.prompt ? 'opacity-90' : 'opacity-60 group-hover:opacity-75'}`} />
-
-                                                                <div className="absolute top-3 right-3 w-7 h-7 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30">
-                                                                    <i className={`fa-solid ${item.style.icon || 'fa-star'} text-xs text-white`}></i>
-                                                                </div>
-
-                                                                <div className="absolute bottom-0 left-0 w-full p-4 text-left">
-                                                                    <span className="text-[10px] font-black uppercase text-white/70 block mb-0.5 tracking-widest">{item.category}</span>
-                                                                    <span className="text-xs font-black uppercase text-white leading-tight block drop-shadow-md">{item.style.name}</span>
-                                                                </div>
-                                                            </button>
-                                                        );
-                                                    })}
 
                                                     {/* Custom Prompt Card */}
                                                     <div
@@ -4783,6 +4692,7 @@ export
                                                 </button>
                                             </div>
                                         </div>
+                                    )}
 
                                         {/* Validate Button */}
                                         <div className="fixed bottom-0 left-0 w-full p-6 bg-gradient-to-t from-white via-white/90 to-transparent pt-12 z-[60]">
@@ -4809,7 +4719,7 @@ export
                                         {/* Back Button - Relocated & Renamed */}
                                         <div className="w-full flex justify-start mb-4">
                                             <button onClick={() => setAiStep('prompt')} className="text-gray-500 hover:text-gray-900 flex items-center gap-2 font-bold z-10 uppercase tracking-widest text-sm">
-                                                <i className="fa-solid fa-arrow-left"></i> STUDIO IA
+                                                <i className="fa-solid fa-arrow-left"></i> ESSAYAGE VIRTUEL
                                             </button>
                                         </div>
 
@@ -4937,7 +4847,7 @@ export
                                             <div className="w-full h-full flex flex-col">
                                                 <div className="flex-1 relative rounded-2xl overflow-hidden shadow-xl bg-black">
                                                     <div className="absolute inset-0 border-[12px] border-black/20 z-20 pointer-events-none"></div>
-                                                    <img src={capturedImage} className={`w-full h-full object-contain bg-black transition-all duration-500 ${aiGenerating ? 'blur-md scale-105 opacity-50' : ''}`} alt="Captured" />
+                                                    <img src={capturedImage} className={`w-full h-full object-contain bg-black transition-all duration-500 ${aiGenerating ? 'blur-md scale-105 opacity-50' : ''}`} alt="Captured"  />
 
                                                     {/* SignPong Overlay - Full Border Version */}
                                                     {(aiGenerating || isGeneratingLocal) && (
@@ -4952,7 +4862,7 @@ export
                                                         Reprendre
                                                     </button>
                                                     <button
-                                                        onClick={() => handleAiTryOn(capturedImage)} // This triggers generation -> result
+                                                        onClick={() => handleAiTryOn('front')} // This triggers generation -> result
                                                         className="flex-[2] py-4 bg-orange-600 text-white font-bold rounded-xl shadow-lg hover:bg-orange-500 animate-pulse"
                                                     >
                                                         Générer (1 crédit) <i className="fa-solid fa-bolt ml-1"></i>
@@ -4973,7 +4883,7 @@ export
                                                         src={capturedImage}
                                                         className="absolute inset-0 w-full h-full object-cover blur-xl opacity-30 scale-110"
                                                         alt="Blur background"
-                                                    />
+                                                     />
                                                 )}
                                                 <div className="relative z-10 flex flex-col items-center justify-center w-full h-full">
                                                     <div className="absolute top-12 left-0 right-0 text-center z-20">
@@ -4992,71 +4902,63 @@ export
                                         ) : aiResult ? (
                                             /* Final Result View */
                                             <div className="flex-1 flex flex-col relative animate-fade-in">
-                                                <div className="flex-1 bg-black relative flex items-center justify-center py-4">
-                                                    <div className="h-full max-w-[90vw] aspect-[9/16] relative rounded-2xl overflow-hidden shadow-2xl">
-                                                        <img src={aiResult} className="w-full h-full object-cover" alt="AI Result" />
+                                                <div className="flex-1 bg-black relative flex items-center justify-center p-4 min-h-0">
+                                                    <div className="w-auto h-auto max-h-[55vh] max-w-full aspect-[9/16] relative rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+                                                        <img src={aiResult} className="w-full h-full object-contain" alt="AI Result" />
                                                     </div>
                                                 </div>
                                                 <div className="flex-none bg-black/80 backdrop-blur-md p-6 pt-8 pb-10 flex flex-col gap-3 rounded-t-3xl -mt-6 z-10 border-t border-white/10">
-                                                    <h3 className="text-white font-bold text-center mb-2">🔥 Résultat généré !</h3>
-                                                    <button
-                                                        onClick={() => { setCapturedImage(null); setAiModalOpen(false); }}
-                                                        className="w-full py-4 bg-green-500 text-white font-black uppercase tracking-widest rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.4)] hover:bg-green-400 transition-all hover:scale-[1.02]"
+                                                    <div className="text-center mb-2">
+                                                        <h3 className="text-white font-black text-xl uppercase tracking-wider">✨ Rendu IA prêt !</h3>
+                                                        <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest">Le visuel est prêt pour l'impression</p>
+                                                    </div>
+
+                                                    <button 
+                                                        onClick={() => {
+                                                            setAiModalOpen(false);
+                                                            handleAddToCartAction();
+                                                        }}
+                                                        className="w-full py-5 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl shadow-orange-500/20 active:scale-95 transition-all text-sm flex items-center justify-center gap-3"
                                                     >
-                                                        Utiliser ce design
-                                                    </button>
-                                                    <button
-                                                        onClick={() => { setAiResult && setAiResult(null); setAiStep('input'); }}
-                                                        className="w-full py-3 bg-white/10 border border-white/20 text-white font-bold rounded-xl hover:bg-white/20"
-                                                    >
-                                                        Réessayer
+                                                        <i className="fa-solid fa-cart-plus"></i>
+                                                        Ajouter au Panier
                                                     </button>
 
-                                                    {/* ADD TO PROFILE BUTTON */}
-                                                    <button
-                                                        onClick={async () => {
-                                                            if (!user) {
-                                                                onAuthRequired();
-                                                            } else {
-                                                                const btn = document.getElementById('btn-save-profile-studio');
-                                                                if (btn) {
-                                                                    const originalText = btn.innerHTML;
-                                                                    btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> SAUVEGARDE...';
-                                                                    try {
-                                                                        await onSaveToProfile(aiResult || '', selectedAiPrompt || customStylePrompt, selectedStyleName || activeStyleCategory, item);
-                                                                        btn.innerHTML = '<i class="fa-solid fa-check"></i> SAUVEGARDÉ !';
-                                                                        btn.classList.remove('bg-white/10', 'text-white', 'border-white/20');
-                                                                        btn.classList.add('bg-green-500', 'text-white', 'border-green-500');
-                                                                        setTimeout(() => {
-                                                                            if (btn) {
-                                                                                btn.innerHTML = originalText;
-                                                                                btn.classList.add('bg-white/10', 'text-white', 'border-white/20');
-                                                                                btn.classList.remove('bg-green-500', 'text-white', 'border-green-500');
-                                                                            }
-                                                                        }, 3000);
-                                                                    } catch (e) {
-                                                                        console.error(e);
-                                                                        btn.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i> ERREUR';
-                                                                        setTimeout(() => btn.innerHTML = originalText, 2000);
-                                                                    }
-                                                                }
-                                                            }
+                                                    <button 
+                                                        onClick={() => {
+                                                            setAiStep('prompt');
                                                         }}
-                                                        id="btn-save-profile-studio"
-                                                        className="w-full py-3 bg-white/10 border border-white/20 text-white font-bold rounded-xl hover:bg-white/20 flex items-center justify-center gap-2 mt-2"
+                                                        className="w-full py-4 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-2xl font-bold uppercase tracking-widest transition-all text-xs flex items-center justify-center gap-2"
                                                     >
-                                                        <i className={`fa-solid ${user ? 'fa-heart' : 'fa-lock'}`}></i>
-                                                        {user ? 'AJOUTER À MA GALERIE' : 'SE CONNECTER POUR SAUVEGARDER'}
+                                                        <i className="fa-solid fa-wand-sparkles"></i>
+                                                        Refaire / Modifier (Effacera ce rendu)
                                                     </button>
+
+                                                    <div className="grid grid-cols-2 gap-3 mt-1">
+                                                        <button 
+                                                            onClick={handleAddToProfile}
+                                                            className="py-3 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2"
+                                                        >
+                                                            <i className="fa-solid fa-heart text-red-500"></i>
+                                                            Sauvegarder
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => setAiModalOpen(false)}
+                                                            className="py-3 bg-white text-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all"
+                                                        >
+                                                            Fermer
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ) : null}
                                     </div>
                                 )}
                             </div>
-                        </div>,
-                        document.body
-                    )
+                        </div>
+                    </div>,
+                    document.body
+                )
                 }
 
                 {/* MODALS & OVERLAYS */}
@@ -5065,7 +4967,7 @@ export
                     score={pongScore}
                     onClose={() => setPongRewardModalOpen(false)}
                     onClaim={handleClaimPongRewards}
-                />
+                 />
 
                 <GuestLimitModal
                     isOpen={guestLimitModalOpen}
@@ -5108,7 +5010,7 @@ export
 
                                 {/* 1. Full Surface Image with subtle frame/border */}
                                 <div className="absolute inset-0 border-[12px] border-black/20 z-10 pointer-events-none"></div>
-                                <img src={previewImage} className="absolute inset-0 w-full h-full object-cover" alt="Preview" />
+                                <img src={previewImage} className="absolute inset-0 w-full h-full object-cover" alt="Preview"  />
 
                                 {/* 2. Header Overlay (Stylized) */}
                                 <div className="absolute top-0 left-0 w-full z-[10001] flex flex-col items-center justify-center pt-14 pb-16 px-6 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none">
@@ -5122,7 +5024,7 @@ export
                                 {aiGenerating && (
                                     <div className="absolute inset-0 z-[10002] flex flex-col items-center justify-center bg-black/40 backdrop-blur-md">
                                         <div className="absolute top-20 w-full text-center z-20">
-                                            <h2 className="text-white text-2xl font-black uppercase tracking-[0.3em] mb-2 animate-pulse">Design en cours</h2>
+                                            <h2 className="text-white text-2xl font-black uppercase tracking-[0.3em] mb-2 animate-pulse">Préparation de votre essayage...</h2>
                                             <p className="text-[10px] text-white/90 font-bold uppercase tracking-widest bg-orange-600 px-4 py-2 rounded-full inline-block shadow-xl">
                                                 SignPong : 1 Point = 1 Crédit
                                             </p>
@@ -5133,18 +5035,52 @@ export
                                     </div>
                                 )}
 
-                                {/* 4. Actions Bottom Bar (Float Glassmorphism) */}
+                                {/* 4. Actions Bottom Bar (Upsell IA) */}
                                 {!aiGenerating && (
                                     <div className="absolute bottom-0 left-0 w-full flex flex-col gap-3 p-8 pb-12 bg-gradient-to-t from-black/90 via-black/40 to-transparent z-[10003]">
-                                        <button
-                                            onClick={() => handleAiTryOn(previewImage)}
-                                            className="w-full py-5 bg-orange-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-2xl hover:bg-orange-500 active:scale-95 transition-all"
-                                        >
-                                            Générer le rendu (1 crédit)
-                                        </button>
+                                        
+                                        {hasAnyBackContent ? (
+                                            <div className="flex flex-col gap-2 animate-slide-up">
+                                                <div className="bg-orange-900/40 border border-orange-500/30 rounded-xl p-3 mb-2 text-center backdrop-blur-md">
+                                                    <span className="text-[10px] text-orange-300 font-black uppercase tracking-widest block mb-1">
+                                                        <i className="fa-solid fa-star mr-1"></i> Option Premium
+                                                    </span>
+                                                    <span className="text-xs text-white/90 font-medium">
+                                                        Votre design contient des éléments au dos.
+                                                    </span>
+                                                </div>
+                                                
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => handleAiTryOn('front')}
+                                                        className="flex-1 py-4 bg-white/10 border border-white/20 text-white font-bold uppercase tracking-wider rounded-xl hover:bg-white/20 active:scale-95 transition-all text-xs"
+                                                    >
+                                                        Face Uniquement
+                                                        <span className="block text-[10px] text-white/50 font-normal mt-0.5">(1 crédit)</span>
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={() => handleAiTryOn('both')}
+                                                        className="flex-[1.5] py-4 bg-orange-600 text-white font-black uppercase tracking-widest rounded-xl shadow-2xl shadow-orange-500/20 hover:bg-orange-500 active:scale-95 transition-all text-xs relative overflow-hidden"
+                                                    >
+                                                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full animate-[shimmer_2s_infinite]"></div>
+                                                        Face + Dos
+                                                        <span className="block text-[10px] text-white/80 font-bold mt-0.5">(2 crédits)</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleAiTryOn('front')}
+                                                className="w-full py-5 bg-orange-600 text-white font-black uppercase tracking-widest rounded-2xl shadow-2xl hover:bg-orange-500 active:scale-95 transition-all"
+                                            >
+                                                Générer le rendu (1 crédit)
+                                            </button>
+                                        )}
+
                                         <button
                                             onClick={() => setPreviewImage(null)}
-                                            className="w-full py-4 text-white/70 font-bold uppercase tracking-wider text-sm hover:text-white transition-colors"
+                                            className="w-full py-3 text-white/70 font-bold uppercase tracking-wider text-sm hover:text-white transition-colors mt-2"
                                         >
                                             Annuler
                                         </button>
@@ -5177,31 +5113,31 @@ export
                                             <button
                                                 onClick={handleShareDesign}
                                                 disabled={sharingLoading}
-                                                className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold rounded-xl transition-all flex items-center justify-center gap-2"
+                                                className="w-12 h-12 bg-gray-100 hover:bg-gray-200 text-gray-900 font-bold rounded-xl transition-all flex items-center justify-center"
+                                                title="Partager"
                                             >
                                                 <i className={`fa-solid ${sharingLoading ? 'fa-spinner fa-spin' : 'fa-share-nodes'}`}></i>
-                                                {sharingLoading ? 'Génération...' : 'Partager'}
                                             </button>
+                                            
                                             <button
-                                                onClick={handleAddToCartAction} 
-                                                disabled={isCapturing}
-                                                className={`flex-[2] py-4 text-white font-black uppercase tracking-wider rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${
-                                                    hasAnySize 
-                                                        ? 'bg-green-500 hover:bg-green-400 shadow-green-500/20' // Vert si prêt pour le panier
-                                                        : 'bg-orange-600 hover:bg-orange-500 shadow-orange-500/20' // Orange pour Valider
-                                                }`}
+                                                onClick={() => {
+                                                    if (checkSizeBeforeProceeding()) setAiModalOpen(true);
+                                                }}
+                                                className="w-12 h-12 bg-orange-100 text-orange-600 font-bold rounded-xl flex items-center justify-center animate-bounce-ia"
+                                                title="Essayage Intelligent"
                                             >
-                                                <i className={`fa-solid ${
-                                                    isCapturing ? 'fa-circle-notch fa-spin' : 
-                                                    hasAnySize ? 'fa-cart-shopping' : 'fa-check-double'
-                                                }`}></i>
-                                                
-                                                {isCapturing 
-                                                    ? 'Patientez...' 
-                                                    : hasAnySize 
-                                                        ? 'Ajouter au Panier' 
-                                                        : 'Valider le design'
-                                                }
+                                                <i className="fa-solid fa-wand-magic-sparkles"></i>
+                                            </button>
+
+                                            <button
+                                                onClick={() => {
+                                                    if (checkSizeBeforeProceeding()) setShowValidateOptions(true);
+                                                }}
+                                                disabled={isCapturing}
+                                                className="flex-1 py-4 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded-xl shadow-lg shadow-orange-500/20 transition-all flex items-center justify-center gap-2"
+                                            >
+                                                <i className={`fa-solid ${isCapturing ? 'fa-spinner fa-spin' : 'fa-cart-plus'}`}></i>
+                                                {isCapturing ? 'Capture...' : 'Ajouter / IA'}
                                             </button>
                                         </div>
                                     </div>
@@ -5217,9 +5153,184 @@ export
                     <ShareDesignModal
                         shortId={shareShortId}
                         onClose={() => setShareShortId(null)}
-                    />
+                     />
                 )}
+
+                {showAiLossWarning && createPortal(
+                    <div className="fixed inset-0 z-[10050] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+                        <div className="bg-white rounded-3xl w-full max-w-md p-6 shadow-2xl relative overflow-hidden text-center flex flex-col gap-4">
+                            <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto text-orange-500 mb-2">
+                                <i className="fa-solid fa-triangle-exclamation text-3xl"></i>
+                            </div>
+                            
+                            <h3 className="text-2xl font-black text-gray-900 uppercase">Attention !</h3>
+                            <p className="text-gray-500 font-bold leading-relaxed">
+                                Le rendu IA actuel sera <span className="text-red-500">définitivement perdu</span> si vous modifiez le vêtement maintenant.
+                                <br/><br/>
+                                <span className="text-gray-900">Souhaitez-vous le sauvegarder avant de continuer ?</span>
+                            </p>
+
+                            <div className="flex flex-col gap-3 mt-4">
+                                <button 
+                                    onClick={() => {
+                                        const btn = document.getElementById('btn-guard-save');
+                                        if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> SAUVEGARDE...';
+                                        
+                                        if (handleAddToProfile) {
+                                            handleAddToProfile().then(() => {
+                                                setShowAiLossWarning(false);
+                                                // On exécute l'action prévue après la sauvegarde
+                                                if (pendingActionRef.current) {
+                                                    pendingActionRef.current();
+                                                    pendingActionRef.current = null;
+                                                }
+                                            }).catch(() => {
+                                                if (btn) btn.innerHTML = '<i class="fa-solid fa-heart"></i> SAUVEGARDER L\'IMAGE';
+                                            });
+                                        }
+                                    }} 
+                                    id="btn-guard-save"
+                                    className="w-full py-4 bg-gray-900 text-white font-black rounded-xl shadow-lg hover:bg-black transition-all flex items-center justify-center gap-2"
+                                >
+                                    <i className={user ? "fa-solid fa-heart" : "fa-solid fa-lock"}></i>
+                                    {user ? "SAUVEGARDER L'IMAGE ACTUELLE" : "CRÉER UN COMPTE POUR SAUVEGARDER"}
+                                </button>
+                                
+                                <button 
+                                    onClick={() => {
+                                        // Confirme la perte sans sauvegarder : on efface l'IA et on exécute l'action
+                                        if (setAiResult) setAiResult(null);
+                                        localStorage.removeItem('stylelink_draft_ai_result');
+                                        setShowAiLossWarning(false);
+                                        if (pendingActionRef.current) {
+                                            pendingActionRef.current();
+                                            pendingActionRef.current = null;
+                                        }
+                                    }} 
+                                    className="w-full py-4 bg-white text-gray-600 font-bold rounded-xl border border-gray-200 hover:bg-gray-50 hover:text-red-500 transition-all"
+                                >
+                                    Continuer sans sauvegarder
+                                </button>
+                                
+                                <button 
+                                    onClick={() => {
+                                        // Annule tout : on ferme la modal et on ne fait pas l'action
+                                        setShowAiLossWarning(false);
+                                        pendingActionRef.current = null;
+                                    }} 
+                                    className="w-full py-2 text-gray-400 font-bold hover:text-gray-600 text-sm"
+                                >
+                                    Annuler (Garder mon image IA)
+                                </button>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
+
+                {/* MODAL DE CONSULTATION DU RENDU IA (showAiResultModal) */}
+                {showAiResultModal && (aiResults || aiResult) && createPortal(
+                    <div className="fixed inset-0 z-[10005] flex flex-col bg-black lg:bg-black/80 lg:backdrop-blur-md animate-fade-in overflow-hidden lg:items-center lg:justify-center">
+                        <div className="flex-1 flex flex-col relative w-full lg:max-w-md lg:h-fit lg:max-h-[90vh] lg:bg-black lg:rounded-[3rem] lg:shadow-2xl lg:ring-1 lg:ring-white/20 lg:overflow-hidden">
+                            {/* Image Header / Close */}
+                            <div className="absolute top-0 left-0 w-full p-4 flex justify-between items-center z-20">
+                                <div className="bg-black/40 backdrop-blur-md px-3 py-1 rounded-full text-[10px] text-white font-bold uppercase tracking-widest border border-white/20">
+                                    <i className="fa-solid fa-wand-magic-sparkles text-orange-500 mr-2"></i>
+                                    VOTRE ESSAYAGE VIRTUEL
+                                </div>
+                                <button 
+                                    onClick={() => setShowAiResultModal(false)}
+                                    className="w-10 h-10 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full text-white flex items-center justify-center transition-all"
+                                >
+                                    <i className="fa-solid fa-times"></i>
+                                </button>
+                            </div>
+
+                            {/* View Toggle (Front / Back) */}
+                            {aiResults?.front && aiResults?.back && (
+                                <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 flex bg-white/10 backdrop-blur-xl p-1 rounded-full border border-white/20 shadow-2xl">
+                                    <button 
+                                        onClick={() => setActiveAiView('front')}
+                                        className={`px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${activeAiView === 'front' ? 'bg-white text-black shadow-lg' : 'text-white/60 hover:text-white'}`}
+                                    >
+                                        Face
+                                    </button>
+                                    <button 
+                                        onClick={() => setActiveAiView('back')}
+                                        className={`px-6 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${activeAiView === 'back' ? 'bg-white text-black shadow-lg' : 'text-white/60 hover:text-white'}`}
+                                    >
+                                        Dos
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Main Image Display */}
+                            <div className="flex-1 bg-black relative flex items-center justify-center p-4 min-h-0">
+                                <div className="w-auto h-auto max-h-[55vh] max-w-full aspect-[9/16] relative rounded-3xl overflow-hidden shadow-2xl border border-white/10">
+                                    <img 
+                                        src={aiResults?.[activeAiView] || aiResult} 
+                                        key={activeAiView}
+                                        className="w-full h-full object-contain animate-fade-in" 
+                                        alt="AI Preview" 
+                                     />
+                                </div>
+                            </div>
+
+                            {/* Toolbar Buttons */}
+                            <div className="flex-none bg-black/80 backdrop-blur-md p-6 pt-8 pb-10 flex flex-col gap-3 rounded-t-3xl -mt-6 z-10 border-t border-white/10">
+                                <div className="text-center mb-2">
+                                    <h3 className="text-white font-black text-xl uppercase tracking-wider">✨ Rendu IA prêt !</h3>
+                                    <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest">Le visuel est prêt pour l'impression</p>
+                                </div>
+
+                                <button
+                                    onClick={() => {
+                                        setShowAiResultModal(false);
+                                        handleAddToCartAction();
+                                    }}
+                                    className="w-full py-5 bg-orange-500 hover:bg-orange-600 text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl shadow-orange-500/20 active:scale-95 transition-all text-sm flex items-center justify-center gap-3"
+                                >
+                                    <i className="fa-solid fa-cart-plus"></i>
+                                    Ajouter au Panier
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        if (setAiResult) setAiResult(null);
+                                        setAiResults(null);
+                                        setShowAiResultModal(false);
+                                        setAiModalOpen(true);
+                                        setAiStep('prompt');
+                                    }}
+                                    className="w-full py-4 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-2xl font-bold uppercase tracking-widest transition-all text-xs flex items-center justify-center gap-2"
+                                >
+                                    <i className="fa-solid fa-wand-sparkles"></i>
+                                    Refaire / Modifier (Effacera ce rendu)
+                                </button>
+
+                                <div className="grid grid-cols-2 gap-3 mt-1">
+                                    <button
+                                        onClick={handleAddToProfile}
+                                        className="py-3 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <i className="fa-solid fa-heart text-red-500"></i>
+                                        Sauvegarder
+                                    </button>
+                                    <button
+                                        onClick={() => setShowAiResultModal(false)}
+                                        className="py-3 bg-white text-black rounded-xl font-black uppercase text-[10px] tracking-widest transition-all"
+                                    >
+                                        Fermer
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )
+                }
             </div>
-        </div >
+            </div>
+            </div>
     );
 };

@@ -2513,11 +2513,14 @@ function CustomizerApp() {
             if (!product) return;
 
             const sizes = item.sizes || {};
-            const itemQty = Object.values(sizes).reduce((a, b) => (a as number) + (b as number), 0);
+            // Aggressive numeric cast to avoid NaN
+            const itemQty = Object.values(sizes).reduce((a, b) => (Number(a) || 0) + (Number(b) || 0), 0);
+            
+            // Skip ONLY IF itemQty is truly 0 and we are NOT investigating a 0.00 error
             if (itemQty <= 0) return;
 
             // 1. Calculate Marking Fee (Additive)
-            const combinedFee = calculateMarkingFee(item);
+            const combinedFee = Number(calculateMarkingFee(item)) || 0;
 
             // 2. Calculate Base Textile Price for each size
             Object.entries(sizes).forEach(([size, qty]) => {
@@ -2526,14 +2529,13 @@ function CustomizerApp() {
 
                 // Force numeric cast and fallback to product database price if necessary
                 const baseUnitPrice = Number(calculateBaseUnitPrice(product, size, item.color, pricingRules, itemQty)) || Number(product.price) || 15;
-                const markingFee = Number(combinedFee) || 0;
-                const fullUnitPrice = baseUnitPrice + markingFee;
+                const fullUnitPrice = baseUnitPrice + combinedFee;
 
                 // Fix Prix unitaire : Ensure at least 0.01 if product exists
                 const finalUnitPrice = Math.max(0.01, fullUnitPrice);
 
-                subtotal += Number(quantity) * Number(finalUnitPrice);
-                itemsCount += Number(quantity);
+                subtotal += quantity * finalUnitPrice;
+                itemsCount += quantity;
             });
 
             if (item.serviceRetouche || item.isRetouchingService) servicesTotal += 50;
@@ -2553,17 +2555,17 @@ function CustomizerApp() {
         const shippingValue = subtotal > 0 ? Number(SHIPPING_COST) : 0;
         const expressFee = isExpress ? 12 : 0;
 
-        // CRITICAL: Ensure subtotal isn't lost if calculateBaseUnitPrice failed
+        // CRITICAL FALLBACK: If subtotal is still 0 but cart has items, 
+        // it means all items have 0 quantity. We MUST show a total based on min 1 unit per item
+        // to avoid the "0.00€" display bug and give a valid price signal.
         if (subtotal === 0 && cart.length > 0) {
-            console.warn("DEBUG PRIX: Subtotal is 0 despite non-empty cart. Checking fallbacks...");
+            console.warn("DEBUG PRIX: Subtotal is 0 despite non-empty cart. Applying 1-unit fallback...");
             cart.forEach(item => {
                 const product = productsMapping?.[item.productType] || productDatabase[item.productType];
-                const itemQty = Object.values(item.sizes || {}).reduce((a, b) => Number(a) + Number(b), 0);
-                if (product) {
-                    subtotal += Number(itemQty) * (Number(product.price) || 15); // Fallback to 15 as requested
-                } else {
-                    subtotal += Number(itemQty) * 15; // Universal fallback
-                }
+                const markingFee = Number(calculateMarkingFee(item)) || 0;
+                const basePrice = product ? (Number(product.price) || 15) : 15;
+                subtotal += (basePrice + markingFee);
+                itemsCount += 1;
             });
         }
 

@@ -46,12 +46,14 @@ export const generateTryOnImage = async (
         glassesPrompt = explicitGlassesPrompt;
     } else {
         let foundStyle = null;
-        for (const cat in STYLE_MATRIX) {
-            if (Array.isArray(STYLE_MATRIX[cat])) {
-                const match = (STYLE_MATRIX[cat] as any[]).find(s => s.name.toLowerCase() === styleCategory.toLowerCase() || s.name.toLowerCase().includes(styleCategory.toLowerCase()));
-                if (match) {
-                    foundStyle = match;
-                    break;
+        if (styleCategory) {
+            for (const cat in STYLE_MATRIX) {
+                if (Array.isArray(STYLE_MATRIX[cat])) {
+                    const match = (STYLE_MATRIX[cat] as any[]).find(s => s && s.name && (s.name.toLowerCase() === styleCategory.toLowerCase() || s.name.toLowerCase().includes(styleCategory.toLowerCase())));
+                    if (match) {
+                        foundStyle = match;
+                        break;
+                    }
                 }
             }
         }

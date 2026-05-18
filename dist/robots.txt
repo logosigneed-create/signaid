@@ -1,3 +1,0 @@
-User-agent: *
-Allow: /
-Sitemap: https://signaid-d2d08.web.app/sitemap.xml

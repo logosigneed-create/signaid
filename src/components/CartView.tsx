@@ -129,6 +129,21 @@ export const CartView: React.FC<{
 
         const expressFee = isExpress ? 12 : 0;
         let total = subtotal + servicesTotal + currentShipping + expressFee - promoDiscount;
+        
+        // CRITICAL FALLBACK (Consistent with main App)
+        if (total <= 0 && cart.length > 0) {
+            const productBase = productsMapping || productDatabase;
+            cart.forEach(item => {
+                const product = productBase[item.productType];
+                if (product) {
+                    const markingFee = Number(calculateMarkingFee(item)) || 0;
+                    const basePrice = Number(product.price) || 15;
+                    total += (basePrice + markingFee);
+                }
+            });
+            if (total <= 0) total = 0.01;
+        }
+
         if (total < 0) total = 0;
 
         return { subtotal, servicesTotal, shipping: currentShipping, expressFee, total, itemsCount, isBulkRetouch, totalWeight };

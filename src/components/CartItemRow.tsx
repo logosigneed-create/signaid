@@ -42,7 +42,7 @@ export const CartItemRow: React.FC<CartItemRowProps> = ({
     const baseUnitPrice = calculateBaseUnitPrice(product, firstSelectedSize, item.color, pricingRules, totalQty);
 
     const itemUnitPrice = baseUnitPrice + combinedFee;
-    const itemTotalSubtotal = totalQty * itemUnitPrice;
+    const itemTotalSubtotal = totalQty > 0 ? (totalQty * itemUnitPrice) : itemUnitPrice; // Show at least 1 unit value if qty is 0 for placeholder display
 
     const unitPriceBreakdown = combinedFee > 0
         ? `${baseUnitPrice.toFixed(2)}€ (Vêtement) + ${combinedFee}€ (Production + Forfait Impression)`
@@ -186,10 +186,12 @@ export const CartItemRow: React.FC<CartItemRowProps> = ({
                     </div>
                     <div className="text-right flex flex-col items-end gap-1">
                         <div className="flex flex-col items-end">
-                            <span className="font-black text-orange-600 text-3xl">
+                            <span className={`font-black ${totalQty === 0 ? 'text-gray-400 italic text-xl' : 'text-orange-600 text-3xl'}`}>
                                 {itemTotalSubtotal.toFixed(2)} €
                             </span>
-                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Ligne TTC</span>
+                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                                {totalQty === 0 ? 'Prix indicatif (1 pc)' : 'Total Ligne TTC'}
+                            </span>
                         </div>
                         {totalQty > 1 && (
                             <div className="flex flex-col items-end mt-1">
@@ -264,6 +266,12 @@ export const CartItemRow: React.FC<CartItemRowProps> = ({
                             </div>
                         )
                     ))}
+                    {totalQty === 0 && (
+                        <div className="py-4 text-center border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                            <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">Selectionnez une taille</p>
+                            <p className="text-[10px] text-gray-400/80 mt-1 italic">Ajoutez au moins une unité pour voir le total</p>
+                        </div>
+                    )}
 
                 </div>
 
