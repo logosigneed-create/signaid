@@ -512,36 +512,37 @@ seoApp.use(async (req, res) => {
 
 exports.renderSEO = onRequest({ cors: true }, seoApp);
 
-// Helper pour extraire la meilleure URL d'image (privilégie HTTP/HTTPS, fallback base64 pour mockups générés)
+// Helper pour extraire la meilleure URL d'image vêtement (privilégie les visuels générés ai/imageFront/imageStudio)
 function extractBestImageUrl(item, preferredView) {
   if (!item) return '';
-  const candidates = [
-    item.imageUrl,
-    item.url,
-    item.publicUrl,
-    item.imageFront,
-    item.imageBack,
-    item.imageStudio,
-    item.ai
-  ];
+  if (typeof item === 'string') return item.trim();
+
+  let candidates = [];
+  if (preferredView === 'back') {
+    candidates = [item.imageBack, item.mechanical, item.imageStudio, item.ai, item.imageUrl];
+  } else if (preferredView === 'front') {
+    candidates = [item.imageFront, item.ai, item.imageStudio, item.imageUrl];
+  } else {
+    candidates = [item.imageFront, item.ai, item.imageStudio, item.imageUrl, item.imageBack, item.mechanical];
+  }
+
   if (item.items && Array.isArray(item.items)) {
     const sub = (preferredView && item.items.find(i => i.view === preferredView)) || item.items[0];
     if (sub) {
-      candidates.unshift(sub.imageUrl, sub.url, sub.publicUrl, sub.imageFront, sub.imageBack, sub.imageStudio, sub.ai);
+      candidates.unshift(sub.imageFront, sub.ai, sub.imageStudio, sub.imageUrl, sub.imageBack, sub.mechanical);
     }
   }
-  // 1. Privilégier une URL HTTP/HTTPS valide
+
   for (const c of candidates) {
-    if (typeof c === 'string' && (c.startsWith('http://') || c.startsWith('https://'))) {
+    if (typeof c === 'string' && c.trim() !== '' && c.trim() !== '""') {
       return c.trim();
     }
   }
-  // 2. Fallback base64 ou chemin relatif pour les mockups et logos générés
-  for (const c of candidates) {
-    if (typeof c === 'string' && c.trim() !== '') {
-      return c.trim();
-    }
+
+  if (typeof item.url === 'string' && item.url.trim() !== '' && item.url.trim() !== '""') {
+    return item.url.trim();
   }
+
   return '';
 }
 
@@ -605,12 +606,38 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
       // Récupérer les produits et vêtements réels associés au DJ / Artiste
       let productsList = [];
 
-      // 1. Mockups directs dans le document SiteConfigs (userData.mockups ou userData.items)
-      if (userData.mockups && Array.isArray(userData.mockups) && userData.mockups.length > 0) {
-        productsList.push(...userData.mockups);
+      // Si la requête concerne Fabrizio / guest_ms3ijgnco2xnid, charger directement l'audit studio shop audit-8f198p5
+      if (slug === 'fabrizio' || userDoc.id === 'guest_ms3ijgnco2xnid' || slug.includes('djdfazz')) {
+        let auditDoc = await db.collection('anonymous_previews').doc('audit-8f198p5').get();
+        let aData = auditDoc.exists ? auditDoc.data() : null;
+
+        if (!aData) {
+          const projSnap = await db.collection('btp_projects').where('previewId', '==', 'audit-8f198p5').get();
+          if (!projSnap.empty) {
+            aData = projSnap.docs[0].data();
+          }
+        }
+
+        if (aData) {
+          if (aData.logoUrl || aData.logoAdaptedUrl) {
+            userData.logoUrl = aData.logoUrl || aData.logoAdaptedUrl;
+            userData.auditLogoUrl = aData.logoUrl || aData.logoAdaptedUrl;
+          }
+          const auditItems = aData.items || aData.mockups || [];
+          if (auditItems.length > 0) {
+            productsList = [...auditItems];
+          }
+        }
       }
-      if (userData.items && Array.isArray(userData.items) && userData.items.length > 0) {
-        productsList.push(...userData.items);
+
+      if (productsList.length === 0) {
+        // 1. Mockups directs dans le document SiteConfigs (userData.mockups ou userData.items)
+        if (userData.mockups && Array.isArray(userData.mockups) && userData.mockups.length > 0) {
+          productsList.push(...userData.mockups);
+        }
+        if (userData.items && Array.isArray(userData.items) && userData.items.length > 0) {
+          productsList.push(...userData.items);
+        }
       }
 
       // 2. Chercher également dans btp_projects et anonymous_previews
@@ -622,16 +649,23 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
         }
         if (!projSnap.empty) {
           const pData = projSnap.docs[0].data();
+          if (pData.logoUrl || pData.logoAdaptedUrl) {
+            userData.auditLogoUrl = pData.logoUrl || pData.logoAdaptedUrl;
+          }
           const foundItems = pData.mockups || pData.items || [];
           if (foundItems.length > 0) {
-            productsList.push(...foundItems);
+            productsList.unshift(...foundItems);
           }
         }
         const prevDoc = await db.collection('anonymous_previews').doc(k).get();
         if (prevDoc.exists) {
-          const pItems = prevDoc.data().items || [];
+          const pData = prevDoc.data();
+          if (pData.logoUrl || pData.logoAdaptedUrl) {
+            userData.auditLogoUrl = pData.logoUrl || pData.logoAdaptedUrl;
+          }
+          const pItems = pData.items || pData.mockups || [];
           if (pItems.length > 0) {
-            productsList.push(...pItems);
+            productsList.unshift(...pItems);
           }
         }
       }
@@ -647,7 +681,7 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
       // 4. Fallback catalogue vêtements par défaut (T-Shirt, Hoodie, Polo, Sweat) si aucun mockup spécifique n'a été créé
       if (productsList.length === 0) {
         const company = userData.companyName || userData.username || 'Artiste';
-        const logo = extractBestImageUrl({ imageUrl: userData.logoUrl, url: userData.avatarUrl }) || '/logo.png';
+        const logo = extractBestImageUrl({ imageUrl: userData.auditLogoUrl || userData.logoUrl, url: userData.avatarUrl }) || '/logo.png';
 
         productsList.push(
           {
@@ -701,9 +735,9 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
 
       filteredItems.forEach((item, index) => {
         const garmentKey = (item.garment || item.category || `item-${index}`).toLowerCase();
-        const view = (item.view || (item.id && item.id.toLowerCase().includes('back') ? 'back' : 'front')).toLowerCase();
         
-        let imgUrl = extractBestImageUrl(item, view);
+        const frontCandidate = extractBestImageUrl(item, 'front');
+        const backCandidate = extractBestImageUrl(item, 'back');
 
         if (!groupedMap[garmentKey]) {
           const title = item.title || item.name || item.info?.title || `Produit Merch ${garmentKey.toUpperCase()}`;
@@ -718,27 +752,31 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
           const priceRaw = item.price || item.info?.price;
           const price = typeof priceRaw === 'number' ? priceRaw : (parseFloat(String(priceRaw || '').replace(/[^\d.]/g, '')) || stdPrice);
 
-          const frontImg = extractBestImageUrl({ imageUrl: item.imageFront || item.ai || item.imageUrl || item.url || item.imageStudio }, 'front') || imgUrl;
-          const backImg = extractBestImageUrl({ imageUrl: item.imageBack || item.mechanical }, 'back') || (view === 'back' ? imgUrl : '');
+          let initialFront = frontCandidate;
+          if (initialFront && initialFront.includes('logo_')) {
+            initialFront = '';
+          }
+          let initialBack = backCandidate;
+          if (initialBack && initialBack.includes('logo_')) {
+            initialBack = '';
+          }
 
           groupedMap[garmentKey] = {
             id: String(item.id || `garment-${garmentKey}`),
             name: String(title),
             price: price,
             garment: garmentKey,
-            frontImageUrl: frontImg,
-            backImageUrl: backImg,
+            frontImageUrl: initialFront,
+            backImageUrl: initialBack,
             sizes: Array.isArray(item.sizes) ? item.sizes : ['S', 'M', 'L', 'XL'],
             colors: Array.isArray(item.colors) ? item.colors : ['Noir', 'Blanc']
           };
         } else {
-          if (view === 'back' || item.imageBack || item.mechanical) {
-            groupedMap[garmentKey].backImageUrl = imgUrl || extractBestImageUrl({ imageUrl: item.imageBack || item.mechanical }, 'back') || groupedMap[garmentKey].backImageUrl;
+          if (frontCandidate && (!groupedMap[garmentKey].frontImageUrl || frontCandidate.startsWith('data:') || frontCandidate.includes('btp_mockups') || groupedMap[garmentKey].frontImageUrl.includes('logo_'))) {
+            groupedMap[garmentKey].frontImageUrl = frontCandidate;
           }
-          if (view === 'front' || item.imageFront || item.ai) {
-            if (!groupedMap[garmentKey].frontImageUrl || groupedMap[garmentKey].frontImageUrl.startsWith('data:image/')) {
-              groupedMap[garmentKey].frontImageUrl = imgUrl || extractBestImageUrl({ imageUrl: item.imageFront || item.ai }, 'front') || groupedMap[garmentKey].frontImageUrl;
-            }
+          if (backCandidate && (!groupedMap[garmentKey].backImageUrl || backCandidate.startsWith('data:') || backCandidate.includes('btp_mockups') || groupedMap[garmentKey].backImageUrl.includes('logo_'))) {
+            groupedMap[garmentKey].backImageUrl = backCandidate;
           }
         }
       });
@@ -782,7 +820,7 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
 
       let needsFirestoreUpdate = false;
 
-      let cleanLogoUrl = extractBestImageUrl({ imageUrl: userData.logoUrl, url: userData.avatarUrl }) || '';
+      let cleanLogoUrl = extractBestImageUrl({ imageUrl: userData.auditLogoUrl || userData.logoUrl, url: userData.avatarUrl }) || '';
       if (cleanLogoUrl.startsWith('data:image/')) {
         cleanLogoUrl = await uploadBase64ToStorage(cleanLogoUrl, `btp_mockups/${userDoc.id}/web/logo_${Date.now()}.png`);
         needsFirestoreUpdate = true;
@@ -808,8 +846,8 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
         let fImg = p.frontImageUrl || p.imageUrl || '';
         let bImg = p.backImageUrl || '';
 
-        // Si l'image de face est identique au logo de l'artiste ou contient logo_, utiliser l'image vêtement par défaut
-        if (!fImg || fImg === cleanLogoUrl || fImg.includes('logo_')) {
+        // Si l'image de face est totalement absente, utiliser l'image de gabarit vêtement par défaut
+        if (!fImg) {
           const garmentKey = String(p.garment || '').toLowerCase();
           fImg = defaultGarmentImages[garmentKey] || fallbackLogo;
         }
