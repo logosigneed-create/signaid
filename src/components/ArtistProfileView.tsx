@@ -95,10 +95,6 @@ export function getOptimizedImageUrl(url?: string, width = 400): string {
   const cleanUrl = url.trim();
   if (!cleanUrl) return '';
 
-  if (cleanUrl.includes('firebasestorage.googleapis.com')) {
-    return `https://images.weserv.nl/?url=${encodeURIComponent(cleanUrl)}&w=${width}&output=webp&q=80`;
-  }
-
   return cleanUrl;
 }
 

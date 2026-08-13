@@ -796,15 +796,29 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
 
       const fallbackLogo = cleanLogoUrl || '/logo.png';
 
+      const defaultGarmentImages = {
+        tshirt: '/assets/tshirt-black-JHK170.png',
+        polo: '/assets/polo-black-JHK510.png',
+        sweat: '/assets/hoodie-black-JHK421.png',
+        hoodie: '/assets/hoodie-black-JHK421.png',
+        sweatshirt: '/assets/hoodie-black-JHK421.png'
+      };
+
       const normalizedProducts = await Promise.all(Object.values(groupedMap).map(async (p, idx) => {
         let fImg = p.frontImageUrl || p.imageUrl || '';
         let bImg = p.backImageUrl || '';
 
-        if (fImg.startsWith('data:image/')) {
+        // Si l'image de face est identique au logo de l'artiste ou contient logo_, utiliser l'image vêtement par défaut
+        if (!fImg || fImg === cleanLogoUrl || fImg.includes('logo_')) {
+          const garmentKey = String(p.garment || '').toLowerCase();
+          fImg = defaultGarmentImages[garmentKey] || fallbackLogo;
+        }
+
+        if (fImg.startsWith('data:')) {
           fImg = await uploadBase64ToStorage(fImg, `btp_mockups/${userDoc.id}/web/${p.id}_front_${Date.now()}_${idx}.png`);
           needsFirestoreUpdate = true;
         }
-        if (bImg.startsWith('data:image/')) {
+        if (bImg.startsWith('data:')) {
           bImg = await uploadBase64ToStorage(bImg, `btp_mockups/${userDoc.id}/web/${p.id}_back_${Date.now()}_${idx}.png`);
           needsFirestoreUpdate = true;
         }
