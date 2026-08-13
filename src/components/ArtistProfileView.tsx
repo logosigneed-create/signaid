@@ -936,7 +936,7 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
               borderRadius: '50%', 
               border: `3px solid ${artist.accentColor || '#ff3366'}`,
               boxShadow: `0 0 25px ${artist.accentColor ? `${artist.accentColor}55` : 'rgba(255, 51, 102, 0.4)'}`,
-              filter: isLight && artist.invertLogoInLightMode !== false ? 'invert(1) hue-rotate(180deg)' : 'none',
+              filter: 'none',
               transition: 'filter 0.3s ease'
             }} 
           />
@@ -1441,7 +1441,7 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
 
           <div className="merch-responsive-grid">
             {products.map(prod => (
-              <ProductCard key={prod.id} product={prod} onAddToCart={addToCart} accentColor={artist.accentColor} isLightMode={isLight} artistLogo={artist.logoUrl} />
+              <ProductCard key={prod.id} product={prod} onAddToCart={addToCart} accentColor={artist.accentColor} isLightMode={isLight} />
             ))}
           </div>
         </section>
@@ -1906,46 +1906,22 @@ const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box'
 };
 
-const STUDIO_PLACEMENTS: Record<string, { front: { bg: string; x: string; y: string; w: string }; back: { bg: string; x: string; y: string; w: string } }> = {
-  tshirt: {
-    front: { bg: '/assets/models/male_tshirt_front.png', x: '64%', y: '32%', w: '18%' },
-    back: { bg: '/assets/models/male_tshirt_back.png', x: '50%', y: '38%', w: '32%' }
-  },
-  polo: {
-    front: { bg: '/assets/models/male_polo_front.png', x: '64%', y: '32%', w: '16%' },
-    back: { bg: '/assets/models/male_polo_back.png', x: '50%', y: '38%', w: '32%' }
-  },
-  sweat: {
-    front: { bg: '/assets/models/male_hoodie_front.png', x: '64%', y: '38%', w: '18%' },
-    back: { bg: '/assets/models/male_hoodie_back.png', x: '50%', y: '46%', w: '32%' }
-  },
-  hoodie: {
-    front: { bg: '/assets/models/male_hoodie_front.png', x: '64%', y: '38%', w: '18%' },
-    back: { bg: '/assets/models/male_hoodie_back.png', x: '50%', y: '46%', w: '32%' }
-  }
-};
-
 // Composant Carte Produit
-function ProductCard({ product, onAddToCart, accentColor, isLightMode, artistLogo }: { product: ProductItem; onAddToCart: (p: ProductItem, size: string, color: string) => void; accentColor?: string; isLightMode?: boolean; artistLogo?: string }) {
+function ProductCard({ product, onAddToCart, accentColor, isLightMode }: { product: ProductItem; onAddToCart: (p: ProductItem, size: string, color: string) => void; accentColor?: string; isLightMode?: boolean }) {
   const [selectedSize, setSelectedSize] = useState(product.sizes?.[0] || 'L');
   const [selectedColor, setSelectedColor] = useState(product.colors?.[0] || 'Noir');
   const [currentView, setCurrentView] = useState<'front' | 'back'>('front');
 
-  const garmentKey = (product.garment || product.category || 'tshirt').toLowerCase();
-  const studioConfig = STUDIO_PLACEMENTS[garmentKey] || STUDIO_PLACEMENTS['tshirt'];
-
   const hasBackImage = Boolean(
-    (product.backImageUrl && product.backImageUrl.trim() !== '' && product.backImageUrl.trim() !== '""' && product.backImageUrl !== product.frontImageUrl) ||
-    studioConfig.back?.bg
+    product.backImageUrl &&
+    product.backImageUrl.trim() !== '' &&
+    product.backImageUrl.trim() !== '""' &&
+    product.backImageUrl !== product.frontImageUrl
   );
 
   const activeView = hasBackImage ? currentView : 'front';
   const rawActiveUrl = (activeView === 'back' && product.backImageUrl) ? product.backImageUrl : (product.frontImageUrl || product.imageUrl);
   const activeImageUrl = getOptimizedImageUrl(rawActiveUrl, 400);
-
-  const isLogoOnly = !activeImageUrl || activeImageUrl === artistLogo || activeImageUrl.includes('logo_');
-  const viewStudio = studioConfig[activeView] || studioConfig.front;
-  const logoToOverlay = artistLogo || (isLogoOnly ? activeImageUrl : '') || '/logo.png';
 
   return (
     <div style={{ backgroundColor: isLightMode ? '#ffffff' : '#0d0d0d', border: isLightMode ? '1px solid #cbd5e1' : '1px solid #1a1a1a', borderRadius: '8px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: isLightMode ? '0 4px 15px rgba(0,0,0,0.05)' : 'none' }}>
@@ -1989,30 +1965,7 @@ function ProductCard({ product, onAddToCart, accentColor, isLightMode, artistLog
           </div>
         )}
 
-        {isLogoOnly ? (
-          <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <img 
-              src={viewStudio.bg} 
-              alt={product.name} 
-              style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} 
-            />
-            {logoToOverlay && (
-              <img 
-                src={logoToOverlay} 
-                alt="Logo Studio" 
-                style={{
-                  position: 'absolute',
-                  top: viewStudio.y,
-                  left: viewStudio.x,
-                  width: viewStudio.w,
-                  transform: 'translate(-50%, -50%)',
-                  objectFit: 'contain',
-                  filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))'
-                }}
-              />
-            )}
-          </div>
-        ) : activeImageUrl ? (
+        {activeImageUrl ? (
           <img 
             src={activeImageUrl} 
             alt={product.name} 

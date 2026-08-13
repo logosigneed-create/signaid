@@ -832,24 +832,34 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
         needsFirestoreUpdate = true;
       }
 
-      const fallbackLogo = cleanLogoUrl || '/logo.png';
+      const fallbackLogo = cleanLogoUrl || 'https://signaid-prod.web.app/logo.png';
 
       const defaultGarmentImages = {
-        tshirt: '/assets/tshirt-black-JHK170.png',
-        polo: '/assets/polo-black-JHK510.png',
-        sweat: '/assets/hoodie-black-JHK421.png',
-        hoodie: '/assets/hoodie-black-JHK421.png',
-        sweatshirt: '/assets/hoodie-black-JHK421.png'
+        tshirt: 'https://signaid-prod.web.app/assets/tshirt-black-JHK170.png',
+        polo: 'https://signaid-prod.web.app/assets/polo-black-JHK510.png',
+        sweat: 'https://signaid-prod.web.app/assets/hoodie-black-JHK421.png',
+        hoodie: 'https://signaid-prod.web.app/assets/hoodie-black-JHK421.png',
+        sweatshirt: 'https://signaid-prod.web.app/assets/hoodie-black-JHK421.png'
       };
 
       const normalizedProducts = await Promise.all(Object.values(groupedMap).map(async (p, idx) => {
         let fImg = p.frontImageUrl || p.imageUrl || '';
         let bImg = p.backImageUrl || '';
 
-        // Si l'image de face est totalement absente, utiliser l'image de gabarit vêtement par défaut
-        if (!fImg) {
-          const garmentKey = String(p.garment || '').toLowerCase();
-          fImg = defaultGarmentImages[garmentKey] || fallbackLogo;
+        // Si l'image de face est totalement absente ou pointe vers le logo brut, utiliser l'image de vêtement appropriée
+        if (!fImg || fImg === cleanLogoUrl || fImg.includes('logo_')) {
+          const garmentKey = String(p.garment || p.category || p.id || '').toLowerCase();
+          if (garmentKey.includes('polo') || p.id === 'pFront') {
+            fImg = defaultGarmentImages.polo;
+          } else if (garmentKey.includes('hoodie') || garmentKey.includes('sweat') || p.id === 'hFront') {
+            fImg = defaultGarmentImages.hoodie;
+          } else {
+            fImg = defaultGarmentImages.tshirt;
+          }
+        }
+
+        if (bImg === cleanLogoUrl || bImg.includes('logo_')) {
+          bImg = '';
         }
 
         if (fImg.startsWith('data:')) {
@@ -866,13 +876,13 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
         return {
           id: String(p.id),
           name: String(p.name),
-          price: Number(p.price),
-          garment: String(p.garment),
-          frontImageUrl: String(fImg),
-          backImageUrl: String(bImg),
-          imageUrl: String(mainImg),
-          sizes: Array.isArray(p.sizes) ? p.sizes : ['S', 'M', 'L', 'XL'],
-          colors: Array.isArray(p.colors) ? p.colors : ['Noir', 'Blanc']
+          price: Number(p.price) || 0,
+          garment: String(p.garment || 'tshirt'),
+          frontImageUrl: fImg,
+          backImageUrl: bImg,
+          imageUrl: mainImg,
+          sizes: p.sizes || ["S", "M", "L", "XL"],
+          colors: p.colors || ["Noir", "Blanc"]
         };
       }));
 
@@ -938,7 +948,7 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
           theme: String(userData.theme || 'auto'),
           accentColor: String(userData.accentColor || '#ff3366'),
           livePhotoUrl: cleanLivePhotoUrl,
-          invertLogoInLightMode: userData.invertLogoInLightMode !== false
+          invertLogoInLightMode: Boolean(userData.invertLogoInLightMode === true)
         },
         products: normalizedProducts,
         storageError: lastStorageError
@@ -1692,5 +1702,24 @@ exports.sendAccessRequestEmail = onRequest({ cors: true, invoker: 'public' }, as
   } catch (err) {
     console.error('Erreur sendAccessRequestEmail:', err);
     return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+exports.listStorageFiles = onRequest({ cors: true }, async (req, res) => {
+  try {
+    const bucket = admin.storage().bucket('signaid-prod-assets');
+    const [files] = await bucket.getFiles({ prefix: 'btp_mockups/' });
+    const fileList = files.map(f => f.name);
+
+    const bucketDefault = admin.storage().bucket();
+    const [filesDefault] = await bucketDefault.getFiles({ prefix: 'users/guest_ms3ijgnco2xnid/' });
+    const fileListDefault = filesDefault.map(f => f.name);
+
+    return res.json({
+      signaidProdAssets: fileList,
+      defaultBucket: fileListDefault
+    });
+  } catch (err) {
+    return res.status(500).json({ error: String(err.message || err) });
   }
 });
