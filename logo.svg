@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 581 481" width="100%" height="100%">
+  <!-- Calque Vectoriel 100% Transparent (Sans Fond) - Analyse Individuelle par Segment -->
+  <g fill="#ffffff">
+    <!-- Forme Supérieure (Segment 7 en Courbe -22px) -->
+    <path d="M 449,30 L 386,70 L 385,194 L 209,243 L 209,46 L 147,86 L 146,301 C 243,260 343,228 449,205 Z" />
+    <!-- Forme Inférieure (Segment 9: Courbe -32px, Segment 10: Courbe Spécifique -46px) -->
+    <path d="M 569,201 C 376,223 182,287 23,396 C 42,338 88,325 145,353 L 147,435 L 209,397 L 210,325 L 385,254 L 385,425 L 449,382 L 449,232 Z" />
+  </g>
+</svg>

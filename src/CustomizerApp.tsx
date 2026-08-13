@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'; // Refresh
 
 import { createPortal } from 'react-dom';
 
@@ -18,10 +18,7 @@ import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage'
 
 
 
-import { geminiService } from './services/geminiService';
-
-import { postService } from './services/postService';
-
+import { validationService } from './services/validationService';
 import { productDatabase, users, mockPosts, mockPurchaseHistory, SPECIAL_CODES, PREDEFINED_LOGOS, PLACEMENT_PRESETS, STYLE_MATRIX, POSE_IMAGES, StyleCategory } from './constants';
 
 import { Post, CartItem, User, CustomizationState, ChatMessage, PredefinedLogo, Product, PricingRules } from './types';
@@ -87,11 +84,13 @@ import { getProxiedUrl, resizeImage, hexToRgb, tintImage, removeBackground, getC
 
 import { cartPersistence } from './services/cartPersistence';
 
-import { PongGame } from './components/PongGame';
 
 import { LoadingScreen } from './components/LoadingScreen';
 
 import { designSharingService } from './services/designSharingService';
+import { postService } from './services/postService';
+import { geminiService } from './services/geminiService';
+import { ProfileView } from './components/ProfileView';
 
 
 
@@ -720,1196 +719,6 @@ const MerchSwiper: React.FC<{
             <p className="mt-4 text-xs text-orange-500 animate-pulse font-medium">L'IA génère votre image...</p>
 
         </div>
-
-    );
-
-};
-
-
-
-// --- VIEWS ---
-
-
-
-const ProfileView: React.FC<{
-
-    user: User,
-
-    posts: Post[],
-
-    onUpdateUser: (updatedUser: Partial<User>) => void,
-
-    onPostClick: (post: Post) => void,
-
-    onBack: () => void,
-
-    onLogout: () => void,
-
-    onAdmin: () => void,
-
-    onProductClick: (productType: string, color?: string) => void,
-
-    onRemoveValidation: (postId: string) => void,
-
-    onDeletePost: (postId: string) => Promise<void> | void,
-
-    onGoToRewards: () => void, // NEW PROP
-    onTogglePrivacy?: (postId: string, isPrivate: boolean) => void,
-    isOwnProfile: boolean,
-    isFollowing?: boolean, // [NEW]
-    onToggleFollow?: (userId?: string) => void, // [NEW] Update signal to accept ID for "unfollow from list"
-    customizerProductType?: string // [NEW] Current customizer state
-}> = ({ user, posts, onUpdateUser, onPostClick, onBack, onLogout, onAdmin, onProductClick, onRemoveValidation, onDeletePost, onGoToRewards, onTogglePrivacy, isOwnProfile, isFollowing, onToggleFollow, customizerProductType }) => {
-
-
-    const [isEditing, setIsEditing] = useState(false);
-
-    const [editName, setEditName] = useState(user.username);
-
-    const [editBio, setEditBio] = useState(user.bio || '');
-
-    const [editLink, setEditLink] = useState(user.websiteLink || '');
-
-    const [activeTab, setActiveTab] = useState<'creations' | 'support'>('creations');
-
-    const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-
-
-    // Admin Edit State
-
-    const [adminEditMode, setAdminEditMode] = useState(false);
-
-    const [adminEditProductType, setAdminEditProductType] = useState('');
-
-    const [adminEditColor, setAdminEditColor] = useState('');
-
-    const [adminSaving, setAdminSaving] = useState(false);
-
-
-
-    // Reset admin edit state when selectedPost changes
-
-    useEffect(() => {
-
-        if (selectedPost) {
-
-            setAdminEditProductType(selectedPost.customization?.productType || selectedPost.tags?.[0]?.productType || 'tshirt');
-
-            setAdminEditColor(selectedPost.customization?.color || '#000000');
-
-            setAdminEditMode(false);
-
-        }
-
-    }, [selectedPost]);
-
-
-
-    const handleAdminUpdatePost = async () => {
-
-        if (!selectedPost || !user.isAdmin) return;
-
-        setAdminSaving(true);
-
-        try {
-
-            const updatedCustomization = {
-
-                ...(selectedPost.customization || {}),
-
-                productType: adminEditProductType,
-
-                color: adminEditColor
-
-            };
-
-            const updatedTags = [{ id: selectedPost.tags?.[0]?.id || 't_' + Date.now(), position: selectedPost.tags?.[0]?.position || { x: 50, y: 50 }, productType: adminEditProductType }];
-
-
-
-            await updateDoc(doc(db, 'posts', selectedPost.id), {
-
-                customization: updatedCustomization,
-
-                tags: updatedTags
-
-            });
-
-
-
-            // Update local state
-
-            setSelectedPost({ ...selectedPost, customization: updatedCustomization as any, tags: updatedTags });
-
-            setAdminEditMode(false);
-
-            alert('✅ Post mis à jour !');
-
-        } catch (e) {
-
-            console.error('Admin update post failed:', e);
-
-            alert('Erreur lors de la mise à jour');
-
-        } finally {
-
-            setAdminSaving(false);
-
-        }
-
-    };
-
-
-
-    // Dynamic scaling for fallback previews
-
-    const [previewScale, setPreviewScale] = useState(1);
-
-    const previewImgRef = useRef<HTMLImageElement>(null);
-
-
-
-    useEffect(() => {
-
-        if (!selectedPost) return;
-
-        const timer = setTimeout(() => {
-
-            if (previewImgRef.current) {
-
-                const observer = new ResizeObserver((entries) => {
-
-                    for (const entry of entries) {
-
-                        // Base width is 400px (standard editor canvas width)
-
-                        setPreviewScale(entry.contentRect.width / 400);
-
-                    }
-
-                });
-
-                observer.observe(previewImgRef.current);
-
-                return () => observer.disconnect();
-
-            }
-
-        }, 100);
-
-        return () => clearTimeout(timer);
-
-    }, [selectedPost]);
-
-
-
-
-
-    const handleNextPost = (e: React.MouseEvent) => {
-
-        e.stopPropagation();
-
-        if (!selectedPost) return;
-
-        const currentIndex = userPosts.findIndex(p => p.id === selectedPost.id);
-
-        const nextIndex = (currentIndex + 1) % userPosts.length;
-
-        setSelectedPost(userPosts[nextIndex]);
-
-    };
-
-
-
-    const handlePrevPost = (e: React.MouseEvent) => {
-
-        e.stopPropagation();
-
-        if (!selectedPost) return;
-
-        const currentIndex = userPosts.findIndex(p => p.id === selectedPost.id);
-
-        const prevIndex = (currentIndex - 1 + userPosts.length) % userPosts.length;
-
-        setSelectedPost(userPosts[prevIndex]);
-
-    };
-
-
-
-    const allUserPosts = posts.filter(p => p.user.id === user.id);
-
-    const visibleUserPosts = allUserPosts.filter(p => !p.archived);
-
-    // For products, we show all posts (including archived), as they are part of the user's collection/portfolio that they want to keep
-
-    // But wait, if they archive it, maybe they want to hide it from visitors?
-
-    // "Elle restera visible dans 'Mes Produits'" implies visibility to the OWNER.
-
-    // So if isOwnProfile, use allUserPosts. If visitor, use visibleUserPosts.
-
-    const productPosts = isOwnProfile ? allUserPosts : visibleUserPosts;
-
-
-
-    // For Main Tab, we use visibleUserPosts
-
-    const userPosts = visibleUserPosts;
-
-    const totalCredits = user.credits || 0; // Use user.credits directly for accuracy
-
-
-
-    const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-
-        if (e.target.files?.[0]) {
-
-            const reader = new FileReader();
-
-            reader.onload = async (ev) => {
-
-                if (ev.target?.result) {
-
-                    const resizedAvatar = await resizeImage(ev.target.result as string, 200);
-
-                    onUpdateUser({ avatarUrl: resizedAvatar });
-
-                }
-
-            };
-
-            reader.readAsDataURL(e.target.files[0]);
-
-        }
-
-    };
-
-
-
-    // Auto-generate referral code for existing users if missing
-
-    useEffect(() => {
-
-        if (isOwnProfile && !user.referralCode) {
-
-            const uniqueSuffix = Math.random().toString(36).substring(2, 6);
-
-            const newReferralCode = `${user.username.replace(/\s+/g, '').toLowerCase()}-${uniqueSuffix}`;
-
-            onUpdateUser({ referralCode: newReferralCode });
-
-        }
-
-    }, [isOwnProfile, user.referralCode, user.username, onUpdateUser]);
-
-
-
-    const handleSaveProfile = () => {
-
-        onUpdateUser({ username: editName, bio: editBio, websiteLink: editLink });
-
-        setIsEditing(false);
-
-    };
-
-
-
-    return (
-
-        <div className="max-w-2xl lg:max-w-5xl mx-auto p-4 pb-24 animate-fade-in text-gray-800 scrollbar-hide">
-
-
-
-            <div className="bg-white rounded-2xl p-6 border border-gray-200 mb-8 flex flex-col items-center relative overflow-hidden shadow-md max-w-xl mx-auto mt-4">
-
-
-
-                <div className="relative z-10 mt-8 mb-4 group">
-
-                    <div className="w-28 h-28 rounded-full p-1 bg-white shadow-xl">
-
-                        <img src={user.avatarUrl} className="w-full h-full rounded-full object-cover border-4 border-white bg-gray-100" alt="Avatar" />
-
-                    </div>
-
-                    {isOwnProfile && (
-
-                        <>
-
-                            <button
-
-                                onClick={() => fileInputRef.current?.click()}
-
-                                className="absolute bottom-0 right-0 bg-gray-800 text-white p-2 rounded-full hover:bg-orange-500 transition-colors shadow-lg border border-white"
-
-                                title="Changer la photo"
-
-                            >
-
-                                <i className="fa-solid fa-camera text-sm"></i>
-
-                            </button>
-
-                            <input type="file" ref={fileInputRef} hidden accept="image/*" onChange={handleAvatarChange} />
-
-                        </>
-
-                    )}
-
-                </div>
-
-
-
-                <div className="relative z-10 text-center w-full">
-
-                    {isEditing ? (
-
-                        <div className="flex flex-col gap-3 w-full">
-
-                            <div className="flex items-center justify-center gap-2 mb-2">
-
-                                <span className="text-gray-500 text-lg font-bold">@</span>
-
-                                <input
-
-                                    type="text"
-
-                                    value={editName}
-
-                                    onChange={(e) => setEditName(e.target.value)}
-
-                                    className="bg-gray-100 border border-gray-300 rounded px-2 py-1 text-gray-900 font-bold text-lg text-center focus:border-orange-500 outline-none w-40"
-
-                                />
-
-                            </div>
-
-                            <div className="text-left w-full">
-
-                                <label className="text-[10px] text-gray-400 uppercase font-bold mb-1 block">Biographie</label>
-
-                                <textarea
-
-                                    value={editBio}
-
-                                    onChange={(e) => setEditBio(e.target.value)}
-
-                                    placeholder="Parlez-nous de vous..."
-
-                                    className="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs outline-none focus:border-orange-300 resize-none h-20"
-
-                                />
-
-                            </div>
-
-                            <div className="text-left w-full">
-
-                                <label className="text-[10px] text-gray-400 uppercase font-bold mb-1 block">Lien personnalisé</label>
-
-                                <input
-
-                                    type="text"
-
-                                    placeholder="Votre lien (site, social...)"
-
-                                    value={editLink}
-
-                                    onChange={(e) => setEditLink(e.target.value)}
-
-                                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs outline-none focus:border-orange-300"
-
-                                />
-
-                            </div>
-
-                            <button
-
-                                onClick={handleSaveProfile}
-
-                                className="bg-orange-600 text-white w-full py-2 rounded-xl font-bold text-xs hover:bg-orange-700 transition"
-
-                            >
-
-                                Sauvegarder
-
-                            </button>
-
-                        </div>
-
-                    ) : (
-
-                        <div className="flex flex-col items-center gap-1.5 mb-4 w-full">
-
-                            <div className="flex items-center justify-center gap-2">
-
-                                <h1 className="text-lg font-black text-gray-900 tracking-tight">
-
-                                    @{user.username}
-
-                                </h1>
-
-                                {isOwnProfile && (
-
-                                    <button onClick={() => setIsEditing(true)} className="text-gray-400 hover:text-orange-500 text-xs p-1">
-
-                                        <i className="fa-solid fa-pen"></i>
-
-                                    </button>
-
-                                )}
-
-                            </div>
-
-
-
-                            {user.bio && (
-
-                                <p className="text-xs text-gray-600 leading-relaxed max-w-sm">
-
-                                    {user.bio}
-
-                                </p>
-
-                            )}
-
-
-
-                            {!isOwnProfile && onToggleFollow && (
-
-                                <button
-
-                                    onClick={() => onToggleFollow()}
-
-                                    className={`text-xs font-bold px-4 py-1.5 rounded-full border transition-colors ${isFollowing
-
-                                        ? 'bg-orange-50 text-orange-600 border-orange-200'
-
-                                        : 'bg-gray-900 text-white border-gray-900'
-
-                                        }`}
-
-                                >
-
-                                    {isFollowing ? 'Soutenu' : 'Soutenir'}
-
-                                </button>
-
-                            )}
-
-
-
-                            {user.websiteLink && (
-
-                                <a
-
-                                    href={user.websiteLink.startsWith('http') ? user.websiteLink : `https://${user.websiteLink}`}
-
-                                    target="_blank"
-
-                                    rel="noopener noreferrer"
-
-                                    className="text-xs text-orange-600 font-bold hover:underline flex items-center gap-1.5 mt-1"
-
-                                >
-
-                                    <i className="fa-solid fa-link text-[10px]"></i>
-
-                                    {user.websiteLink.replace(/^https?:\/\//, '')}
-
-                                </a>
-
-                            )}
-
-                        </div>
-
-                    )}
-
-
-
-                    <div className="flex justify-center gap-8 mt-6">
-
-                        <div className="text-center">
-
-                            <span className="block text-2xl font-black text-gray-900">{userPosts.length}</span>
-
-                            <span className="text-xs text-gray-500 uppercase tracking-wider">Services Actifs</span>
-
-                        </div>
-
-                        <div className="text-center cursor-pointer group" onClick={onGoToRewards}>
-
-                            <span className="block text-2xl font-black text-orange-500 group-hover:scale-110 transition-transform">{totalCredits}</span>
-
-                            <span className="text-xs text-gray-500 uppercase tracking-wider group-hover:text-orange-500 transition-colors">Mes Crédits <i className="fa-solid fa-chevron-right text-[10px]"></i></span>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-
-
-            {isOwnProfile && user.referralCode && (
-
-                <div className="mt-6 w-full bg-orange-50 rounded-xl p-4 border border-orange-100 flex flex-col items-center">
-
-                    <p className="text-sm font-bold text-orange-800 mb-2 flex items-center gap-2">
-
-                        <i className="fa-solid fa-gift"></i> Parrainage
-
-                    </p>
-
-                    <p className="text-xs text-orange-600 mb-3 text-center">
-
-                        Partagez ce lien et gagnez <span className="font-black">5 crédits</span> à chaque inscription !
-
-                    </p>
-
-                    <div className="flex w-full items-center gap-2 bg-white rounded-lg border border-orange-200 p-1">
-
-                        <input
-
-                            readOnly
-
-                            value={`${window.location.origin}?ref=${user.referralCode}`}
-
-                            className="flex-1 text-xs text-gray-600 bg-transparent outline-none px-2 font-mono"
-
-                            onClick={(e) => e.currentTarget.select()}
-
-                        />
-
-                        <button
-
-                            onClick={() => {
-
-                                navigator.clipboard.writeText(`${window.location.origin}?ref=${user.referralCode}`);
-
-                                alert("Lien copié !");
-
-                            }}
-
-                            className="bg-orange-500 text-white text-xs font-bold px-3 py-1.5 rounded-md hover:bg-orange-600"
-
-                        >
-
-                            Copier
-
-                        </button>
-
-                    </div>
-
-                </div>
-
-            )}
-
-
-
-            <div className="flex border-b border-gray-200 mb-6">
-
-                <button
-
-                    onClick={() => setActiveTab('creations')}
-
-                    className={`flex-1 pb-3 font-bold text-sm ${activeTab === 'creations' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}
-
-                >
-
-                    <i className="fa-solid fa-microchip mr-2"></i> Actifs IA
-
-                </button>
-
-                <button
-
-                    onClick={() => setActiveTab('support')}
-
-                    className={`flex-1 pb-3 font-bold text-sm ${activeTab === 'support' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}
-
-                >
-
-                    <i className="fa-solid fa-handshake mr-2"></i> Support
-
-                </button>
-
-            </div>
-
-
-
-            {
-
-                activeTab === 'support' && (
-
-                    (!user.savedPostIds || user.savedPostIds.length === 0) ? (
-
-                        <div className="text-center py-12 bg-gray-50 rounded-xl border border-gray-200 border-dashed">
-
-                            <p className="text-gray-500 mb-4">Vous n'avez soutenu aucune création.</p>
-
-                            <p className="text-xs text-gray-400">Explorez le feed et validez des designs !</p>
-
-                        </div>
-
-                    ) : (
-
-                        <div className="grid grid-cols-3 gap-3">
-
-                            {posts.filter(p => user.savedPostIds?.includes(p.id)).map(post => (
-
-                                <div
-
-                                    key={post.id}
-
-                                    onClick={() => setSelectedPost(post)}
-
-                                    className="aspect-[3/4] bg-white rounded-xl overflow-hidden relative group cursor-pointer border border-gray-200 hover:border-orange-500 transition-all shadow-sm"
-
-                                >
-
-                                    <img src={post.imageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105" alt="Post" />
-
-                                    <div className="absolute bottom-0 left-0 w-full p-2 bg-gradient-to-t from-black/80 to-transparent">
-
-                                        <div className="flex items-center gap-1 text-white text-[10px]">
-
-                                            <i className="fa-solid fa-check text-green-500"></i>
-
-                                            <span>{post.validations || 0}</span>
-
-                                        </div>
-
-                                    </div>
-
-                                    {isOwnProfile && (
-
-                                        <button
-
-                                            onClick={(e) => { e.stopPropagation(); onRemoveValidation(post.id); }}
-
-                                            className="absolute top-2 right-2 w-6 h-6 bg-black/50 hover:bg-red-500 text-white rounded-full flex items-center justify-center transition-colors"
-
-                                            title="Retirer le support"
-
-                                        >
-
-                                            <i className="fa-solid fa-xmark text-[10px]"></i>
-
-                                        </button>
-
-                                    )}
-
-                                </div>
-
-                            ))}
-
-                        </div>
-
-                    )
-
-                )
-
-            }
-
-
-
-            {
-
-                activeTab === 'creations' && (
-
-                    userPosts.length === 0 ? (
-
-                        <div className="flex flex-col items-center gap-4 py-8 text-center bg-gray-50 rounded-xl border border-gray-200 border-dashed">
-
-                            <p className="text-gray-600 mb-2">Aucun actif déployé pour le moment.</p>
-
-
-
-                            <div className="flex flex-col w-full max-w-xs gap-3">
-
-                                {/* Bouton 1 : Création pure */}
-
-                                <Link
-
-                                    to="/creation"
-
-                                    className="bg-orange-600 text-white px-6 py-3 rounded-full font-bold shadow-md hover:bg-orange-700 transition flex items-center justify-center gap-2"
-
-                                >
-
-                                    <span>🎨</span> Créer depuis zéro
-
-                                </Link>
-
-
-
-                                {/* Bouton 2 : Galerie / Remix */}
-
-                                <Link
-
-                                    to="/galerie"
-
-                                    className="bg-white text-orange-600 border-2 border-orange-600 px-6 py-3 rounded-full font-bold shadow-sm hover:bg-orange-50 transition flex items-center justify-center gap-2"
-
-                                >
-
-                                    <span>🔄</span> Reprendre un modèle
-
-                                </Link>
-
-                            </div>
-
-                        </div>
-
-                    ) : (
-
-                        <div className="grid grid-cols-3 gap-3">
-
-                            {userPosts.map(post => (
-
-                                <div
-
-                                    key={post.id}
-
-                                    onClick={() => setSelectedPost(post)}
-
-                                    className="break-inside-avoid bg-white rounded-xl overflow-hidden relative group cursor-pointer border border-gray-200 hover:border-orange-500 transition-all shadow-sm mb-3"
-
-                                >
-
-                                    <img src={post.imageUrl} className="w-full h-auto object-contain transition-transform group-hover:scale-105" alt="Post" />
-
-                                    <div className="absolute bottom-0 left-0 w-full p-2 bg-gradient-to-t from-black/80 to-transparent">
-
-                                        <div className="flex items-center gap-1 text-white text-[10px]">
-
-                                            <i className="fa-solid fa-heart text-orange-500"></i>
-
-                                            <span>{post.validations || 0}</span>
-
-                                        </div>
-
-                                    </div>
-
-                                    {isOwnProfile && (
-                                        <div className="absolute top-2 left-2 flex gap-1 z-10">
-                                            <div className={`w-6 h-6 rounded-full flex items-center justify-center shadow-md backdrop-blur-md ${post.isPrivate ? 'bg-orange-500 text-white' : 'bg-white/80 text-gray-400 border border-gray-100'}`}>
-                                                <i className={`fa-solid ${post.isPrivate ? 'fa-lock' : 'fa-globe'} text-[10px]`}></i>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-
-                            ))}
-
-                        </div>
-
-                    )
-
-                )
-
-            }
-
-
-
-            {/* Removed Mes Favoris Section */}
-
-
-
-            {/* FULL SCREEN POST MODAL */}
-
-            {selectedPost && createPortal(
-
-                <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in p-4" onClick={() => setSelectedPost(null)}>
-
-
-
-                    {/* Close Button (Top Right Fixed) */}
-
-                    <button
-
-                        onClick={(e) => { e.stopPropagation(); setSelectedPost(null); }}
-
-                        className="fixed top-6 right-6 z-[100000] w-12 h-12 bg-white/40 hover:bg-white/60 backdrop-blur-md rounded-full text-gray-800 flex items-center justify-center transition-all border border-white/20 shadow-xl"
-
-                    >
-
-                        <i className="fa-solid fa-xmark text-xl"></i>
-
-                    </button>
-
-
-
-                    {/* Modal Content - Centered Card on Mobile & Desktop */}
-
-                    <div
-
-                        onClick={(e) => e.stopPropagation()}
-
-                        style={{
-
-                            maxWidth: '650px',
-
-                            maxHeight: '600px',
-
-                            width: '90%',
-
-                            height: 'auto',
-
-                            margin: 'auto'
-
-                        }}
-
-                        className="relative bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row transition-all duration-300"
-
-                    >
-
-                        {/* Image Section - AI Generated Image Only */}
-
-                        <div className="relative w-full md:flex-1 bg-gray-50 flex items-center justify-center overflow-hidden md:min-h-0">
-
-                            {/* Navigation Arrows */}
-
-                            {userPosts.length > 1 && (
-
-                                <>
-
-                                    <button
-
-                                        onClick={handlePrevPost}
-
-                                        className="absolute left-2 z-20 w-10 h-10 bg-white/50 hover:bg-white text-gray-800 rounded-full flex items-center justify-center transition-all shadow-sm"
-
-                                    >
-
-                                        <i className="fa-solid fa-chevron-left"></i>
-
-                                    </button>
-
-                                    <button
-
-                                        onClick={handleNextPost}
-
-                                        className="absolute right-2 z-20 w-10 h-10 bg-white/50 hover:bg-white text-gray-800 rounded-full flex items-center justify-center transition-all shadow-sm"
-
-                                    >
-
-                                        <i className="fa-solid fa-chevron-right"></i>
-
-                                    </button>
-
-                                </>
-
-                            )}
-
-
-
-                            {/* AI Generated Image - Full Size */}
-
-                            <div className="w-full h-full flex items-center justify-center p-4">
-
-                                <img
-
-                                    src={selectedPost.imageUrl}
-
-                                    className="w-full h-full object-contain drop-shadow-lg rounded-lg"
-
-                                    style={{ maxHeight: '480px' }}
-
-                                    alt="Post Preview"
-
-                                />
-
-                            </div>
-
-                        </div>
-
-
-
-                        {/* Sidebar / Bottom Bar (Details & Action) */}
-
-                        <div
-
-                            className="w-full md:w-[220px] bg-white flex flex-col justify-between p-5 shrink-0 border-t md:border-t-0 md:border-l border-gray-100"
-
-                        >
-
-                            <div>
-
-                                <div className="flex items-center gap-2 mb-4">
-
-                                    <div className="w-8 h-8 rounded-full bg-gray-100 overflow-hidden border border-gray-200">
-
-                                        <img src={selectedPost.user?.avatarUrl || "https://ui-avatars.com/api/?name=" + (selectedPost.user?.username || "User")} className="w-full h-full object-cover" alt="Avatar" />
-
-                                    </div>
-
-                                    <div>
-
-                                        <h3 className="font-bold text-gray-900 text-xs">@{selectedPost.user?.username || 'Membre'}</h3>
-
-                                        <p className="text-[10px] text-gray-400">Créateur</p>
-
-                                    </div>
-
-                                </div>
-
-
-
-                                {selectedPost.stylePrompt && (
-
-                                    <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
-
-                                        <p className="text-[9px] uppercase font-bold text-gray-400 mb-1 tracking-wider">Style</p>
-
-                                        <p className="text-xs font-medium text-gray-800 italic line-clamp-3">"{selectedPost.stylePrompt}"</p>
-
-                                    </div>
-
-                                )}
-
-
-
-                                {/* Admin Edit Controls */}
-
-                                {user.isAdmin && (
-
-                                    <div className="mt-3">
-
-                                        {!adminEditMode ? (
-
-                                            <button
-
-                                                onClick={() => setAdminEditMode(true)}
-
-                                                className="w-full py-1.5 text-[10px] bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold rounded-lg border border-orange-200 flex items-center justify-center gap-1.5 transition-all"
-
-                                            >
-
-                                                <i className="fa-solid fa-pen-to-square"></i>
-
-                                                Modifier le produit
-
-                                            </button>
-
-                                        ) : (
-
-                                            <div className="p-2 bg-orange-50 rounded-xl border border-orange-200 space-y-2">
-
-                                                <p className="text-[9px] uppercase font-bold text-orange-600 tracking-wider">Admin — Modifier le produit</p>
-
-
-
-                                                {/* Product Type Selector */}
-
-                                                <select
-
-                                                    value={adminEditProductType}
-
-                                                    onChange={(e) => {
-
-                                                        setAdminEditProductType(e.target.value);
-
-                                                        // Auto-select first color of new product
-
-                                                        const newProduct = productDatabase[e.target.value];
-
-                                                        if (newProduct) {
-
-                                                            const firstColor = Object.keys(newProduct.images)[0];
-
-                                                            setAdminEditColor(firstColor);
-
-                                                        }
-
-                                                    }}
-
-                                                    className="w-full text-xs py-1.5 px-2 rounded-lg border border-orange-200 bg-white font-medium"
-
-                                                >
-
-                                                    {Object.entries(productDatabase).filter(([k]) => k !== 'catalogue').map(([key, product]) => (
-
-                                                        <option key={key} value={key}>{product.name} ({product.reference || key})</option>
-
-                                                    ))}
-
-                                                </select>
-
-
-
-                                                {/* Color Swatches */}
-
-                                                {productDatabase[adminEditProductType] && (
-
-                                                    <div className="flex flex-wrap gap-1">
-
-                                                        {Object.keys(productDatabase[adminEditProductType].images).map((color) => (
-
-                                                            <button
-
-                                                                key={color}
-
-                                                                onClick={() => setAdminEditColor(color)}
-
-                                                                className={`w-5 h-5 rounded-full border-2 transition-all ${adminEditColor === color ? 'border-orange-500 scale-125 ring-2 ring-orange-300' : 'border-gray-300 hover:border-gray-400'
-
-                                                                    }`}
-
-                                                                style={{ backgroundColor: color }}
-
-                                                                title={color}
-
-                                                            />
-
-                                                        ))}
-
-                                                    </div>
-
-                                                )}
-
-
-
-                                                {/* Save / Cancel Row */}
-
-                                                <div className="flex gap-1.5">
-
-                                                    <button
-
-                                                        onClick={handleAdminUpdatePost}
-
-                                                        disabled={adminSaving}
-
-                                                        className="flex-1 py-1.5 text-[10px] bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg flex items-center justify-center gap-1 transition-all disabled:opacity-50"
-
-                                                    >
-
-                                                        {adminSaving ? <i className="fa-solid fa-circle-notch fa-spin"></i> : <i className="fa-solid fa-check"></i>}
-
-                                                        Valider
-
-                                                    </button>
-
-                                                    <button
-
-                                                        onClick={() => setAdminEditMode(false)}
-
-                                                        className="px-3 py-1.5 text-[10px] bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-lg transition-all"
-
-                                                    >
-
-                                                        <i className="fa-solid fa-xmark"></i>
-
-                                                    </button>
-
-                                                </div>
-
-                                            </div>
-
-                                        )}
-
-                                    </div>
-
-                                )}
-
-                            </div>
-
-
-
-                            <div className="mt-2 md:mt-auto">
-
-                                {isOwnProfile && (
-                                    <div className="mt-4 p-4 bg-gray-50 rounded-2xl border border-gray-100 animate-fade-in shadow-sm hover:shadow-md transition-all duration-300">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <div className="flex flex-col">
-                                                <span className="text-[9px] uppercase font-black text-gray-400 tracking-wider mb-0.5">Visibilité</span>
-                                                <span className={`text-xs font-black transition-colors flex items-center gap-1.5 ${selectedPost.isPrivate ? "text-orange-600" : "text-gray-900"}`}>
-                                                    {selectedPost.isPrivate ? (
-                                                        <><i className="fa-solid fa-lock text-[10px]"></i> PRIVÉ</>
-                                                    ) : (
-                                                        <><i className="fa-solid fa-globe text-[10px]"></i> PUBLIC</>
-                                                    )}
-                                                </span>
-                                            </div>
-
-                                            {/* Privacy Toggle Switch */}
-                                            <div
-                                                onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    const newVal = !selectedPost.isPrivate;
-                                                    // Local state update for smooth feeling
-                                                    setSelectedPost(prev => prev ? { ...prev, isPrivate: newVal } : null);
-                                                    if (typeof onTogglePrivacy === 'function') {
-                                                        onTogglePrivacy(selectedPost.id, newVal);
-                                                    }
-                                                }}
-                                                className={`relative w-11 h-6 rounded-full cursor-pointer transition-all duration-300 ${!selectedPost.isPrivate ? "bg-orange-600" : "bg-gray-300 shadow-inner"}`}
-                                            >
-                                                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-md transition-all duration-300 transform flex items-center justify-center ${!selectedPost.isPrivate ? "translate-x-5" : "translate-x-0"}`}>
-                                                    <i className={`fa-solid ${!selectedPost.isPrivate ? "fa-globe text-orange-600" : "fa-lock text-gray-400"} text-[8px]`}></i>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <p className="text-[9px] text-gray-400 opacity-80 mt-1 leading-tight">
-                                            {selectedPost.isPrivate
-                                                ? "Masqué de la galerie publique."
-                                                : "Visible par toute la communauté."}
-                                        </p>
-
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onDeletePost(selectedPost.id); }}
-                                            className="w-full py-2 mt-4 text-[10px] font-bold text-red-500 bg-red-50 hover:bg-red-100 rounded-xl transition-colors border border-red-100 flex items-center justify-center gap-2 group"
-                                        >
-                                            <i className="fa-solid fa-trash-can group-hover:scale-110 transition-transform"></i>
-                                            Supprimer
-                                        </button>
-                                    </div>
-                                )}
-
-                                {selectedPost.tags && selectedPost.tags.length > 0 && (
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onPostClick(selectedPost);
-                                            setSelectedPost(null);
-                                        }}
-                                        className="w-full py-3 bg-gray-900 hover:bg-black text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 mt-4 text-xs"
-                                    >
-                                        <i className="fa-solid fa-shirt"></i>
-                                        Afficher le produit
-                                    </button>
-                                )}
-
-                                <p className="text-center text-[9px] text-gray-400 mt-4 leading-tight px-4">
-                                    Créez votre version unique à partir de ce design
-                                </p>
-
-
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                </div>,
-
-                document.body
-
-            )
-
-            }
-
-
-
-        </div >
-
-
 
     );
 
@@ -2638,30 +1447,26 @@ function CustomizerApp() {
 
 
 
-    const setView = (viewName: 'feed' | 'customizer' | 'cart' | 'profile' | 'key_selection' | 'admin' | 'rewards' | 'contact' | 'blog') => {
-
+    const setView = (viewName: 'feed' | 'customizer' | 'cart' | 'profile' | 'key_selection' | 'admin' | 'rewards' | 'contact' | 'blog', params?: { productType?: string, postId?: string }) => {
         switch (viewName) {
-
             case 'feed': navigate('/galerie'); break;
-
             case 'cart': navigate('/panier'); break;
-
             case 'profile': navigate('/profil'); break;
-
             case 'rewards': navigate('/recompense'); break;
-
             case 'admin': navigate('/admin'); break;
-
-            case 'customizer': navigate('/creation'); break;
-
+            case 'customizer': 
+                if (params?.productType && params?.postId) {
+                    navigate(`/creation/${params.productType}/${params.postId}`);
+                } else if (params?.productType) {
+                    navigate(`/creation/${params.productType}`);
+                } else {
+                    navigate('/creation');
+                }
+                break;
             case 'blog': navigate('/blog'); break;
-
             case 'contact': navigate('/contact'); break;
-
             default: navigate('/galerie');
-
         }
-
     };
 
 
@@ -2747,17 +1552,26 @@ function CustomizerApp() {
 
 
     // --- DRAFT CHECK ON ENTRY ---
+    const isFirstLoadRef = useRef(true);
+    const prevPathRef = useRef<string>(location.pathname);
     useEffect(() => {
-        const searchParams = new URLSearchParams(window.location.search);
-        if (searchParams.get('checkDraft') === 'true') {
+        const isCreationPath = location.pathname.includes('/creation') || location.pathname.includes('/remix');
+        const wasCreationPath = prevPathRef.current.includes('/creation') || prevPathRef.current.includes('/remix');
+        
+        // Always check for draft when ENTERING creation from another view OR on FIRST LOAD
+        // EXCEPTION: If we are entering for a SPECIFIC post (routePostId), skip draft check
+        if (isCreationPath && !routePostId && (isFirstLoadRef.current || !wasCreationPath)) {
             const hasDraft = localStorage.getItem('stylelink_draft_project');
             if (hasDraft) {
+                // Determine product type from URL if possible
+                const productFromUrl = location.pathname.split('/creation/')[1]?.split('?')[0] || 'tshirt';
+                setPendingProductType(productFromUrl);
                 setIsResumeDraftModalOpen(true);
-                // Clean up URL parameter without refreshing
-                const newUrl = window.location.pathname + window.location.search.replace(/[?&]checkDraft=true/, '').replace(/^&/, '?');
-                window.history.replaceState({}, '', newUrl);
             }
         }
+        
+        isFirstLoadRef.current = false;
+        prevPathRef.current = location.pathname;
     }, [location.pathname]);
 
     // --- MAGIC LINK & ROUTE PARSING ---
@@ -2816,7 +1630,7 @@ function CustomizerApp() {
 
                             if (specificPost) {
 
-                                setCustomizerProductType(specificPost.tags?.[0]?.productType || specificPost.customization?.productType || 'tshirt');
+                                setCustomizerProductType(specificPost.customization?.productType || specificPost.tags?.[0]?.productType || 'tshirt');
 
                                 setCustomizerInitialState(specificPost.customization || null);
 
@@ -2866,7 +1680,7 @@ function CustomizerApp() {
 
                 if (specificPost) {
 
-                    setCustomizerProductType(specificPost.tags?.[0]?.productType || specificPost.customization?.productType || 'tshirt');
+                    setCustomizerProductType(specificPost.customization?.productType || specificPost.tags?.[0]?.productType || 'tshirt');
 
                     setCustomizerInitialState(specificPost.customization || null);
 
@@ -3482,49 +2296,45 @@ function CustomizerApp() {
 
         setCustomizerInitialState(initialState || null);
 
-        setIsRemixMode(!!postId);
-
-        setRemixPostId(postId || null);
-
-        setCustomizerKey(Date.now()); // Reset customizer state
-
         setForceAiOpen(!!triggerAi);
 
+        setIsRemixMode(true);
+
+        setInitialMagicColor(null);
+
+        setInitialMagicTemplate(null);
 
 
-        // CLEAR MAGIC PROPS if we are editing an existing item to prevent overrides
 
-        if (initialState) {
+        if (postId) {
 
-            setInitialMagicColor(null);
+            setRemixPostId(postId);
 
-            setInitialMagicTemplate(null);
+            if (asNewVariant) {
 
-            if (!asNewVariant) {
-                setEditingItemId(initialState.id); // Set editing item ID only if NOT a new variant
+                setEditingItemId(null);
+
             } else {
-                setEditingItemId(null); // Ensure we are NOT in edit mode for new variant
+
+                setEditingItemId(initialState?.id || null);
+
             }
-
-        }
-
-
-
-        // PERSIST AI RESULT: Restore if present in item, otherwise clear
-
-        if (initialState?.aiImageUrl) {
-
-            setAiResult(initialState.aiImageUrl);
 
         } else {
 
-            setAiResult(null);
+            setRemixPostId(null);
+
+            setEditingItemId(initialState?.id || null);
 
         }
 
 
 
-        setView('customizer')
+        setCustomizerKey(Date.now());
+
+        setView('customizer', { productType, postId });
+
+        window.scrollTo(0, 0);
 
     };
 
@@ -3546,8 +2356,8 @@ function CustomizerApp() {
 
         side: 'front' | 'back',
 
-        currentItemState?: CartItem // [NEW] Pass the item to match in cart
-
+        currentItemState?: CartItem, // [NEW] Pass the item to match in cart
+        designComposite?: string
     }) => {
 
         const genId = Date.now().toString();
@@ -3577,7 +2387,7 @@ function CustomizerApp() {
                 params.side,
                 (params as any).logo || null,
                 null,
-                null, // designCompositeBase64
+                params.designComposite || null, // designCompositeBase64
                 (params as any).designLayout,
                 (params as any).logoColor
             );
@@ -3605,7 +2415,7 @@ function CustomizerApp() {
             const permanentUrl = await postService.logGeneration(user?.id || 'guest_session', user?.email || 'guest', watermarkedResult, params.style, params.category);
 
             setAiResult(permanentUrl);
-            console.log("AI Generation Finished. Permanent URL:", permanentUrl);
+            console.log("AI Generation Finished. Base Permanent URL:", permanentUrl);
 
 
 
@@ -3656,7 +2466,7 @@ function CustomizerApp() {
 
             }));
 
-
+            return permanentUrl;
 
         } catch (e: any) {
 
@@ -3847,15 +2657,11 @@ function CustomizerApp() {
         if (!user || !user.isAdmin) return;
 
         try {
-
+            const cleanedCustomization = cleanCartItem(customization);
             await updateDoc(doc(db, 'posts', postId), {
-
-                customization: customization,
-
+                customization: cleanedCustomization,
                 // Also update the tags to match the new product type
-
                 tags: [{ id: 't_' + Date.now(), position: { x: 50, y: 50 }, productType: customization.productType }]
-
             });
 
 
@@ -4023,11 +2829,8 @@ function CustomizerApp() {
             comments: [],
 
             type: 'ai',
-
             status: 'approved',
-
-            customization: customization,
-
+            customization: cleanCartItem(customization),
             creditsEarned: 0,
 
             validations: 0,
@@ -4143,6 +2946,27 @@ function CustomizerApp() {
         setIsPaymentLoading(true);
 
         try {
+            // --- TECHNICAL FILTER (QUALITY ASSURANCE) ---
+            const validation = await validationService.validateOrder(cart);
+            
+            if (!validation.isValid) {
+                const errorMsg = "🛑 ERREUR DE PRODUCTION BLOQUÉE :\n\n" + 
+                               validation.errors.join("\n") + 
+                               "\n\nLe système a bloqué la commande pour vous éviter des frais inutiles. Veuillez corriger ces éléments avant de valider à nouveau.";
+                alert(errorMsg);
+                setIsPaymentLoading(false);
+                return;
+            }
+
+            if (validation.warnings.length > 0) {
+                const warningMsg = "⚠️ ALERTES QUALITÉ :\n\n" + 
+                                 validation.warnings.join("\n") + 
+                                 "\n\nSouhaitez-vous quand même continuer ? La qualité d'impression pourrait ne pas être optimale.";
+                if (!window.confirm(warningMsg)) {
+                    setIsPaymentLoading(false);
+                    return;
+                }
+            }
 
             // Handle Auto-Registration if requested
 
@@ -4493,6 +3317,27 @@ function CustomizerApp() {
         setIsQuoteSubmitting(true);
 
         try {
+            // --- TECHNICAL FILTER (QUALITY ASSURANCE) ---
+            const validation = await validationService.validateOrder(cart);
+            
+            if (!validation.isValid) {
+                const errorMsg = "🛑 ERREUR DE PRODUCTION BLOQUÉE :\n\n" + 
+                               validation.errors.join("\n") + 
+                               "\n\nLe système a bloqué la commande pour vous éviter des frais inutiles. Veuillez corriger ces éléments avant de valider à nouveau.";
+                alert(errorMsg);
+                setIsQuoteSubmitting(false);
+                return;
+            }
+
+            if (validation.warnings.length > 0) {
+                const warningMsg = "⚠️ ALERTES QUALITÉ :\n\n" + 
+                                 validation.warnings.join("\n") + 
+                                 "\n\nSouhaitez-vous quand même continuer ? La qualité d'impression pourrait ne pas être optimale.";
+                if (!window.confirm(warningMsg)) {
+                    setIsQuoteSubmitting(false);
+                    return;
+                }
+            }
 
             // Handle Auto-Registration
 
@@ -5651,40 +4496,28 @@ function CustomizerApp() {
                     <>
 
                         <ProfileView
-
                             user={targetUser}
-
                             posts={posts}
-
                             onUpdateUser={handleUpdateUser}
-
-                            onPostClick={(post) => handleCustomize(post.customization?.productType || post.tags?.[0]?.productType || 'tshirt', post.customization, post.id)}
-
+                            onPostClick={(post) => {
+                                const productType = (post as any).productType || post.customization?.productType || post.tags?.[0]?.productType || 'tshirt';
+                                const initialState = post.customization || ((post as any).productType ? post as any : undefined);
+                                handleCustomize(productType, initialState, post.id);
+                            }}
                             onBack={() => setView('feed')}
-
                             onLogout={handleLogout}
-
                             onProductClick={(type, color) => handleCustomize(type, undefined, undefined)}
-
                             onRemoveValidation={handleRemoveValidation}
-
                             isOwnProfile={isOwnProfile}
-
                             onAdmin={() => setView('admin')}
-
                             onDeletePost={handleDeletePost}
-
                             onGoToRewards={() => setView('rewards')}
-
-                            isFollowing={user ? (user.following || []).includes(targetUser.id) : false}
-
-                            onToggleFollow={handleToggleFollow}
-
                             onTogglePrivacy={handleTogglePrivacy}
-
-                            customizerProductType={customizerProductType}
-
+                            onToggleFollow={() => handleToggleFollow(targetUser.id)}
+                            isFollowing={user?.following?.includes(targetUser.id)}
                         />
+
+
 
                         {/* Show Admin Button only for logosigneed@gmail.com */}
 
@@ -5951,7 +4784,6 @@ function CustomizerApp() {
                 </div>
             )}
 
-            {/* QUOTE LOADING OVERLAY - PONG GAME */}
 
             {isQuoteSubmitting && (
 

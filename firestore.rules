@@ -6,7 +6,8 @@ service cloud.firestore {
     function isAdmin() {
       return request.auth != null && (
         request.auth.token.email == 'logosigneed@gmail.com' || 
-        request.auth.token.email == 'nicolas@signaid.be'
+        request.auth.token.email == 'nicolas@signaid.be' ||
+        request.auth.token.admin == true
       );
     }
 
@@ -96,9 +97,50 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Default: Deny all other access
+    // BTP / Portail Projects & Dotations
+    match /btp_projects/{projectId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /btp_dotations/{dotationId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /anonymous_previews/{previewId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // Vitrine / Site Configuration
+    match /configs/{configId} {
+      allow read, create, update, delete: if true;
+    }
+
+    match /SiteConfigs/{configId} {
+      allow read, create, update, delete: if true;
+    }
+
+    // Portail General Configuration (Placements, etc.)
+    match /portail-config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Inbound Leads
+    match /leads/{leadId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Access Requests (Infrastructure Claim Modal)
+    match /access_requests/{requestId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Default: Strictly deny all unhandled access
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+

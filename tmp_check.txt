@@ -1,8 +1,0 @@
-2018: btn.innerHTML = '<i class="fa-solid fa-check"></i> SAUVEGARDÃ‰ !';
-3619: <i className="fa-solid fa-check-double"></i>
-3738: {previewSize === size && <i className="fa-solid fa-check ml-2 text-xs"></i>}
-3787: <i className="fa-solid fa-check text-green-200"></i>
-3814: btn.innerHTML = '<i class="fa-solid fa-check"></i> SAUVEGARDÃ‰ !';
-3964: <i className="fa-solid fa-check"></i> Valider
-4876: <i className="fa-solid fa-check group-hover:translate-x-1 transition-transform"></i>
-4969: <i className={`fa-solid ${toast?.type === 'success' ? 'fa-check-circle text-green-500 text-xl' : 'fa-circle-exclamation text-xl'}`}></i>

@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <script>
+        // Global error catcher to debug white screen crashes on mobile
+        window.onerror = function(message, source, lineno, colno, error) {
+            var div = document.createElement('div');
+            div.style.position = 'fixed';
+            div.style.top = '0';
+            div.style.left = '0';
+            div.style.width = '100%';
+            div.style.background = '#ef4444';
+            div.style.color = '#fff';
+            div.style.padding = '15px';
+            div.style.zIndex = '999999';
+            div.style.fontFamily = 'monospace';
+            div.style.fontSize = '12px';
+            div.style.maxHeight = '50%';
+            div.style.overflowY = 'auto';
+            div.innerHTML = '<strong>JS Error:</strong> ' + message + '<br><small>' + source + ' L:' + lineno + ':' + colno + '</small>';
+            document.body.appendChild(div);
+            return false;
+        };
+        window.onunhandledrejection = function(event) {
+            var div = document.createElement('div');
+            div.style.position = 'fixed';
+            div.style.top = '0';
+            div.style.left = '0';
+            div.style.width = '100%';
+            div.style.background = '#f97316';
+            div.style.color = '#fff';
+            div.style.padding = '15px';
+            div.style.zIndex = '999999';
+            div.style.fontFamily = 'monospace';
+            div.style.fontSize = '12px';
+            div.style.maxHeight = '50%';
+            div.style.overflowY = 'auto';
+            div.innerHTML = '<strong>Unhandled Rejection:</strong> ' + event.reason;
+            document.body.appendChild(div);
+        };
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beatport Collab Finder</title>
+    <meta name="description" content="Découvrez et écoutez les dernières sorties sur Beatport filtrées pour les collaborations multi-artistes.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/playlist/style.css?v=5.7">
+</head>
+<body>
+    <!-- background decorative elements -->
+    <div class="glow-bg">
+        <div class="glow-sphere sphere-1"></div>
+        <div class="glow-sphere sphere-2"></div>
+    </div>
+
+    <div class="app-container">
+        <!-- HEADER -->
+        <header>
+            <div class="brand">
+                <span class="badge" id="genre-badge">Afro House Edition</span>
+                <h1>COLLAB <span class="gradient-text">FINDER</span></h1>
+                <p class="tagline">Sélectionnez votre genre Beatport, votre plage de dates et isolez les collaborations (2+ artistes).</p>
+            </div>
+            
+            <!-- DATE & GENRE FILTER PANEL -->
+            <div class="date-selector">
+                <div class="input-group">
+                    <label for="genre-select">Genre Beatport</label>
+                    <select id="genre-select" class="genre-dropdown">
+                        <!-- Dynamically filled by app.js -->
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label for="start-date">Du</label>
+                    <input type="date" id="start-date">
+                </div>
+                <div class="input-group">
+                    <label for="end-date">Au</label>
+                    <input type="date" id="end-date">
+                </div>
+                <button id="fetch-btn" class="btn-fetch">
+                    <span>Mettre à jour</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon-spin-hover"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                </button>
+                <button id="import-beatport-btn" class="btn-import-beatport" title="Ouvrir Beatport et importer les morceaux">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    <span>Ouvrir Beatport</span>
+                </button>
+                <button id="settings-btn" class="btn-import-beatport" style="padding:0.65rem;" title="Paramètres de l'API Beatport">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
+                <button id="theme-toggle-btn" class="btn-import-beatport" style="padding:0.65rem;" title="Changer de thème (Clair / Sombre)">
+                    <svg id="theme-icon-sun" class="hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+                    <svg id="theme-icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- BOOKMARKLET MODAL -->
+        <div id="bookmarklet-modal" class="bookmarklet-modal hidden">
+            <div class="bookmarklet-modal-inner">
+                <button id="bookmarklet-modal-close" class="bookmarklet-modal-close">&times;</button>
+                <div class="bookmarklet-modal-icon">🔖</div>
+                <h3>Installation du bookmarklet (une seule fois)</h3>
+                <p>Glissez ce bouton dans votre barre de favoris pour l'installer :</p>
+                <a id="bookmarklet-link" class="bookmarklet-drag-btn" href="#">📤 Envoyer vers DJ Tool</a>
+                <p class="bookmarklet-instructions">Ensuite, sur la page Beatport qui va s'ouvrir :<br><strong>1.</strong> Naviguez vers le genre &amp; dates voulus<br><strong>2.</strong> Cliquez le bouton <em>"Envoyer vers DJ Tool"</em> dans vos favoris<br><strong>3.</strong> Les morceaux arrivent automatiquement ici ✓</p>
+                <button id="bookmarklet-open-bp" class="btn-fetch" style="width:100%;margin-top:0.5rem">
+                    <span>Ouvrir Beatport maintenant</span>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                </button>
+                <p id="bookmarklet-waiting" class="bookmarklet-waiting hidden">⏳ En attente des données de Beatport...</p>
+            </div>
+        </div>
+
+        <!-- API SETTINGS MODAL (simplified) -->
+        <div id="settings-modal" class="bookmarklet-modal hidden">
+            <div class="bookmarklet-modal-inner" style="max-width:380px;">
+                <button id="settings-modal-close" class="bookmarklet-modal-close">&times;</button>
+                <div class="bookmarklet-modal-icon">🎵</div>
+                <h3 style="text-align:center;">Statut de la connexion</h3>
+
+                <!-- Status card -->
+                <div style="width:100%;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.25);border-radius:var(--radius-md);padding:1rem;display:flex;flex-direction:column;gap:0.5rem;">
+                    <div style="display:flex;align-items:center;gap:0.6rem;">
+                        <span style="font-size:1.2rem;">✅</span>
+                        <div>
+                            <div style="font-size:0.85rem;font-weight:600;color:#6ee7b7;">Connecté automatiquement</div>
+                            <div style="font-size:0.72rem;color:var(--text-muted);">Compte Beatport : <strong>signeed</strong></div>
+                        </div>
+                    </div>
+                    <p style="font-size:0.7rem;color:var(--text-muted);margin:0;line-height:1.4;">
+                        La connexion à Beatport est gérée automatiquement par le serveur. Vous n'avez rien à configurer.
+                    </p>
+                </div>
+
+                <!-- Refresh button -->
+                <button id="settings-refresh-btn" class="btn-fetch" style="width:100%;justify-content:center;margin-top:0.25rem;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:8px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                    <span>Rafraîchir les morceaux</span>
+                </button>
+            </div>
+        </div>
+
+
+
+        <!-- ACTIVE QUICK FILTER BANNER -->
+        <div id="quick-filter-banner" class="quick-filter-banner hidden"></div>
+
+        <!-- CONTROLS & FILTER SECTION -->
+        <section class="filters-bar">
+            <!-- Artist filter checkbox/toggles -->
+            <div class="filter-toggle-container">
+                <span class="filter-label">Filtrer :</span>
+                <div class="toggle-group">
+                    <input type="radio" id="art-all" name="artist-filter" value="all">
+                    <label for="art-all">Tous</label>
+                    
+                    <input type="radio" id="art-collab" name="artist-filter" value="collab" checked>
+                    <label for="art-collab">Collabs <span class="pill-count" id="collab-badge">0</span></label>
+                    
+                    <input type="radio" id="art-fav" name="artist-filter" value="favorites">
+                    <label for="art-fav">Favoris ❤️ <span class="pill-count" id="fav-badge">0</span></label>
+                    
+                    <input type="radio" id="art-unplayed" name="artist-filter" value="unplayed">
+                    <label for="art-unplayed">Non lus 🆕 <span class="pill-count" id="unplayed-badge">0</span></label>
+                </div>
+            </div>
+
+            <!-- Search input -->
+            <div class="search-box">
+                <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="text" id="search-input" placeholder="Rechercher par titre, artiste, clé, BPM, label...">
+                <button id="clear-search" class="clear-btn hidden">&times;</button>
+            </div>
+        </section>
+
+        <!-- TRACK METRICS & STATS -->
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-label">Tracks importés :</span>
+                <span class="stat-val" id="total-imported">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Tracks affichés :</span>
+                <span class="stat-val" id="total-filtered">0</span>
+            </div>
+            <div class="stat-item separator"></div>
+            <div class="sort-selector">
+                <label for="sort-select">Trier par :</label>
+                <select id="sort-select">
+                    <option value="newest" selected>Le plus récent</option>
+                    <option value="oldest">Le plus ancien</option>
+                    <option value="bpm-asc">BPM (Croissant)</option>
+                    <option value="bpm-desc">BPM (Décroissant)</option>
+                    <option value="name-asc">Titre (A-Z)</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- MAIN CONTENT (GRID OF TRACKS) -->
+        <main>
+            <!-- Loading state -->
+            <div id="loading-state" class="loading-container hidden">
+                <div class="spinner"></div>
+                <p>Connexion à Beatport et extraction des morceaux...</p>
+                <span class="loading-sub">Cela peut prendre quelques secondes.</span>
+            </div>
+
+            <!-- Error state -->
+            <div id="error-state" class="error-container hidden">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ff4d4d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <h3>Une erreur est survenue</h3>
+                <p id="error-message">Impossible de charger les données.</p>
+                <button id="retry-btn" class="btn-retry">Réessayer</button>
+            </div>
+
+            <!-- Empty state -->
+            <div id="empty-state" class="empty-container hidden">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+                <h3>Aucun morceau trouvé</h3>
+                <p>Aucun morceau ne correspond à vos filtres de recherche ou à la période sélectionnée.</p>
+            </div>
+
+            <!-- Pagination Bar (Top) -->
+            <div class="pagination-bar" id="pagination-top">
+                <button id="btn-prev-page" class="btn-page" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    Précédent
+                </button>
+                <span class="page-indicator">Page <span id="current-page-num">1</span></span>
+                <button id="btn-next-page" class="btn-page">
+                    Suivant
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+            </div>
+
+            <!-- Tracks grid -->
+            <div id="tracks-grid" class="tracks-grid">
+                <!-- Track cards will be injected here -->
+            </div>
+
+            <!-- Pagination Bar (Bottom) -->
+            <div class="pagination-bar" id="pagination-bottom">
+                <button id="btn-prev-page-bottom" class="btn-page" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    Précédent
+                </button>
+                <span class="page-indicator">Page <span id="current-page-num-bottom">1</span></span>
+                <button id="btn-next-page-bottom" class="btn-page">
+                    Suivant
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- PERSISTENT FOOTER PLAYER -->
+    <div id="audio-player-bar" class="player-bar collapsed">
+        <div class="player-content">
+            <!-- Left: track metadata -->
+            <div class="player-track-info">
+                <img id="player-cover" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Crect width='60' height='60' fill='%231f1e26'/%3E%3C/svg%3E" alt="Pochette" class="player-cover">
+                <a id="player-metadata-link" class="player-metadata" href="#" target="_blank" rel="noreferrer" style="text-decoration:none;">
+                    <div id="player-title" class="player-title">Aucune lecture</div>
+                    <div id="player-artists" class="player-artists">-</div>
+                </a>
+                <button id="player-btn-favorite" class="btn-favorite-player" title="Ajouter aux favoris">
+                    <svg class="heart-icon player-heart-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                </button>
+            </div>
+
+            <!-- Center: playback controls and progress -->
+            <div class="player-controls-container">
+                <div class="player-buttons">
+                    <button id="btn-prev" class="btn-control" title="Précédent">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2"></line></svg>
+                    </button>
+                    <button id="btn-play-pause" class="btn-control btn-play-main" title="Lire/Pause">
+                        <svg id="main-play-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        <svg id="main-pause-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="hidden"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                    </button>
+                    <button id="btn-next" class="btn-control" title="Suivant">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="19" x2="19" y2="5" stroke="currentColor" stroke-width="2"></line></svg>
+                    </button>
+                </div>
+                
+                <div class="player-progress-bar-container">
+                    <span id="player-time-current" class="time-label">0:00</span>
+                    <div id="waveform" class="waveform-container"></div>
+                    <span id="player-time-total" class="time-label">0:00</span>
+                </div>
+            </div>
+
+            <!-- Right: volume and external link -->
+            <div class="player-actions">
+                <div class="volume-container">
+                    <button id="btn-mute" class="btn-action-control">
+                        <svg id="volume-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                        <svg id="mute-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+                    </button>
+                    <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="0.8" class="volume-slider">
+                </div>
+
+                <a id="player-beatport-link" href="#" target="_blank" rel="noreferrer" class="btn-beatport-link" title="Ouvrir sur Beatport">
+                    <span>Beatport</span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating AI Button -->
+    <button id="ai-toggle-btn" class="ai-fab-btn" title="Assistant DJ IA">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+        </svg>
+        <span>Assistant IA</span>
+    </button>
+
+    <!-- AI Sliding Drawer -->
+    <div id="ai-drawer" class="ai-drawer">
+        <div class="ai-drawer-header">
+            <div class="ai-drawer-title">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="sparkles-icon">
+                    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                </svg>
+                <h3>Assistant DJ IA</h3>
+            </div>
+            <button id="ai-close-btn" class="ai-close-btn">&times;</button>
+        </div>
+        
+        <div class="ai-drawer-content">
+            <!-- Dynamic Real-time Status Widget -->
+            <div id="ai-live-status" class="ai-live-status">
+                <span class="live-indicator">●</span>
+                <span id="ai-live-status-text">Lecteur inactif</span>
+            </div>
+
+            <div class="ai-welcome-box">
+                <p>Cet assistant analyse votre playlist Beatport actuelle et vous suggère des transitions harmoniques (Camelot), enchaînements BPM et des conseils de mixage personnalisés.</p>
+                <div class="ai-actions-row">
+                    <button id="ai-analyze-btn" class="btn-ai-action" title="Analyser la playlist actuelle">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+                        <span>Analyser playlist</span>
+                    </button>
+                    <button id="ai-design-btn" class="btn-ai-action" title="Analyser l'apparence et le design de l'application">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line></svg>
+                        <span>Analyser Design</span>
+                    </button>
+                </div>
+            </div>
+            
+            <div id="ai-results-box" class="ai-results-box hidden">
+                <h4>Analyse de la playlist</h4>
+                <div id="ai-analysis-text" class="ai-analysis-text">
+                    <!-- Results populated by app.js -->
+                </div>
+            </div>
+
+            <!-- Chat Interface -->
+            <div class="ai-chat-section">
+                <h4>Poser une question personnalisée</h4>
+                <div id="ai-chat-history" class="ai-chat-history"></div>
+                <div class="ai-chat-input-wrapper">
+                    <input type="text" id="ai-chat-input" placeholder="Ex: Propose une transition harmonique...">
+                    <button id="ai-chat-send-btn" class="ai-chat-send-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/playlist/html2canvas.min.js?v=5.7"></script>
+    <script src="/playlist/wavesurfer.min.js?v=5.7"></script>
+    <script src="/playlist/app.js?v=5.7"></script>
+</body>
+</html>

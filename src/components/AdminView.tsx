@@ -7,10 +7,11 @@ import { geminiService } from '../services/geminiService';
 import { removeBackground } from '../utils/helpers';
 import { COLOR_NAMES } from '../constants';
 import FlyerEditor from './FlyerEditor';
+import { generateBusinessCardPDF } from '../utils/pdfGenerator';
 
 // import { AdminChatView } from './AdminChatView';
 
-type Tab = 'orders' | 'quotes' | 'products' | 'dimensions' | 'users' | 'messages' | 'settings' | 'flyer' | 'chat';
+type Tab = 'orders' | 'quotes' | 'products' | 'dimensions' | 'users' | 'messages' | 'settings' | 'flyer' | 'chat' | 'btp';
 
 export function AdminView({ user, onBack, productDimensions, onUpdateDimensions, initialQuoteId, initialPrintMargin = 15, onUpdatePrintMargin }: { user: User, onBack: () => void, productDimensions: Record<string, Record<string, number>>, onUpdateDimensions: (dims: Record<string, Record<string, number>>) => void, initialQuoteId?: string | null, initialPrintMargin?: number, onUpdatePrintMargin?: (margin: number) => void }) {
     const [activeTab, setActiveTab] = useState<Tab>('orders');
@@ -21,6 +22,8 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
     const [usersList, setUsersList] = useState<User[]>([]);
     const [pricingRules, setPricingRules] = useState<PricingRules>({});
     const [loading, setLoading] = useState(true);
+    const [btpProjects, setBtpProjects] = useState<any[]>([]);
+    const [btpDotations, setBtpDotations] = useState<any[]>([]);
 
     const [selectedQuote, setSelectedQuote] = useState<any | null>(null);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -46,7 +49,8 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
         colorName: 'Noir',
         colorHex: '#000000',
         sizes: ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL", "6XL"] as string[],
-        sizePrices: {} as Record<string, string>
+        sizePrices: {} as Record<string, string>,
+        aiDisabled: false
     });
     const [newProductFiles, setNewProductFiles] = useState<{ front: File | null, back: File | null }>({ front: null, back: null });
     const [isAddingProduct, setIsAddingProduct] = useState(false);
@@ -145,7 +149,10 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
                             setBannerSettings(bannerDoc.data() as any);
                         }
                     } catch (e) { console.error("Banner settings err:", e); }
-                })()
+                })(),
+                // BTP Projects & Dotations
+                fetchCollection('btp_projects', setBtpProjects, 'createdAt', 50),
+                fetchCollection('btp_dotations', setBtpDotations, 'timestamp', 100)
             ]);
 
             setLoading(false);
@@ -258,7 +265,8 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
                     sizes: newProduct.sizes || existingProduct.sizes,
                     sizePrices: Object.fromEntries(
                         Object.entries(newProduct.sizePrices).map(([s, p]) => [s, parseFloat(p as string)]).filter(([_, p]) => !Number.isNaN(p as number))
-                    )
+                    ),
+                    aiDisabled: newProduct.aiDisabled
                 };
                 console.log("Updating/Adding variant to product:", productData.name);
             } else {
@@ -277,6 +285,7 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
                     sizePrices: Object.fromEntries(
                         Object.entries(newProduct.sizePrices).map(([s, p]) => [s, parseFloat(p as string)]).filter(([_, p]) => !Number.isNaN(p as number))
                     ),
+                    aiDisabled: newProduct.aiDisabled,
                     slideImage: "",
                     images: {},
                     backImages: {}
@@ -295,7 +304,7 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
             await addProduct(newProduct.slug, productData, imagesToUpload as any);
 
             alert(editingSlug ? "Produit modifié avec succès !" : "Produit ajouté avec succès !");
-            setNewProduct({ name: '', slug: '', price: '', supplierLink: '', reference: '', colorName: 'Noir', colorHex: '#000000', sizes: ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL", "6XL"], sizePrices: {} });
+            setNewProduct({ name: '', slug: '', price: '', supplierLink: '', reference: '', colorName: 'Noir', colorHex: '#000000', sizes: ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL", "6XL"], sizePrices: {}, aiDisabled: false });
             setNewProductFiles({ front: null, back: null });
             setEditingSlug(null);
         } catch (err: any) {
@@ -566,6 +575,9 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
                     <button onClick={() => { setActiveTab('flyer'); setIsMobileMenuOpen(false); }} className={`w-full text-left px-4 py-3 rounded-lg font-bold flex items-center gap-3 transition-colors ${activeTab === 'flyer' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>
                         <i className="fa-solid fa-map-location-dot w-5 text-center"></i> Gestion Flyer
                     </button>
+                    <button onClick={() => { setActiveTab('btp'); setIsMobileMenuOpen(false); }} className={`w-full text-left px-4 py-3 rounded-lg font-bold flex items-center gap-3 transition-colors ${activeTab === 'btp' ? 'bg-orange-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>
+                        <i className="fa-solid fa-hard-hat w-5 text-center text-orange-500"></i> PROJETS BTP (V24)
+                    </button>
                 </nav>
                 <div className="p-4 border-t border-gray-800 bg-gray-900">
                     <button onClick={onBack} className="w-full py-2 text-sm text-gray-400 hover:text-white font-bold flex items-center justify-center gap-2 border border-gray-700 rounded hover:bg-gray-800">
@@ -580,6 +592,67 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
     const renderContent = () => {
         if (loading) return <div className="p-12 text-center text-gray-400"><i className="fa-solid fa-circle-notch fa-spin text-3xl"></i></div>;
         if (errorMsg) return <div className="bg-red-50 text-red-600 p-6 m-6 rounded-xl border border-red-200">Error: {errorMsg}</div>;
+
+        const exportBtpData = (format: 'JSON' | 'CSV') => {
+            if (btpProjects.length === 0) return;
+            
+            const dataToExport = btpProjects.map(p => {
+                const dotations = btpDotations.filter(d => d.projectId === p.projectId);
+                const totalQtyPerPack: any = {};
+                
+                dotations.forEach(d => {
+                    if (d.items) {
+                        Object.entries(d.items).forEach(([pack, sizes]: [string, any]) => {
+                            if (!totalQtyPerPack[pack]) totalQtyPerPack[pack] = { S:0, M:0, L:0, XL:0, XXL:0 };
+                            Object.entries(sizes).forEach(([size, qty]: [string, any]) => {
+                                totalQtyPerPack[pack][size] += (qty || 0);
+                            });
+                        });
+                    }
+                });
+
+                return {
+                    project_id: p.projectId,
+                    company: p.userData?.companyName,
+                    email: p.userData?.email,
+                    phone: p.userData?.phone,
+                    status: p.status,
+                    created_at: p.createdAt ? new Date(p.createdAt.seconds * 1000).toISOString() : '',
+                    logos: {
+                        A: p.logos?.logoA?.storageUrl,
+                        B: p.logos?.logoB?.storageUrl
+                    },
+                    mockups: p.mockups?.map((m: any) => m.title).join(', '),
+                    quantities: totalQtyPerPack
+                };
+            });
+
+            if (format === 'JSON') {
+                const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `btp_production_${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+            } else {
+                const headers = ["ProjectID", "Company", "Email", "Phone", "LogoA_URL", "LogoB_URL", "Quantities"];
+                const csvRows = dataToExport.map(d => [
+                    d.project_id,
+                    `"${d.company}"`,
+                    d.email,
+                    d.phone,
+                    d.logos.A || '',
+                    d.logos.B || '',
+                    `"${JSON.stringify(d.quantities).replace(/"/g, '""')}"`
+                ].join(';'));
+                
+                const csvContent = "\uFEFF" + headers.join(';') + "\n" + csvRows.join('\n');
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = `btp_production_${new Date().toISOString().slice(0,10)}.csv`;
+                a.click();
+            }
+        };
 
         switch (activeTab) {
             case 'orders':
@@ -808,6 +881,18 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
                                     value={newProduct.reference}
                                     onChange={e => setNewProduct({ ...newProduct, reference: e.target.value })}
                                 />
+                                <label className="flex items-center gap-3 bg-red-50 p-2 rounded border border-red-100 cursor-pointer md:col-span-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={newProduct.aiDisabled}
+                                        onChange={e => setNewProduct({ ...newProduct, aiDisabled: e.target.checked })}
+                                        className="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                                    />
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-black uppercase text-red-800">Désactiver l'Essayage IA</span>
+                                        <span className="text-[10px] text-red-600 font-medium">Cochez si l'IA génère mal ce produit (ex: vestes complexes).</span>
+                                    </div>
+                                </label>
                                 <div className="flex gap-2">
                                     <input
                                         className="border p-2 rounded w-1/2 cursor-pointer"
@@ -1012,7 +1097,7 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
                                             type="button"
                                             onClick={() => {
                                                 setEditingSlug(null);
-                                                setNewProduct({ name: '', slug: '', price: '', supplierLink: '', reference: '', colorName: 'Noir', colorHex: '#000000', sizes: ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL", "6XL"], sizePrices: {} });
+                                                setNewProduct({ name: '', slug: '', price: '', supplierLink: '', reference: '', colorName: 'Noir', colorHex: '#000000', sizes: ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL", "6XL"], sizePrices: {} as Record<string, string>, aiDisabled: false });
                                             }}
                                             className="px-6 py-2 bg-gray-200 text-gray-700 rounded font-bold hover:bg-gray-300 transition-colors"
                                         >
@@ -1089,7 +1174,8 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
                                                             sizes: p.sizes || ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL", "6XL"],
                                                             sizePrices: Object.fromEntries(
                                                                 Object.entries(p.sizePrices || {}).map(([s, val]) => [s, val.toString()])
-                                                            )
+                                                            ),
+                                                            aiDisabled: p.aiDisabled || false
                                                         });
                                                         // Scroll to form
                                                         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1444,6 +1530,108 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                );
+            case 'btp':
+                return (
+                    <div className="space-y-6">
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <h3 className="text-2xl font-black text-gray-800 uppercase italic tracking-tighter">Flux Production BTP <span className="text-orange-600">V24</span></h3>
+                                <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">Passerelle automatisée Audit -&gt; Production</p>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={() => exportBtpData('CSV')} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-black text-xs uppercase italic tracking-widest transition-all">
+                                    <i className="fa-solid fa-file-csv mr-2"></i> Export CSV
+                                </button>
+                                <button onClick={() => exportBtpData('JSON')} className="bg-zinc-900 hover:bg-black text-white px-4 py-2 rounded-lg font-black text-xs uppercase italic tracking-widest transition-all">
+                                    <i className="fa-solid fa-code mr-2"></i> Export JSON (HD)
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-6">
+                            {btpProjects.map(project => {
+                                const dotations = btpDotations.filter(d => d.projectId === project.projectId);
+                                const totalItems = dotations.reduce((acc, d) => acc + (d.totalItems || 0), 0);
+                                
+                                return (
+                                    <div key={project.id} className="bg-white border rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row">
+                                        <div className="bg-gray-50 p-6 border-r md:w-80 space-y-4">
+                                            <div className="flex justify-between items-start">
+                                                <div className="text-[10px] font-black text-orange-600 uppercase tracking-widest">{project.projectId}</div>
+                                                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${project.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{project.status}</span>
+                                            </div>
+                                            <h4 className="text-xl font-black italic tracking-tight leading-none text-gray-800 uppercase">{project.userData?.companyName || 'Projet Sans Nom'}</h4>
+                                            <div className="space-y-1 text-xs text-gray-500 font-bold uppercase tracking-tight">
+                                                <div><i className="fa-solid fa-envelope mr-2"></i> {project.userData?.email}</div>
+                                                <div><i className="fa-solid fa-phone mr-2"></i> {project.userData?.phone}</div>
+                                            </div>
+                                            <div className="pt-4 border-t space-y-2">
+                                                <div className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Logos HD</div>
+                                                <div className="flex gap-2">
+                                                    {project.logos?.logoA?.storageUrl && <a href={project.logos.logoA.storageUrl} target="_blank" className="w-12 h-12 bg-white border rounded p-1 hover:border-orange-600 transition-all"><img src={project.logos.logoA.storageUrl} className="w-full h-full object-contain" /></a>}
+                                                    {project.logos?.logoB?.storageUrl && <a href={project.logos.logoB.storageUrl} target="_blank" className="w-12 h-12 bg-white border rounded p-1 hover:border-orange-600 transition-all"><img src={project.logos.logoB.storageUrl} className="w-full h-full object-contain" /></a>}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 p-6 space-y-6">
+                                            <div className="flex justify-between items-center">
+                                                <div className="text-sm font-black uppercase tracking-tight text-gray-400">Dotations Équipe ({dotations.length} soumissions)</div>
+                                                <div className="text-xl font-black italic text-orange-600">{totalItems} ARTICLES TOTAL</div>
+                                            </div>
+                                            <div className="bg-gray-50 rounded-lg p-4 border border-dashed border-gray-200">
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                                    {['tshirt', 'tshirt_fluo', 'tshirt_bicolore', 'hoodie', 'epi'].map(packId => {
+                                                        const packTotal = dotations.reduce((acc, d) => {
+                                                            if (d.items && d.items[packId]) {
+                                                                return acc + Object.values(d.items[packId]).reduce((sAcc: any, q: any) => sAcc + (q || 0), 0);
+                                                            }
+                                                            return acc;
+                                                        }, 0);
+                                                        if (packTotal === 0) return null;
+                                                        return (
+                                                            <div key={packId} className="space-y-1">
+                                                                <div className="text-[10px] font-black text-gray-400 uppercase">{packId.replace('_', ' ')}</div>
+                                                                <div className="text-lg font-black italic text-zinc-900">{packTotal} pcs</div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-4 pt-2 flex-wrap">
+                                                <button onClick={() => window.open(`https://signaid.eu/portal?portal=${project.projectId}`, '_blank')} className="text-[10px] font-black uppercase text-blue-600 hover:underline">Ouvrir Portail Client <i className="fa-solid fa-external-link ml-1"></i></button>
+                                                <button onClick={async () => {
+                                                    try {
+                                                        const logoUrl = project.logos?.logoA?.storageUrl || project.logos?.logoB?.storageUrl || null;
+                                                        const pdfBlob = await generateBusinessCardPDF(
+                                                            project.userData?.companyName || 'Entreprise',
+                                                            project.userData?.activity || '',
+                                                            project.userData?.email || '',
+                                                            project.userData?.phone || project.userData?.website || '',
+                                                            logoUrl
+                                                        );
+                                                        const url = URL.createObjectURL(pdfBlob);
+                                                        const a = document.createElement('a');
+                                                        a.href = url;
+                                                        a.download = `BAT_Carte_${(project.userData?.companyName || 'projet').replace(/\s+/g, '_')}.pdf`;
+                                                        a.click();
+                                                        URL.revokeObjectURL(url);
+                                                    } catch (err) {
+                                                        console.error('Erreur génération PDF:', err);
+                                                        alert('Erreur lors de la génération du PDF.');
+                                                    }
+                                                }} className="text-[10px] font-black uppercase text-orange-600 hover:underline flex items-center gap-1">
+                                                    <i className="fa-solid fa-file-pdf"></i> Générer BAT Carte (PDF)
+                                                </button>
+                                                <button onClick={() => alert("Fonction de marquage 'Prêt à Produire' bientôt disponible.")} className="text-[10px] font-black uppercase text-gray-400 hover:text-orange-600 transition-colors">Marquer comme Livré</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {btpProjects.length === 0 && <div className="p-20 text-center text-gray-400 font-bold uppercase italic tracking-widest border border-dashed rounded-xl">Aucun projet BTP en cours</div>}
                         </div>
                     </div>
                 );

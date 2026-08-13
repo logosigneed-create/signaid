@@ -191,7 +191,7 @@ body {
   object-fit: contain !important;
 }
 
-/* FEED DESKTOP - Carousel Focus avec Design Aéré */
+/* FEED DESKTOP - Carousel Focus avec Design AÃ©rÃ© */
 @media (min-width: 1024px) {
   .feed-container {
     display: block !important;
@@ -203,27 +203,27 @@ body {
     margin: 0 !important;
   }
 
-  /* Carousel Track - Centrage et Défilement */
+  /* Carousel Track - Centrage et DÃ©filement */
   .feed-track {
     display: flex !important;
     align-items: center !important;
     height: 100% !important;
     transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1) !important;
-    /* Padding pour voir les côtés */
-    /* Superposition activée par gap négatif ou très réduit */
+    /* Padding pour voir les cÃ´tÃ©s */
+    /* Superposition activÃ©e par gap nÃ©gatif ou trÃ¨s rÃ©duit */
     gap: -150px !important;
-    /* Ajustez cette valeur pour contrôler le degré de superposition */
+    /* Ajustez cette valeur pour contrÃ´ler le degrÃ© de superposition */
     padding-left: 50% !important;
-    /* Pour centrer le premier élément */
+    /* Pour centrer le premier Ã©lÃ©ment */
     transform-origin: center center !important;
   }
 
-  /* Carte de base (Inactive/Latérale) */
+  /* Carte de base (Inactive/LatÃ©rale) */
   .feed-card {
     flex: 0 0 320px !important;
-    /* Réduit de 400px pour cartes plus compactes */
+    /* RÃ©duit de 400px pour cartes plus compactes */
     height: 480px !important;
-    /* Hauteur réduite proportionnellement */
+    /* Hauteur rÃ©duite proportionnellement */
     display: flex !important;
     flex-direction: row !important;
     align-items: center !important;
@@ -232,17 +232,17 @@ body {
     transform: scale(0.8) !important;
     transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1) !important;
     filter: brightness(60%) blur(2px) !important;
-    /* Plus sombre pour faire ressortir le héros */
+    /* Plus sombre pour faire ressortir le hÃ©ros */
     pointer-events: none !important;
-    /* Désactive les clics sur les côtés */
+    /* DÃ©sactive les clics sur les cÃ´tÃ©s */
     background: transparent !important;
     z-index: 1 !important;
-    /* Derrière le héros */
+    /* DerriÃ¨re le hÃ©ros */
     margin: 0 -50px !important;
     /* Force le chevauchement */
   }
 
-  /* Carte Active (Héros) */
+  /* Carte Active (HÃ©ros) */
   .feed-card.active {
     opacity: 1 !important;
     transform: scale(1.15) !important;
@@ -252,7 +252,7 @@ body {
     /* Devant tout le reste */
     pointer-events: auto !important;
     margin: 0 40px !important;
-    /* Espace autour du héros */
+    /* Espace autour du hÃ©ros */
     box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3) !important;
   }
 
@@ -289,7 +289,7 @@ body {
     padding-left: 15px !important;
     position: static !important;
     opacity: 0 !important;
-    /* Caché par défaut */
+    /* CachÃ© par dÃ©faut */
     transform: translateX(-10px) !important;
     transition: all 0.4s ease 0.1s !important;
     pointer-events: none !important;
@@ -477,7 +477,7 @@ body {
     margin: 0 !important;
   }
 
-  /* Utilisation d'un sélecteur plus simple pour le titre */
+  /* Utilisation d'un sÃ©lecteur plus simple pour le titre */
 
 }
 
@@ -614,4 +614,40 @@ body {
   z-index: -1;
   animation: pulse 2s ease-in-out infinite;
   filter: blur(10px);
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.animate-scan {
+  height: 50%;
+  width: 100%;
+  background: linear-gradient(to bottom, transparent, rgba(234, 88, 12, 0.4), transparent);
+  position: absolute;
+  top: 0;
+  left: 0;
+  animation: scan 2s linear infinite;
+  box-shadow: 0 0 15px rgba(234, 88, 12, 0.3);
+  z-index: 5;
+}
+.checkerboard {
+  background-color: #f0f0f0;
+  background-image: linear-gradient(45deg, #e0e0e0 25%, transparent 25%),
+    linear-gradient(-45deg, #e0e0e0 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e0e0e0 75%),
+    linear-gradient(-45deg, transparent 75%, #e0e0e0 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+.dark .checkerboard {
+  background-color: #333333;
+  background-image: linear-gradient(45deg, #222222 25%, transparent 25%),
+    linear-gradient(-45deg, #222222 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #222222 75%),
+    linear-gradient(-45deg, transparent 75%, #222222 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
 }

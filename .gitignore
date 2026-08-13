@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Production build outputs
+dist/
+build/
+out/
+.next/
+
+# IDE and System files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Environment variables & secrets (CRITICAL FOR SECURITY)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.crt
+*service-account*.json
+*secret*.json
+
+# Logs and temporary files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+*.tsbuildinfo
+scratch/
+.tempmediaStorage/

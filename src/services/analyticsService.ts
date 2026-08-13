@@ -25,5 +25,6 @@ export const AnalyticsEvents = {
     GENERATE_AI_START: 'generate_ai_start',
     GENERATE_AI_COMPLETE: 'generate_ai_complete',
     SIGN_UP: 'sign_up',
-    LOGIN: 'login'
+    LOGIN: 'login',
+    MOVE_DESIGN_ELEMENT: 'move_design_element'
 };

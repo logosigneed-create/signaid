@@ -6,6 +6,12 @@ export const CookieConsent: React.FC = () => {
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
+        // If we are in an iframe (preview mode), don't show the cookie banner
+        if (window.self !== window.top) {
+            setIsVisible(false);
+            return;
+        }
+
         const consent = localStorage.getItem('cookieConsent');
         if (!consent) {
             // Delay slightly to not overwhelm immediately on load

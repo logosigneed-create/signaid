@@ -1,5 +1,0 @@
-437: setPendingElement(null);
-1139: setPendingElement(null); // Clear any pending
-1526: setPendingElement(null);
-1667: setPendingElement(null);
-2946: <button onClick={() => { setPendingElement(null); setUploadedLogoPreview(null); }} className="w-full text-gray-500 text-sm hover:text-gray-900">Annuler</button>

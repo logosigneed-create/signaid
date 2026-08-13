@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 
-import { getProxiedUrl, resizeImage, hexToRgb, tintImage, removeBackground, removeSpecificColor, getCroppedImg, urlToBase64, addWatermark, cleanCartItem, compressCartForStorage, isSameModel, calculateBaseUnitPrice, calculateMarkingFee, dataURLtoBlob, trimImage } from '../utils/helpers';
+import { getProxiedUrl, resizeImage, hexToRgb, tintImage, removeBackground, removeSpecificColor, getCroppedImg, urlToBase64, addWatermark, cleanCartItem, compressCartForStorage, isSameModel, calculateBaseUnitPrice, calculateMarkingFee, dataURLtoBlob, trimImage, intelligentUpscale } from '../utils/helpers';
 import { getOptimizedImageUrl } from '../utils/imageUtils';
 import CreationToolbar, { ToolItem } from '../components/CreationToolbar';
 import { LazyImage } from '../components/LazyImage';
@@ -26,13 +26,13 @@ import {
     PricingRules,
     LogoCreationData,
     ProductDatabase,
-    TextConfig
+    TextConfig,
+    LogoConfig
 } from '../types';
 
 
 import { DraggableElement } from '../components/DraggableElement';
 import { TextRenderer } from '../components/TextRenderer';
-import { PongGame } from '../components/PongGame';
 import { LoadingScreen } from '../components/LoadingScreen';
 import { geminiService } from '../services/geminiService';
 import { db } from '../firebaseConfig';
@@ -113,51 +113,93 @@ const processLogoColor = async (url: string, color: string): Promise<string> => 
     });
 };
 
-export
-    function CustomizerView({ initialProductType, initialState, isRemixMode, onAddToCart, onAddToCartBatch, onBack, onPublish, onAddToWishlist, userCredits, onDeductCredits, isGuest, onAuthRequired, user, onUpdateUser, initialAiPromo, initialAiModalOpen, initialUploadOpen, productDimensions, initialStyleCategory, initialStylePrompt, setIsQuoteModalOpen, onGoToRewards, setIsMenuVisible, pricingRules, printMargin = 15, initialColor, initialTemplate, remixPostId, aiGenerating, aiResult, onGenerateAi, setAiResult, cartCount, onGoToCart, onSaveToProfile, activeLogoService, initialMode, isServiceMode, onRequestLogoService, onOpenAtelier, onUpdatePost, products }: {
-        initialProductType: string,
-        initialState?: CartItem,
-        isRemixMode?: boolean,
-        onAddToCart: (item: CartItem) => void,
-        onAddToCartBatch: (items: CartItem[]) => void,
-        onBack: () => void,
-        onPublish: (image: string, caption: string, productType: string, customization: CartItem, styleCategory?: string, stylePrompt?: string) => void,
-        onAddToWishlist: (productId: string, color: string) => void,
-        userCredits: number,
-        onDeductCredits: (amount: number) => boolean,
-        isGuest: boolean,
-        onAuthRequired: () => void,
-        user: User | null,
-        onUpdateUser: (u: Partial<User>) => void,
-        setIsQuoteModalOpen?: (v: boolean) => void;
-        initialAiPromo?: boolean;
-        productDimensions?: Record<string, Record<string, number>>;
-        initialStyleCategory?: string;
-        initialStylePrompt?: string;
-        onGoToRewards: () => void;
-        setIsMenuVisible?: (visible: boolean) => void;
-        pricingRules?: PricingRules;
-        printMargin?: number;
-        initialColor?: string;
-        initialTemplate?: string;
-        remixPostId?: string | null;
-        initialAiModalOpen?: boolean;
-        initialUploadOpen?: boolean;
-        aiGenerating?: boolean;
-        aiResult?: string | null;
-        onGenerateAi?: (params: any) => Promise<void>;
-        setAiResult?: (val: string | null) => void;
-        cartCount?: number;
-        onGoToCart?: () => void;
-        onSaveToProfile: (imageUrl: string, prompt: string, style: string, customization?: CartItem) => Promise<void>;
-        activeLogoService?: LogoCreationData | null;
-        initialMode?: 'upload' | 'service' | null;
-        isServiceMode?: boolean;
-        onRequestLogoService?: () => void;
-        onOpenAtelier?: () => void;
-        onUpdatePost?: (postId: string, customization: CartItem) => Promise<void>;
-        products: any;
-    }) {
+export function CustomizerView({ 
+    initialProductType, 
+    initialState, 
+    isRemixMode, 
+    onAddToCart, 
+    onAddToCartBatch, 
+    onBack, 
+    onPublish, 
+    onAddToWishlist, 
+    userCredits, 
+    onDeductCredits, 
+    isGuest, 
+    onAuthRequired, 
+    user, 
+    onUpdateUser, 
+    initialAiPromo, 
+    initialAiModalOpen, 
+    initialUploadOpen, 
+    productDimensions, 
+    initialStyleCategory, 
+    initialStylePrompt, 
+    setIsQuoteModalOpen, 
+    onGoToRewards, 
+    setIsMenuVisible, 
+    pricingRules, 
+    printMargin = 15, 
+    initialColor, 
+    initialTemplate, 
+    remixPostId, 
+    aiGenerating, 
+    aiResult, 
+    onGenerateAi, 
+    setAiResult, 
+    cartCount, 
+    onGoToCart, 
+    onSaveToProfile, 
+    activeLogoService, 
+    initialMode, 
+    isServiceMode, 
+    onRequestLogoService, 
+    onOpenAtelier, 
+    onUpdatePost, 
+    products 
+}: {
+    initialProductType: string,
+    initialState?: CartItem,
+    isRemixMode?: boolean,
+    onAddToCart: (item: CartItem) => void,
+    onAddToCartBatch: (items: CartItem[]) => void,
+    onBack: () => void,
+    onPublish: (image: string, caption: string, productType: string, customization: CartItem, styleCategory?: string, stylePrompt?: string) => void,
+    onAddToWishlist: (productId: string, color: string) => void,
+    userCredits: number,
+    onDeductCredits: (amount: number) => boolean,
+    isGuest: boolean,
+    onAuthRequired: () => void,
+    user: User | null,
+    onUpdateUser: (u: Partial<User>) => void,
+    setIsQuoteModalOpen?: (v: boolean) => void,
+    initialAiPromo?: boolean,
+    productDimensions?: Record<string, Record<string, number>>,
+    initialStyleCategory?: string,
+    initialStylePrompt?: string,
+    onGoToRewards: () => void,
+    setIsMenuVisible?: (visible: boolean) => void,
+    pricingRules?: PricingRules,
+    printMargin?: number,
+    initialColor?: string,
+    initialTemplate?: string,
+    remixPostId?: string | null,
+    initialAiModalOpen?: boolean,
+    initialUploadOpen?: boolean,
+    aiGenerating?: boolean,
+    aiResult?: string | null,
+    onGenerateAi?: (params: any) => Promise<any>,
+    setAiResult?: (val: string | null) => void,
+    cartCount?: number,
+    onGoToCart?: () => void,
+    onSaveToProfile: (imageUrl: string, prompt: string, style: string, customization?: CartItem) => Promise<void>,
+    activeLogoService?: LogoCreationData | null,
+    initialMode?: 'upload' | 'service' | null,
+    isServiceMode?: boolean,
+    onRequestLogoService?: () => void,
+    onOpenAtelier?: () => void,
+    onUpdatePost?: (postId: string, customization: CartItem) => Promise<void>,
+    products: any
+}) {
     const [isUpdatingPost, setIsUpdatingPost] = useState(false);
     const navigate = useNavigate();
     const sizeSelectionRef = useRef<HTMLDivElement>(null);
@@ -174,6 +216,8 @@ export
     const [shakeSizes, setShakeSizes] = useState(false);
     const [isRemovingBackground, setIsRemovingBackground] = useState(false);
     const [isPickingColor, setIsPickingColor] = useState(false);
+    const [isUpscalingImage, setIsUpscalingImage] = useState(false);
+    const [manualColorPickTarget, setManualColorPickTarget] = useState<{ url: string, side: 'front' | 'back', slotId?: string } | null>(null);
     const [selectedStyleName, setSelectedStyleName] = useState<string>('');
     const [aiStep, setAiStep] = useState<'prompt' | 'input' | 'result'>('prompt');
     const [selectedAiPrompt, setSelectedAiPrompt] = useState<string>('');
@@ -193,12 +237,8 @@ export
         }
     });
 
-    // Initialize aiResult with prop or saved
-    useEffect(() => {
-        if (aiResult && generatingSide) {
-            setAiResults(prev => ({ ...prev, [generatingSide]: aiResult }));
-        }
-    }, [aiResult, generatingSide]);
+    // REMOVED: Redundant effect that caused race conditions during serial generation
+    // aiResults is now managed directly inside handleAiTryOn
     // We can't easily change the prop-based initialization if 'aiResult' is passed from parent, 
     // but 'setAiResult' is likely local if not controlled.
     // However, CustomizerView receives 'aiResult' as prop.
@@ -349,48 +389,18 @@ export
                 if (event.target?.result) {
                     let result = event.target.result as string;
 
-                    // NEW: Auto-crop transparent backgrounds
-                    try {
-                        const trimmed = await trimImage(result);
-                        if (trimmed && trimmed.dataUrl) result = trimmed.dataUrl;
-                    } catch (err) {
-                        console.warn("Auto-crop failed, using original", err);
-                    }
 
-                    // Check if we are in AI Mode
-                    if (aiModalOpen || isAiViewVisible) {
+
+                    // Check if we are in AI Mode (Only if modal is open, regardless of view toggle)
+                    if (aiModalOpen) {
                         console.log(`[AI Studio] Image captured for AI processing.`);
                         setCapturedImage(result);
                         setAiStep('input'); // Confirm step
+                        if (setAiResult) setAiResult(null); // [LOCK FIX] Clear previous result when replacing image
                     } else {
                         // STANDARD UPLOAD MODE (Option A / Direct Import)
-                        console.log(`[Standard Upload] Direct placement (Crop skipped by default).`);
-
-                        // Directly place the image
-                        const finalImage = result;
-                        const targetIsBack = isBack; // Assuming existing state
-
-                        const updates = targetIsBack ? {
-                            originalLogoUrlBack: finalImage,
-                            processedLogoUrlBack_original: finalImage,
-                            processedLogoUrlBack: null,
-                            backgroundRemovedBack: false, logoInvertedBack: false,
-                            activeLogoColorBack: 'original',
-                            processedLogoUrlBack_white: null, processedLogoUrlBack_black: null, processedLogoUrlBack_noBackground: null
-                        } : {
-                            originalLogoUrlFront: finalImage,
-                            processedLogoUrlFront_original: finalImage,
-                            processedLogoUrlFront: null,
-                            backgroundRemovedFront: false, logoInvertedFront: false,
-                            activeLogoColorFront: 'original',
-                            processedLogoUrlFront_white: null, processedLogoUrlFront_black: null, processedLogoUrlFront_noBackground: null
-                        };
-
-                        updateItem(updates);
-                        setUploadedLogoPreview(finalImage);
-                        setActiveEl('logo');
-                        setPendingElement(null);
-                        setCroppingImage(result);
+                        console.log(`[Standard Upload] Slot-aware direct placement.`);
+                        processLogoUpdate(result);
                     }
                 } else {
                     console.error("[Upload] FileReader load event triggered but result is null.");
@@ -523,6 +533,8 @@ export
     // Mobile-specific state
     const [cameraModalOpen, setCameraModalOpen] = useState(false);
     const [activeEl, setActiveEl] = useState<string | null>(null);
+    const [isGrouping, setIsGrouping] = useState(false);
+    const [groupedSlots, setGroupedSlots] = useState<string[]>([]);
     const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
     const [activeToolId, setActiveToolId] = useState<string | null>(null);
     const [showCartTooltip, setShowCartTooltip] = useState(false);
@@ -624,7 +636,7 @@ export
     }, [item.productType, item.color, isBack, products, processedProductImages]);
 
     // --- OVERLAY DRAG STATES ---
-    const [isGrouped, setIsGrouped] = useState(false);
+
     const dragSnapshots = useRef<any>(null);
     const [groupElementDims, setGroupElementDims] = useState<{ [id: string]: { w: number, h: number } }>({});
 
@@ -805,6 +817,9 @@ export
 
     const [showGuides, setShowGuides] = useState(false);
     const [isMeasureToolActive, setIsMeasureToolActive] = useState(false);
+    const [tapeMeasure, setTapeMeasure] = useState<{ start: { x: number, y: number } | null, current: { x: number, y: number } | null }>({ start: null, current: null });
+    const tapeMeasureRef = useRef<HTMLDivElement>(null);
+    const [isAnyElementResizing, setIsAnyElementResizing] = useState(false);
     const [activePanel, setActivePanel] = useState<'none' | 'import' | 'text' | 'code' | 'category' | 'ai' | 'service_summary'>('none');
 
     // Auto-scroll to panel on Mobile when active
@@ -1048,31 +1063,47 @@ export
                 }
 
                 // Auto-place the cropped logo
-                const targetIsBack = isBack;
+                const slot = getActiveLogoSlot(activeEl);
 
-                const updates = targetIsBack ? {
-                    // Update processed version AND original for display
-                    processedLogoUrlBack_original: finalImage,
-                    originalLogoUrlBack: finalImage,
+                if (slot === 'logo2' || slot === 'logo3') {
+                    const targetSlot = slot === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (isBack ? 'logoBack3' : 'logoFront3');
+                    const config = (item as any)[targetSlot] as LogoConfig;
+                    const newConfig: LogoConfig = {
+                        ...(config || {}),
+                        position: config?.position || { x: 50, y: 50 },
+                        size: config?.size || 15,
+                        originalUrl: finalImage,
+                        processedUrl: finalImage,
+                        processedUrl_original: finalImage,
+                        backgroundRemoved: false,
+                        inverted: false,
+                        activeColor: 'original',
+                        isHd: false
+                    };
+                    updateItem({ [targetSlot]: newConfig });
+                } else {
+                    const updates = isBack ? {
+                        processedLogoUrlBack_original: finalImage,
+                        originalLogoUrlBack: finalImage,
+                        backgroundRemovedBack: false, logoInvertedBack: false,
+                        processedLogoUrlBack: null,
+                        activeLogoColorBack: 'original',
+                        processedLogoUrlBack_white: null, processedLogoUrlBack_black: null, processedLogoUrlBack_noBackground: null,
+                        isHdBack: false
+                    } : {
+                        processedLogoUrlFront_original: finalImage,
+                        originalLogoUrlFront: finalImage,
+                        backgroundRemovedFront: false, logoInvertedFront: false,
+                        processedLogoUrlFront: null,
+                        activeLogoColorFront: 'original',
+                        processedLogoUrlFront_white: null, processedLogoUrlFront_black: null, processedLogoUrlFront_noBackground: null,
+                        isHdFront: false
+                    };
+                    updateItem(updates);
+                }
 
-                    // Reset other processed states
-                    backgroundRemovedBack: false, logoInvertedBack: false,
-                    processedLogoUrlBack: null, // Clear active processed image
-                    activeLogoColorBack: 'original', // RESET COLOR
-                    processedLogoUrlBack_white: null, processedLogoUrlBack_black: null, processedLogoUrlBack_noBackground: null
-                } : {
-                    processedLogoUrlFront_original: finalImage,
-                    originalLogoUrlFront: finalImage,
-
-                    backgroundRemovedFront: false, logoInvertedFront: false,
-                    processedLogoUrlFront: null, // Clear active processed image
-                    activeLogoColorFront: 'original', // RESET COLOR
-                    processedLogoUrlFront_white: null, processedLogoUrlFront_black: null, processedLogoUrlFront_noBackground: null
-                };
-
-                updateItem(updates);
                 setUploadedLogoPreview(finalImage);
-                setActiveEl('logo');
+                setActiveEl(slot);
 
                 setPendingElement(null); // Clear any pending
                 setCroppingImage(null); // Close modal
@@ -1090,25 +1121,49 @@ export
 
 
     useEffect(() => {
-        const logo = isBack
-            ? (item.predefinedLogoUrlBack || item.processedLogoUrlBack_original || item.originalLogoUrlBack)
-            : (item.predefinedLogoUrlFront || item.processedLogoUrlFront_original || item.originalLogoUrlFront);
+        const activeLogoSlot = getActiveLogoSlot(activeEl);
+        let logo: any;
+        if (activeLogoSlot === 'logo') {
+            logo = isBack
+                ? (item.predefinedLogoUrlBack || item.processedLogoUrlBack_original || item.originalLogoUrlBack)
+                : (item.predefinedLogoUrlFront || item.processedLogoUrlFront_original || item.originalLogoUrlFront);
+        } else if (activeLogoSlot === 'logo2') {
+            logo = isBack ? item.logoBack2?.originalUrl || item.logoBack2?.predefinedUrl : item.logoFront2?.originalUrl || item.logoFront2?.predefinedUrl;
+        } else if (activeLogoSlot === 'logo3') {
+            logo = isBack ? item.logoBack3?.originalUrl || item.logoBack3?.predefinedUrl : item.logoFront3?.originalUrl || item.logoFront3?.predefinedUrl;
+        }
 
         const previewUrl = Array.isArray(logo) ? logo[0] : logo;
         setUploadedLogoPreview(previewUrl || null);
-    }, [isBack, item.predefinedLogoUrlBack, item.originalLogoUrlBack, item.predefinedLogoUrlFront, item.originalLogoUrlFront, item.processedLogoUrlBack_original, item.processedLogoUrlFront_original]);
+    }, [isBack, activeEl, item.predefinedLogoUrlBack, item.originalLogoUrlBack, item.predefinedLogoUrlFront, item.originalLogoUrlFront, item.processedLogoUrlBack_original, item.processedLogoUrlFront_original, item.logoFront2, item.logoBack2, item.logoFront3, item.logoBack3]);
 
     const product = products[item.productType];
 
     const updateItem = useCallback((updates: Partial<CartItem>) => {
+        // [USER REQUEST] Only logo replacement (or removal) clears the AI generated result
+        const logoKeys = [
+            'originalLogoUrlFront', 'originalLogoUrlBack',
+            'processedLogoUrlFront', 'processedLogoUrlBack',
+            'predefinedLogoUrlFront', 'predefinedLogoUrlBack',
+            'logoFront2', 'logoBack2', 'logoFront3', 'logoBack3'
+        ];
+        const isLogoUpdate = Object.keys(updates).some(k => logoKeys.includes(k));
+
+        if (isLogoUpdate && setAiResult && aiResult) {
+            console.log("[AI] Logo replaced or removed - Clearing AI Result");
+            setAiResult(null);
+            setAiStep('input');
+            setIsAiViewVisible(false);
+        }
+
         setItem(prev => ({ ...prev, ...updates }));
-    }, []);
+    }, [setAiResult, aiResult]);
 
     // Helper for simple actions that should be undoable immediately (color change, etc.)
     const updateItemUndoable = useCallback((updates: Partial<CartItem>) => {
         saveHistory();
-        setItem(prev => ({ ...prev, ...updates }));
-    }, [saveHistory]);
+        updateItem(updates);
+    }, [saveHistory, updateItem]);
 
     const activePricing = useMemo(() => {
         if (!product) return { total: 0, subtotal: 0, services: 0, pieces: 0, garmentPart: 0, markingPart: 0 };
@@ -1142,28 +1197,22 @@ export
     }, [selectedSizes, item.serviceRetouche, item.serviceModernisation, item.isRetouchingService, item.isModernizationService, item.calculatedPrice, item.color, item.productType, product, pricingRules]);
 
     const getGroupBoundingBox = () => {
-        if (!isGrouped) return null;
+        if (!isGrouping || groupedSlots.length === 0) return null;
 
         const elements = isBack
             ? [
-                { id: 'logo', x: item.logoPositionXBack, y: item.logoPositionYBack, active: !!(item.predefinedLogoUrlBack || item.originalLogoUrlBack) },
-                { id: 'logoBack2', x: item.logoBack2?.position.x || 0, y: item.logoBack2?.position.y || 0, active: !!(item.logoBack2?.originalUrl || item.logoBack2?.predefinedUrl) },
-                { id: 'logoBack3', x: item.logoBack3?.position.x || 0, y: item.logoBack3?.position.y || 0, active: !!(item.logoBack3?.originalUrl || item.logoBack3?.predefinedUrl) },
-                { id: 'text', x: item.textBack.position.x, y: item.textBack.position.y, active: !!item.textBack.text },
-                { id: 'text2', x: item.textBack2?.position.x, y: item.textBack2?.position.y, active: !!item.textBack2?.text },
-                { id: 'text3', x: item.textBack3?.position.x, y: item.textBack3?.position.y, active: !!item.textBack3?.text }
+                { id: 'logo', x: item.logoPositionXBack, y: item.logoPositionYBack, active: groupedSlots.includes('logo') && !!(item.predefinedLogoUrlBack || item.originalLogoUrlBack) },
+                { id: 'logo2', x: item.logoBack2?.position.x || 0, y: item.logoBack2?.position.y || 0, active: groupedSlots.includes('logo2') && !!(item.logoBack2?.originalUrl || item.logoBack2?.predefinedUrl) },
+                { id: 'logo3', x: item.logoBack3?.position.x || 0, y: item.logoBack3?.position.y || 0, active: groupedSlots.includes('logo3') && !!(item.logoBack3?.originalUrl || item.logoBack3?.predefinedUrl) }
             ]
             : [
-                { id: 'logo', x: item.logoPositionXFront, y: item.logoPositionYFront, active: !!(item.predefinedLogoUrlFront || item.originalLogoUrlFront) },
-                { id: 'logoFront2', x: item.logoFront2?.position.x || 0, y: item.logoFront2?.position.y || 0, active: !!(item.logoFront2?.originalUrl || item.logoFront2?.predefinedUrl) },
-                { id: 'logoFront3', x: item.logoFront3?.position.x || 0, y: item.logoFront3?.position.y || 0, active: !!(item.logoFront3?.originalUrl || item.logoFront3?.predefinedUrl) },
-                { id: 'text', x: item.textFront.position.x, y: item.textFront.position.y, active: !!item.textFront.text },
-                { id: 'text2', x: item.textFront2?.position.x, y: item.textFront2?.position.y, active: !!item.textFront2?.text },
-                { id: 'text3', x: item.textFront3?.position.x, y: item.textFront3?.position.y, active: !!item.textFront3?.text }
+                { id: 'logo', x: item.logoPositionXFront, y: item.logoPositionYFront, active: groupedSlots.includes('logo') && !!(item.predefinedLogoUrlFront || item.originalLogoUrlFront) },
+                { id: 'logo2', x: item.logoFront2?.position.x || 0, y: item.logoFront2?.position.y || 0, active: groupedSlots.includes('logo2') && !!(item.logoFront2?.originalUrl || item.logoFront2?.predefinedUrl) },
+                { id: 'logo3', x: item.logoFront3?.position.x || 0, y: item.logoFront3?.position.y || 0, active: groupedSlots.includes('logo3') && !!(item.logoFront3?.originalUrl || item.logoFront3?.predefinedUrl) }
             ];
 
         const activeElements = elements.filter(e => e.active);
-        if (activeElements.length === 0) return null;
+        if (activeElements.length < 2) return null;
 
         const realHeight = productDimensions?.[item.productType]?.[previewSize] || 70;
         const realWidth = realHeight * 0.75; // Aspect Ratio 3:4
@@ -1191,25 +1240,36 @@ export
     };
 
     const handleDragStart = (id: string) => {
-        if (isBack) {
-            dragSnapshots.current = {
-                logo: { x: item.logoPositionXBack, y: item.logoPositionYBack },
-                logoBack2: { x: item.logoBack2?.position.x || 0, y: item.logoBack2?.position.y || 0 },
-                logoBack3: { x: item.logoBack3?.position.x || 0, y: item.logoBack3?.position.y || 0 },
-                text: { x: item.textBack.position.x, y: item.textBack.position.y },
-                text2: { x: item.textBack2?.position.x, y: item.textBack2?.position.y },
-                text3: { x: item.textBack3?.position.x, y: item.textBack3?.position.y }
-            };
-        } else {
-            dragSnapshots.current = {
-                logo: { x: item.logoPositionXFront, y: item.logoPositionYFront },
-                logoFront2: { x: item.logoFront2?.position.x || 0, y: item.logoFront2?.position.y || 0 },
-                logoFront3: { x: item.logoFront3?.position.x || 0, y: item.logoFront3?.position.y || 0 },
-                text: { x: item.textFront.position.x, y: item.textFront.position.y },
-                text2: { x: item.textFront2?.position.x, y: item.textFront2?.position.y },
-                text3: { x: item.textFront3?.position.x, y: item.textFront3?.position.y }
-            };
+        const slot = getActiveLogoSlot(id);
+        const isSelected = groupedSlots.includes(slot);
+        
+        // Determine which elements should move together
+        const slotsToMove = (isGrouping && isSelected) ? groupedSlots : [slot];
+        
+        // Handle text elements separately if they are not part of the logo slots
+        const movingIds = [...slotsToMove];
+        if (id.includes('text')) {
+             if (!movingIds.includes(id)) movingIds.push(id);
         }
+
+        const snapshots: any = {};
+        movingIds.forEach(mId => {
+            if (mId === 'logo') {
+                snapshots.logo = isBack ? { x: item.logoPositionXBack, y: item.logoPositionYBack } : { x: item.logoPositionXFront, y: item.logoPositionYFront };
+            } else if (mId === 'logo2') {
+                const cfg = isBack ? item.logoBack2 : item.logoFront2;
+                if (cfg) snapshots.logo2 = { x: cfg.position.x, y: cfg.position.y };
+            } else if (mId === 'logo3') {
+                const cfg = isBack ? item.logoBack3 : item.logoFront3;
+                if (cfg) snapshots.logo3 = { x: cfg.position.x, y: cfg.position.y };
+            } else if (mId === 'text' || mId === 'text2' || mId === 'text3') {
+                const textKey = isBack ? `textBack${mId === 'text' ? '' : (mId === 'text2' ? '2' : '3')}` : `textFront${mId === 'text' ? '' : (mId === 'text2' ? '2' : '3')}`;
+                const cfg = (item as any)[textKey] as TextConfig;
+                if (cfg) snapshots[mId] = { x: cfg.position.x, y: cfg.position.y };
+            }
+        });
+        
+        dragSnapshots.current = snapshots;
     };
 
     const handleDragUpdate = (dx: number, dy: number) => {
@@ -1222,21 +1282,21 @@ export
             y: Math.min(100, Math.max(0, old.y + dy))
         });
 
-        if (isBack) {
-            if (s.logo) { updates.logoPositionXBack = move(s.logo).x; updates.logoPositionYBack = move(s.logo).y; }
-            if (s.logoBack2 && item.logoBack2) updates.logoBack2 = { ...item.logoBack2, position: move(s.logoBack2) };
-            if (s.logoBack3 && item.logoBack3) updates.logoBack3 = { ...item.logoBack3, position: move(s.logoBack3) };
-            if (s.text) updates.textBack = { ...item.textBack, position: move(s.text) };
-            if (s.text2 && item.textBack2) updates.textBack2 = { ...item.textBack2, position: move(s.text2) };
-            if (s.text3 && item.textBack3) updates.textBack3 = { ...item.textBack3, position: move(s.text3) };
-        } else {
-            if (s.logo) { updates.logoPositionXFront = move(s.logo).x; updates.logoPositionYFront = move(s.logo).y; }
-            if (s.logoFront2 && item.logoFront2) updates.logoFront2 = { ...item.logoFront2, position: move(s.logoFront2) };
-            if (s.logoFront3 && item.logoFront3) updates.logoFront3 = { ...item.logoFront3, position: move(s.logoFront3) };
-            if (s.text) updates.textFront = { ...item.textFront, position: move(s.text) };
-            if (s.text2 && item.textFront2) updates.textFront2 = { ...item.textFront2, position: move(s.text2) };
-            if (s.text3 && item.textFront3) updates.textFront3 = { ...item.textFront3, position: move(s.text3) };
-        }
+        Object.keys(s).forEach(key => {
+            const pos = s[key];
+            if (key === 'logo') {
+                if (isBack) { updates.logoPositionXBack = move(pos).x; updates.logoPositionYBack = move(pos).y; }
+                else { updates.logoPositionXFront = move(pos).x; updates.logoPositionYFront = move(pos).y; }
+            } else if (key === 'logo2' || key === 'logo3') {
+                const slotKey = isBack ? (key === 'logo2' ? 'logoBack2' : 'logoBack3') : (key === 'logo2' ? 'logoFront2' : 'logoFront3');
+                const cfg = (item as any)[slotKey];
+                if (cfg) updates[slotKey] = { ...cfg, position: move(pos) };
+            } else if (key === 'text' || key === 'text2' || key === 'text3') {
+                const textKey = isBack ? `textBack${key === 'text' ? '' : (key === 'text2' ? '2' : '3')}` : `textFront${key === 'text' ? '' : (key === 'text2' ? '2' : '3')}`;
+                const cfg = (item as any)[textKey];
+                if (cfg) updates[textKey] = { ...cfg, position: move(pos) };
+            }
+        });
 
         updateItem(updates);
     };
@@ -1375,16 +1435,23 @@ export
 
     const removeLogo = () => {
         const wasPredefined = isBack ? item.isPredefinedLogoBack : item.isPredefinedLogoFront;
-        if (isBack) {
-            updateItemUndoable({
-                originalLogoUrlBack: null, processedLogoUrlBack_original: null,
-                isPredefinedLogoBack: false, predefinedLogoUrlBack: null
-            });
+        const isMultiSlot = activeEl === 'logo2' || activeEl === 'logo3';
+
+        if (isMultiSlot && activeEl) {
+            const targetKey = activeEl === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (isBack ? 'logoBack3' : 'logoFront3');
+            updateItemUndoable({ [targetKey]: undefined });
         } else {
-            updateItemUndoable({
-                originalLogoUrlFront: null, processedLogoUrlFront_original: null,
-                isPredefinedLogoFront: false, predefinedLogoUrlFront: null
-            });
+            if (isBack) {
+                updateItemUndoable({
+                    originalLogoUrlBack: null, processedLogoUrlBack_original: null,
+                    isPredefinedLogoBack: false, predefinedLogoUrlBack: null
+                });
+            } else {
+                updateItemUndoable({
+                    originalLogoUrlFront: null, processedLogoUrlFront_original: null,
+                    isPredefinedLogoFront: false, predefinedLogoUrlFront: null
+                });
+            }
         }
         setUploadedLogoPreview(null);
         setCodeLogoPreview(null);
@@ -1454,33 +1521,69 @@ export
         setPendingElement(null);
     }, [specialCodeFront, specialCodeBack, isBack]);
 
+    // Helper to get the actual logo slot (logo, logo2, logo3) from any activeEl string
+    const getActiveLogoSlot = (el: string | null): 'logo' | 'logo2' | 'logo3' => {
+        if (!el) return 'logo';
+        if (el === 'logo2' || (el.includes('logo') && el.includes('2'))) return 'logo2';
+        if (el === 'logo3' || (el.includes('3') && el.includes('logo'))) return 'logo3';
+        return 'logo';
+    };
+
     // Unified handler for both File Input and Camera
-    const processLogoUpdate = (dataUrl: string) => {
+    const processLogoUpdate = async (dataUrl: string) => {
         const defaults = { x: 50, y: 40, scale: 50 };
-        const updates = isBack ? {
-            originalLogoUrlBack: dataUrl,
-            processedLogoUrlBack_original: dataUrl,
-            isPredefinedLogoBack: false,
-            predefinedLogoUrlBack: null,
-            logoPositionXBack: defaults.x, logoPositionYBack: defaults.y, logoSizeBack: defaults.scale,
-            backgroundRemovedBack: false, logoInvertedBack: false,
-            processedLogoUrlBack: null,
-            processedLogoUrlBack_white: null, processedLogoUrlBack_black: null, processedLogoUrlBack_noBackground: null,
-            activeLogoColorBack: 'original'
-        } : {
-            originalLogoUrlFront: dataUrl,
-            processedLogoUrlFront_original: dataUrl,
-            isPredefinedLogoFront: false,
-            predefinedLogoUrlFront: null,
-            logoPositionXFront: defaults.x, logoPositionYFront: defaults.y, logoSizeFront: defaults.scale,
-            backgroundRemovedFront: false, logoInvertedFront: false,
-            processedLogoUrlFront: null,
-            processedLogoUrlFront_white: null, processedLogoUrlFront_black: null, processedLogoUrlFront_noBackground: null,
-            activeLogoColorFront: 'original'
-        };
-        updateItem(updates);
-        setUploadedLogoPreview(dataUrl);
-        setActiveEl('logo');
+        const slot = getActiveLogoSlot(activeEl);
+
+        let finalImage = dataUrl;
+        // NEW: Auto-crop transparent backgrounds
+        try {
+            const trimmed = await trimImage(dataUrl);
+            if (trimmed && trimmed.dataUrl) finalImage = trimmed.dataUrl;
+        } catch (err) {
+            console.warn("Auto-crop failed, using original", err);
+        }
+
+        if (slot === 'logo2' || slot === 'logo3') {
+            const targetSlot = slot === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (isBack ? 'logoBack3' : 'logoFront3');
+            const newConfig: LogoConfig = {
+                originalUrl: finalImage,
+                processedUrl: finalImage,
+                processedUrl_original: finalImage,
+                position: { x: defaults.x, y: defaults.y },
+                size: defaults.scale,
+                backgroundRemoved: false,
+                inverted: false,
+                activeColor: 'original'
+            };
+            updateItem({ [targetSlot]: newConfig });
+        } else {
+            const updates = isBack ? {
+                originalLogoUrlBack: finalImage,
+                processedLogoUrlBack_original: finalImage,
+                isPredefinedLogoBack: false,
+                predefinedLogoUrlBack: null,
+                logoPositionXBack: defaults.x, logoPositionYBack: defaults.y, logoSizeBack: defaults.scale,
+                backgroundRemovedBack: false, logoInvertedBack: false,
+                processedLogoUrlBack: null,
+                processedLogoUrlBack_white: null, processedLogoUrlBack_black: null, processedLogoUrlBack_noBackground: null,
+                activeLogoColorBack: 'original'
+            } : {
+                originalLogoUrlFront: finalImage,
+                processedLogoUrlFront_original: finalImage,
+                isPredefinedLogoFront: false,
+                predefinedLogoUrlFront: null,
+                logoPositionXFront: defaults.x, logoPositionYFront: defaults.y, logoSizeFront: defaults.scale,
+                backgroundRemovedFront: false, logoInvertedFront: false,
+                processedLogoUrlFront: null,
+                processedLogoUrlFront_white: null, processedLogoUrlFront_black: null, processedLogoUrlFront_noBackground: null,
+                activeLogoColorFront: 'original'
+            };
+            updateItem(updates);
+        }
+        setUploadedLogoPreview(finalImage);
+        setActiveEl(slot);
+        setPendingElement(null);
+        setCroppingImage(finalImage);
         logAnalyticsEvent('upload_design', { user_type: isGuest ? 'guest' : 'member' });
         setCameraModalOpen(false);
     };
@@ -1508,31 +1611,65 @@ export
     };
 
     const handlePredefinedLogoSelect = (url: string) => {
-        updateItemUndoable(isBack
-            ? { predefinedLogoUrlBack: url, originalLogoUrlBack: null, processedLogoUrlBack: null, processedLogoUrlBack_original: url, isPredefinedLogoBack: true, logoPositionXBack: 50, logoPositionYBack: 50, activeLogoColorBack: 'original' }
-            : { predefinedLogoUrlFront: url, originalLogoUrlFront: null, processedLogoUrlFront: null, processedLogoUrlFront_original: url, isPredefinedLogoFront: true, logoPositionXFront: 50, logoPositionYFront: 50, activeLogoColorFront: 'original' }
-        );
+        const slot = getActiveLogoSlot(activeEl);
+        if (slot === 'logo2' || slot === 'logo3') {
+            const targetSlot = slot === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (isBack ? 'logoBack3' : 'logoFront3');
+            const newConfig: LogoConfig = {
+                originalUrl: null,
+                processedUrl: url,
+                processedUrl_original: url,
+                predefinedUrl: url,
+                isPredefined: true,
+                position: { x: 50, y: 50 },
+                size: 50,
+                backgroundRemoved: false,
+                inverted: false,
+                activeColor: 'original'
+            };
+            updateItemUndoable({ [targetSlot]: newConfig });
+        } else {
+            updateItemUndoable(isBack
+                ? { predefinedLogoUrlBack: url, originalLogoUrlBack: null, processedLogoUrlBack: null, processedLogoUrlBack_original: url, isPredefinedLogoBack: true, logoPositionXBack: 50, logoPositionYBack: 50, activeLogoColorBack: 'original' }
+                : { predefinedLogoUrlFront: url, originalLogoUrlFront: null, processedLogoUrlFront: null, processedLogoUrlFront_original: url, isPredefinedLogoFront: true, logoPositionXFront: 50, logoPositionYFront: 50, activeLogoColorFront: 'original' }
+            );
+        }
         setCodeLogoPreview(url);
-        setActiveEl('logo');
+        setActiveEl(slot);
     };
 
     const handleLogoColorChange = async (colorName: string) => {
+        const slot = getActiveLogoSlot(activeEl);
+        const isMultiSlot = slot === 'logo2' || slot === 'logo3';
+        const targetSlot = slot === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (slot === 'logo3' ? (isBack ? 'logoBack3' : 'logoFront3') : null);
         const sideKey = isBack ? 'Back' : 'Front';
-
+        
         let sourceUrl: string | null = null;
         let backgroundRemoved = false;
         let transparentUrl: string | null = null;
         let originalUrl: string | null = null;
 
-        backgroundRemoved = isBack ? (item.backgroundRemovedBack ?? false) : (item.backgroundRemovedFront ?? false);
-        transparentUrl = isBack ? (item.processedLogoUrlBack_noBackground ?? null) : (item.processedLogoUrlFront_noBackground ?? null);
-        originalUrl = (item as any)[`processedLogoUrl${sideKey}_original`] || (item as any)[`originalLogoUrl${sideKey}`] || (item as any)[`predefinedLogoUrl${sideKey}`];
+        if (isMultiSlot && targetSlot) {
+            const config = (item as any)[targetSlot] as LogoConfig;
+            if (!config) return;
+            backgroundRemoved = config.backgroundRemoved ?? false;
+            transparentUrl = config.processedUrl_noBackground ?? null;
+            originalUrl = config.processedUrl_original || config.originalUrl || config.predefinedUrl || null;
+        } else {
+            backgroundRemoved = isBack ? (item.backgroundRemovedBack ?? false) : (item.backgroundRemovedFront ?? false);
+            transparentUrl = isBack ? (item.processedLogoUrlBack_noBackground ?? null) : (item.processedLogoUrlFront_noBackground ?? null);
+            originalUrl = (item as any)[`processedLogoUrl${sideKey}_original`] || (item as any)[`originalLogoUrl${sideKey}`] || (item as any)[`predefinedLogoUrl${sideKey}`];
+        }
 
         sourceUrl = (backgroundRemoved && transparentUrl) ? transparentUrl : originalUrl;
         if (!sourceUrl) return;
 
         // Optimistic UI update
-        updateItemUndoable(isBack ? { activeLogoColorBack: colorName } : { activeLogoColorFront: colorName });
+        if (isMultiSlot && targetSlot) {
+            const config = (item as any)[targetSlot] as LogoConfig;
+            updateItemUndoable({ [targetSlot]: { ...config, activeColor: colorName } });
+        } else {
+            updateItemUndoable(isBack ? { activeLogoColorBack: colorName } : { activeLogoColorFront: colorName });
+        }
 
         let newProcessedUrl = null;
         if (colorName === 'original' || colorName === 'transparent') {
@@ -1546,9 +1683,18 @@ export
         }
 
         const updates: any = {};
-        updates[`processedLogoUrl${sideKey}`] = newProcessedUrl;
-        updateItem(updates); // No undo here as it's the second part of the same action
+        if (isMultiSlot && targetSlot) {
+            const config = (item as any)[targetSlot] as LogoConfig;
+            updates[targetSlot] = { ...config, processedUrl: newProcessedUrl, activeColor: colorName, isHd: config.isHd };
+        } else {
+            const side = isBack ? 'Back' : 'Front';
+            updates[`processedLogoUrl${side}`] = newProcessedUrl;
+            updates[`isHd${side}`] = (item as any)[`isHd${side}`];
+        }
+        updateItem(updates);
     };
+
+
 
     const applyPlacement = (zone: 'heart' | 'center', side: 'front' | 'back' = isBack ? 'back' : 'front') => {
         if (!pendingElement) return;
@@ -1607,12 +1753,14 @@ export
         });
     };
 
-    const generatePreview = async (): Promise<string> => {
+    const generatePreview = async (options: { hideProduct?: boolean } = {}): Promise<string> => {
         if (!previewRef.current) return '';
         setActiveEl(null);
         const originalZoom = zoomLevel;
         setZoomLevel(1);
         await new Promise(resolve => setTimeout(resolve, 800)); // Standardized delay for transitions
+
+        const { hideProduct = false } = options;
 
         // --- PRE-BAKE SVGs (Fix for iOS/WebKit <textPath> bug) ---
         // We must replace SVGs with Canvases in the REAL DOM before html2canvas runs, 
@@ -1671,7 +1819,7 @@ export
         }
 
         try {
-            console.log("--- STUDIO IA: CAPTURING DESIGN (v2 - html2canvas) ---");
+            console.log(`--- STUDIO IA: CAPTURING DESIGN (v2 - html2canvas) ${hideProduct ? '[BRANDING ONLY]' : '[GABARIT]'} ---`);
             await document.fonts.ready; // Ensure fonts are loaded
 
             // USE HTML2CANVAS FOR BETTER CORS HANDLING AND STABILITY
@@ -1684,30 +1832,34 @@ export
                 useCORS: true,
                 allowTaint: false,
                 scale: 2,
-                backgroundColor: '#ffffff',
-                logging: false, // Set to true for debugging if needed
+                backgroundColor: hideProduct ? null : '#ffffff', // Transparent for branding
                 onclone: (clonedDoc: Document) => {
-                    // Remove problematic elements from the clone before capture
+                    // 1. Ensure container is visible
                     const node = clonedDoc.getElementById('preview-container');
-                    if (node) {
-                        // Ensure it's visible for capture
-                        node.style.display = 'block';
+                    if (node) node.style.display = 'block';
+
+                    // 2. Hide product if branding only
+                    if (hideProduct) {
+                        const pImg = clonedDoc.getElementById('product-mockup-image');
+                        if (pImg) pImg.style.visibility = 'hidden';
                     }
 
-                    // Hide any active dashed borders / measurement overlays during capture
+                    // 3. Hide technical overlays
+                    const ignoreList = clonedDoc.querySelectorAll('[data-html2canvas-ignore="true"]');
+                    ignoreList.forEach((el: any) => el.remove());
+
                     const dashedElements = clonedDoc.querySelectorAll('[style*="dashed"]');
-                    dashedElements.forEach((el: any) => {
-                        el.style.border = 'none';
-                    });
+                    dashedElements.forEach((el: any) => { el.style.border = 'none'; });
 
                     const measurementLines = clonedDoc.querySelectorAll('.border-dashed');
-                    measurementLines.forEach((el: any) => {
-                        el.style.display = 'none';
-                    });
+                    measurementLines.forEach((el: any) => { el.style.display = 'none'; });
                 }
             });
 
-            const dataUrl = canvas.toDataURL('image/webp', 0.82);
+            // Convert to PNG for branding to preserve transparency, WebP for Gabarit
+            const dataUrl = hideProduct 
+                ? canvas.toDataURL('image/png')
+                : canvas.toDataURL('image/webp', 0.82);
 
             if (!dataUrl || dataUrl.length < 2000) {
                 throw new Error("Capture logic produced an invalid image result.");
@@ -1807,25 +1959,45 @@ export
 
             if (onGenerateAi) {
                 setAiStep('result'); 
+                console.log("[AI Studio] Starting dual-side generation process...");
+                setIsGeneratingLocal(true);
                 try {
-                    const needsBack = (item.originalLogoUrlBack || item.predefinedLogoUrlBack || (item.textBack?.text && item.textBack?.text !== ''));
-                    const needsFront = (item.originalLogoUrlFront || item.predefinedLogoUrlFront || (item.textFront?.text && item.textFront?.text !== ''));
+                    const needsBack = !!(
+                        item.originalLogoUrlBack || item.predefinedLogoUrlBack || item.processedLogoUrlBack || 
+                        (item.textBack?.text && item.textBack.text.trim() !== '') ||
+                        item.logoBack2?.originalUrl || item.logoBack2?.predefinedUrl ||
+                        item.logoBack3?.originalUrl || item.logoBack3?.predefinedUrl ||
+                        (item.textBack2?.text && item.textBack2.text.trim() !== '') ||
+                        (item.textBack3?.text && item.textBack3.text.trim() !== '')
+                    );
+                    const needsFront = !!(
+                        item.originalLogoUrlFront || item.predefinedLogoUrlFront || item.processedLogoUrlFront || 
+                        (item.textFront?.text && item.textFront.text.trim() !== '') ||
+                        item.logoFront2?.originalUrl || item.logoFront2?.predefinedUrl ||
+                        item.logoFront3?.originalUrl || item.logoFront3?.predefinedUrl ||
+                        (item.textFront2?.text && item.textFront2.text.trim() !== '') ||
+                        (item.textFront3?.text && item.textFront3.text.trim() !== '')
+                    );
+                    
+                    console.log("[AI Studio] Side detection:", { needsFront, needsBack });
                     
                     const sessionResults: { front?: string, back?: string } = {};
+                    const startSide = isBack;
 
                     // 1. Generate Front view if applicable
                     if (needsFront) {
-                        const startSide = isBack;
                         if (startSide) {
                             setIsBack(false);
-                            await new Promise(resolve => setTimeout(resolve, 800));
+                            await new Promise(resolve => setTimeout(resolve, 1200));
                         }
                         const previewFront = await generatePreview();
+                        const brandingFront = await generatePreview({ hideProduct: true });
                         if (previewFront) {
                             setGeneratingSide('front');
-                            await onGenerateAi({
+                            const res = await onGenerateAi({
                                 userPhoto: resizedUserPhoto,
                                 preview: previewFront,
+                                designComposite: brandingFront, // PASS COMPOSITE
                                 side: 'front',
                                 style: finalStyle || '',
                                 category: finalCategory || 'Sans Filtre',
@@ -1833,6 +2005,7 @@ export
                                 color: item.color,
                                 currentItemState: item
                             });
+                            if (res) sessionResults.front = res;
                         }
                         if (startSide) {
                             setIsBack(true);
@@ -1842,17 +2015,18 @@ export
 
                     // 2. Generate Back view if applicable
                     if (needsBack) {
-                        const startSide = isBack;
                         if (!startSide) {
                             setIsBack(true);
-                            await new Promise(resolve => setTimeout(resolve, 800));
+                            await new Promise(resolve => setTimeout(resolve, 1200));
                         }
                         const previewBack = await generatePreview();
+                        const brandingBack = await generatePreview({ hideProduct: true });
                         if (previewBack) {
                             setGeneratingSide('back');
-                            await onGenerateAi({
+                            const res = await onGenerateAi({
                                 userPhoto: resizedUserPhoto,
                                 preview: previewBack,
+                                designComposite: brandingBack, // PASS COMPOSITE
                                 side: 'back',
                                 style: finalStyle || '',
                                 category: finalCategory || 'Sans Filtre',
@@ -1860,12 +2034,19 @@ export
                                 color: item.color,
                                 currentItemState: item
                             });
+                            if (res) sessionResults.back = res;
                         }
                         if (!startSide) {
                             setIsBack(false);
                             await new Promise(resolve => setTimeout(resolve, 800));
                         }
                     }
+
+                    setAiResults(sessionResults);
+                    updateItem({
+                        aiImageUrlFront: sessionResults.front || item.aiImageUrlFront,
+                        aiImageUrlBack: sessionResults.back || item.aiImageUrlBack,
+                    });
 
                     if (!isGuest) {
                         setShowAiResultModal(true);
@@ -1927,6 +2108,15 @@ export
             });
         }
     }, [aiResult, selectedStyleName]);
+
+    // Play sound when AI Result is generated
+    useEffect(() => {
+        if (aiResult && !aiGenerating && !isGeneratingLocal) {
+            const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+            audio.volume = 0.5;
+            audio.play().catch(e => console.warn("Audio play blocked/failed:", e));
+        }
+    }, [aiResult, aiGenerating, isGeneratingLocal]);
 
     const [isSavingPost, setIsSavingPost] = useState(false);
     const [toast, setToast] = useState<{ msg: string, type: 'success' | 'error' } | null>(null);
@@ -2068,14 +2258,15 @@ export
         const newIdx = dir === 'next' ? (idx + 1) % types.length : (idx - 1 + types.length) % types.length;
         const newType = types[newIdx];
 
-        // Only update productType and adjust color if needed, keeping other customizations
-        updateItem({
+        // Update product maintaining other customizations
+        const updates = {
             productType: newType,
             color: products[newType].images[item.color] ? item.color : Object.keys(products[newType].images)[0]
-        });
+        };
+        updateItem(updates);
 
-        // Resets - [FIX] DO NOT CLEAR AI result when swapping product
-        // if (setAiResult) setAiResult(null); 
+        // Resets - Only reset step/view, but KEEP AI result as requested ("seul le remplacement de l'image crée la suppression")
+        setAiStep('input');
         setIsAiViewVisible(false);
         setActiveEl(null);
     };
@@ -2322,23 +2513,43 @@ export
                 setIsBack(false); // Return to original
             }
 
-            // Upload AI Image if present
-            let finalAiImageUrl: string | undefined = undefined;
-            if (aiResult) {
+            // Upload AI Images if present
+            let finalAiImageUrlFront: string | undefined = undefined;
+            let finalAiImageUrlBack: string | undefined = undefined;
+
+            if (aiResults?.front || aiResults?.back) {
+                try {
+                    if (aiResults?.front) {
+                        const blob = dataURLtoBlob(aiResults.front);
+                        if (blob) finalAiImageUrlFront = await uploadImageBlob(blob, 'ai_generations');
+                        else finalAiImageUrlFront = aiResults.front;
+                    }
+                    if (aiResults?.back) {
+                        const blob = dataURLtoBlob(aiResults.back);
+                        if (blob) finalAiImageUrlBack = await uploadImageBlob(blob, 'ai_generations');
+                        else finalAiImageUrlBack = aiResults.back;
+                    }
+                } catch (e) {
+                    console.error("Failed to upload AI images", e);
+                    finalAiImageUrlFront = aiResults?.front;
+                    finalAiImageUrlBack = aiResults?.back;
+                }
+            } else if (aiResult) {
+                // Fallback for single aiResult prop
                 try {
                     const blob = dataURLtoBlob(aiResult);
                     if (blob) {
-                        // console.log("Uploading AI image...", blob.size);
-                        finalAiImageUrl = await uploadImageBlob(blob, 'ai_generations');
+                        const uploaded = await uploadImageBlob(blob, 'ai_generations');
+                        finalAiImageUrlFront = !isBack ? uploaded : undefined;
+                        finalAiImageUrlBack = isBack ? uploaded : undefined;
                     } else {
-                        finalAiImageUrl = aiResult; // Fallback
+                        finalAiImageUrlFront = !isBack ? aiResult : undefined;
+                        finalAiImageUrlBack = isBack ? aiResult : undefined;
                     }
                 } catch (e) {
-                    console.error("Failed to upload AI image, falling back to base64", e);
-                    finalAiImageUrl = aiResult;
+                    finalAiImageUrlFront = !isBack ? aiResult : undefined;
+                    finalAiImageUrlBack = isBack ? aiResult : undefined;
                 }
-            } else {
-                finalAiImageUrl = undefined;
             }
 
             // CALCULATE ADDITIVE FEE (Same logic as useMemo for activePricing)
@@ -2359,7 +2570,9 @@ export
                         sizes: { [size]: quantity },
                         previewImageUrlFront: frontPreview,
                         previewImageUrlBack: backPreview,
-                        aiImageUrl: finalAiImageUrl, // Use the uploaded URL or fallback
+                        aiImageUrl: finalAiImageUrlFront || finalAiImageUrlBack, // Default fallback
+                        aiImageUrlFront: finalAiImageUrlFront,
+                        aiImageUrlBack: finalAiImageUrlBack,
                         calculatedPrice: itemUnitPrice
                     };
 
@@ -2389,7 +2602,9 @@ export
                         sizes: { 'OS': 1 },
                         previewImageUrlFront: frontPreview,
                         previewImageUrlBack: backPreview,
-                        aiImageUrl: finalAiImageUrl,
+                        aiImageUrl: finalAiImageUrlFront || finalAiImageUrlBack,
+                        aiImageUrlFront: finalAiImageUrlFront,
+                        aiImageUrlBack: finalAiImageUrlBack,
                         calculatedPrice: itemUnitPrice
                     };
                     onAddToCartBatch([defaultItem]);
@@ -2617,6 +2832,36 @@ export
         }
     }, [activePanel, activeEl, aiModalOpen]);
 
+    const handleMeasureStart = (e: React.PointerEvent) => {
+        if (!isMeasureToolActive) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 100;
+        const y = ((e.clientY - rect.top) / rect.height) * 100;
+        setTapeMeasure({ start: { x, y }, current: { x, y } });
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    };
+
+    const handleMeasureMove = (e: React.PointerEvent) => {
+        if (!isMeasureToolActive || !tapeMeasure.start) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        let x = ((e.clientX - rect.left) / rect.width) * 100;
+        let y = ((e.clientY - rect.top) / rect.height) * 100;
+
+        // SNAPPING LOGIC (Snap to 0, 90, 180, 270 degrees)
+        const dx = Math.abs(x - tapeMeasure.start.x);
+        const dy = Math.abs(y - tapeMeasure.start.y);
+        
+        // Threshold for snapping (3% of workspace)
+        if (dx < 3) x = tapeMeasure.start.x;
+        else if (dy < 3) y = tapeMeasure.start.y;
+
+        setTapeMeasure(prev => ({ ...prev, current: { x, y } }));
+    };
+
+    const handleMeasureEnd = (e: React.PointerEvent) => {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    };
+
     const handleCanvasClick = (e: React.MouseEvent) => {
         // Any click that reaches here should deselect (since elements stop propagation)
         setActiveEl(null);
@@ -2813,51 +3058,117 @@ export
 
             <div className="hidden lg:flex w-full h-14 items-center justify-center bg-transparent z-40">
                 {/* Desktop: Back Button Left + Selector Center */}
-                <div className="hidden lg:flex items-center justify-center w-full px-6 relative">
+                {(() => {
+                    const types = Object.keys(products || {});
+                    if (types.length === 0) return null;
+                    
+                    const idx = types.indexOf(item.productType);
+                    if (idx === -1) return null; // Safe guard for invalid product type
 
-                    <div data-layout-id="garment-selector-desktop" className="flex items-center gap-6">
-                        <button onClick={() => changeProductType('prev')} className="text-orange-600 hover:text-orange-800 p-2 font-black text-2xl transition-transform hover:scale-120">
-                            <i data-layout-id="garment-selector-prev" className="fa-solid fa-chevron-left"></i>
-                        </button>
-                        <div className="flex flex-col items-center min-w-[280px]">
-                            <h2 className="text-xl font-black text-orange-600 uppercase tracking-widest text-center">{product.name}</h2>
-                            <div className="flex items-center gap-2 -mt-1">
-                                <span className="text-xs font-bold text-gray-500">{product.reference}</span>
-                                {product.supplierLink && (
-                                    <a href={product.supplierLink} target="_blank" rel="noopener noreferrer" className="text-[10px] flex items-center gap-1 text-gray-400 hover:text-blue-600 transition-colors" title="Fiche Technique">
-                                        <i className="fa-solid fa-file-contract"></i> Info
-                                    </a>
-                                )}
+                    const prevType = types[(idx - 1 + types.length) % types.length];
+                    const nextType = types[(idx + 1) % types.length];
+                    
+                    const prevProduct = products[prevType];
+                    const nextProduct = products[nextType];
+
+                    if (!prevProduct || !nextProduct) return null;
+
+                    return (
+                        <div data-layout-id="garment-selector-desktop" className="flex items-center justify-between w-full max-w-2xl px-6 pb-2">
+                            <div className="flex-1 flex max-w-[20%] text-left overflow-hidden">
+                                <button onClick={() => changeProductType('prev')} className="text-[12px] font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest truncate w-full text-left transition-colors flex items-center">
+                                    <span className="truncate">{prevProduct.name}</span>
+                                </button>
+                            </div>
+                            
+                            <div className="flex-[2] flex items-center justify-center gap-6 min-w-[320px]">
+                                <button onClick={() => changeProductType('prev')} className="text-orange-600 hover:text-orange-800 p-2 font-black text-2xl transition-transform hover:scale-120 flex-shrink-0">
+                                    <i data-layout-id="garment-selector-prev" className="fa-solid fa-chevron-left"></i>
+                                </button>
+                                
+                                <div className="flex flex-col items-center justify-center min-w-[200px]">
+                                    <h2 className="text-xl font-black text-orange-600 uppercase tracking-widest text-center truncate w-full">{product.name}</h2>
+                                    <div className="flex items-center justify-center gap-2 -mt-1 w-full">
+                                        <span className="text-xs font-bold text-gray-500">{product.reference}</span>
+                                        {product.supplierLink && (
+                                            <a href={product.supplierLink} target="_blank" rel="noopener noreferrer" className="text-[10px] flex items-center gap-1 text-gray-400 hover:text-blue-600 transition-colors" title="Fiche Technique">
+                                                <i className="fa-solid fa-file-contract"></i> Info
+                                            </a>
+                                        )}
+                                    </div>
+                                </div>
+                                <button onClick={() => changeProductType('next')} className="text-orange-600 hover:text-orange-800 p-2 font-black text-2xl transition-transform hover:scale-120">
+                                    <i data-layout-id="garment-selector-next" className="fa-solid fa-chevron-right"></i>
+                                </button>
+                            </div>
+
+                            <div className="flex-1 flex max-w-[20%] text-right overflow-hidden">
+                                <button onClick={() => changeProductType('next')} className="text-[12px] font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest w-full text-right transition-colors flex items-center justify-end">
+                                    <span className="truncate">{nextProduct.name}</span>
+                                </button>
                             </div>
                         </div>
-                        <button onClick={() => changeProductType('next')} className="text-orange-600 hover:text-orange-800 p-2 font-black text-2xl transition-transform hover:scale-120">
-                            <i data-layout-id="garment-selector-next" className="fa-solid fa-chevron-right"></i>
-                        </button>
-                    </div>
-                </div>
+                    );
+                })()}
             </div>
 
             {/* Mobile Selector Header (Original style restored) - Fixed Height */}
             <div data-layout-id="garment-selector-mobile" className="lg:hidden w-full flex flex-col bg-transparent transition-all flex-shrink-0 shadow-none z-50 min-h-[48px] border-none mb-2">
-                <div className="w-full flex items-center justify-center gap-6 py-1 px-4">
-                    <button onClick={() => changeProductType('prev')} className="text-orange-600 p-2 font-black text-xl">
-                        <i className="fa-solid fa-chevron-left"></i>
-                    </button>
-                    <div className="flex-1 flex flex-col items-center overflow-hidden">
-                        <h2 className="text-lg font-black text-orange-600 uppercase tracking-widest text-center whitespace-nowrap overflow-hidden text-ellipsis w-full">{product.name}</h2>
-                        <div className="flex items-center gap-2 -mt-0.5">
-                            <span className="text-[10px] font-bold text-gray-500">{product.reference}</span>
-                            {product.supplierLink && (
-                                <a href={product.supplierLink} target="_blank" rel="noopener noreferrer" className="text-[9px] flex items-center gap-1 text-gray-400 hover:text-blue-600 transition-colors" title="Fiche Technique">
-                                    <i className="fa-solid fa-file-contract"></i> Info
-                                </a>
-                            )}
+                {(() => {
+                    const types = Object.keys(products || {});
+                    if (types.length === 0) return null;
+                    
+                    const idx = types.indexOf(item.productType);
+                    if (idx === -1) return null;
+
+                    const prevType = types[(idx - 1 + types.length) % types.length];
+                    const nextType = types[(idx + 1) % types.length];
+                    
+                    const prevProduct = products[prevType];
+                    const nextProduct = products[nextType];
+
+                    if (!prevProduct || !nextProduct) return null;
+
+                    return (
+                        <div className="w-full flex items-center justify-between py-1 px-2 gap-1">
+                            <div className="flex-1 flex max-w-[20%] text-left overflow-hidden hidden sm:flex px-1">
+                                <button onClick={() => changeProductType('prev')} className="text-[9px] font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest truncate w-full text-left">
+                                    <span className="truncate">{prevProduct.name}</span>
+                                </button>
+                            </div>
+
+                            <div className="flex-[3] flex items-center justify-center gap-2 min-w-0">
+                                <button onClick={() => changeProductType('prev')} className="text-orange-600 p-2 font-black text-xl flex-shrink-0">
+                                    <i className="fa-solid fa-chevron-left"></i>
+                                </button>
+
+                                <div className="flex-1 flex flex-col items-center overflow-hidden min-w-0">
+                                    <h2 className="text-base font-black text-orange-600 uppercase tracking-[0.1em] text-center whitespace-nowrap overflow-hidden text-ellipsis w-full">
+                                        {product.name}
+                                    </h2>
+                                    <div className="flex items-center justify-center gap-2 -mt-0.5 w-full">
+                                        <span className="text-[9px] font-bold text-gray-500 whitespace-nowrap">{product.reference}</span>
+                                        {product.supplierLink && (
+                                            <a href={product.supplierLink} target="_blank" rel="noopener noreferrer" className="text-[8px] flex items-center gap-1 text-gray-400 hover:text-blue-600 transition-colors whitespace-nowrap" title="Fiche Technique">
+                                                <i className="fa-solid fa-file-contract"></i> Info
+                                            </a>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <button onClick={() => changeProductType('next')} className="text-orange-600 p-2 font-black text-xl flex-shrink-0">
+                                    <i className="fa-solid fa-chevron-right"></i>
+                                </button>
+                            </div>
+
+                            <div className="flex-1 flex max-w-[20%] text-right overflow-hidden hidden sm:flex px-1">
+                                <button onClick={() => changeProductType('next')} className="text-[9px] font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest truncate w-full text-right">
+                                    <span className="truncate">{nextProduct.name}</span>
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    <button onClick={() => changeProductType('next')} className="text-orange-600 p-2 font-black text-xl">
-                        <i className="fa-solid fa-chevron-right"></i>
-                    </button>
-                </div>
+                    );
+                })()}
             </div>
 
 
@@ -2876,34 +3187,25 @@ export
 
                         <div className="mobile-product-container relative flex-1 w-full lg:w-[450px] lg:h-auto lg:aspect-[3/4] flex items-center justify-center z-10 m-0 mt-0 lg:mt-[-5vh] lg:mb-10 shadow-none lg:shadow-none min-h-[50vh] h-auto lg:mx-auto">
 
-                            {/* LEFT SELECTOR - LAYERS */}
+                            {/* LEFT SELECTOR - CONSOLIDATED & CLICKABLE */}
                             {colors.length > 1 && (
-                                <>
-                                    {/* Layer 1: Thumbnail (BEHIND Garment but visible area) */}
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleColorChangeRequest(colors[prevIndex]); }}
-                                        className="hidden lg:flex absolute -left-32 top-1/2 -translate-y-1/2 group flex-col items-center gap-3 transition-all hover:scale-105 z-50 pointer-events-auto"
-                                    >
-                                        <div className="w-8 h-8 opacity-0"></div> {/* Spacer for Arrow */}
-                                        <div className="w-40 h-56 flex items-center justify-center p-1">
-                                            <img
-                                                src={getProxiedUrl(getOptimizedImageUrl(isBack ? product.backImages[colors[prevIndex]] : product.images[colors[prevIndex]], 200))}
-                                                className="w-full h-full object-contain transition-opacity dropdown-shadow-md"
-                                                alt="Précédent"
-                                            />
-                                        </div>
-                                    </button>
-                                    {/* Layer 2: Arrow (In Front and further out) */}
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleColorChangeRequest(colors[prevIndex]); }}
-                                        className="hidden lg:flex absolute -left-40 top-1/2 -translate-y-1/2 group flex-col items-center gap-3 transition-all hover:scale-110 z-[60] pointer-events-none"
-                                    >
-                                        <div className="w-10 h-10 flex items-center justify-center bg-white rounded-full shadow-xl text-gray-500 group-hover:text-orange-600 border border-gray-100 transition-colors pointer-events-auto">
-                                            <i className="fa-solid fa-chevron-left text-sm"></i>
-                                        </div>
-                                        <div className="w-40 h-56 opacity-0"></div> {/* Spacer for Thumbnail */}
-                                    </button>
-                                </>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleColorChangeRequest(colors[prevIndex]); }}
+                                    className="hidden lg:flex absolute -left-48 top-1/2 -translate-y-1/2 group items-center gap-2 transition-all hover:scale-105 z-[100] pointer-events-auto"
+                                >
+                                    {/* Arrow at extremity (most left) */}
+                                    <div className="w-10 h-10 flex items-center justify-center bg-white rounded-full shadow-xl text-gray-500 group-hover:text-orange-600 border border-gray-100 transition-colors">
+                                        <i className="fa-solid fa-chevron-left text-sm"></i>
+                                    </div>
+                                    {/* Thumbnail (slightly overlapping but visually "behind" if needed by canvas z-index, but here button is on top) */}
+                                    <div className="w-40 h-56 flex items-center justify-center p-1">
+                                        <img
+                                            src={getProxiedUrl(getOptimizedImageUrl(isBack ? product.backImages[colors[prevIndex]] : product.images[colors[prevIndex]], 200))}
+                                            className="w-full h-full object-contain drop-shadow-md opacity-80 group-hover:opacity-100 transition-opacity"
+                                            alt="Précédent"
+                                        />
+                                    </div>
+                                </button>
                             )}
 
                             {/* MOBILE LEFT SELECTOR */}
@@ -2972,19 +3274,61 @@ export
                                 </button>
                             </div>
 
+                            {/* BACKGROUND CLICK HANDLER (To deselect when clicking outside product) */}
+                            <div className="absolute inset-0 z-0 cursor-default" onClick={handleCanvasClick}></div>
+
                             {/* MAIN CANVAS */}
                             <div
                                 data-layout-id="main-canvas-container"
                                 ref={previewRef}
-                                onClick={handleCanvasClick}
-                                className="relative w-full h-full lg:aspect-[3/4] bg-transparent lg:bg-transparent select-none p-0 lg:p-6 flex items-center justify-center z-20"
-                                style={{ transform: `scale(${zoomLevel})` }}
+                                className="relative w-full h-full lg:aspect-[3/4] bg-transparent lg:bg-transparent select-none p-0 lg:p-6 flex items-center justify-center z-[70] pointer-events-none"
+                                style={{ transform: `scale(${item.productType === 'catalogue' ? 1 : zoomLevel})` }}
                             >
                                 <div
                                     id="preview-container"
-                                    className="w-full h-full relative"
-                                    style={{ top: '0px' }}
+                                    className="w-full h-full relative pointer-events-auto"
+                                    style={{ top: '0px', touchAction: isMeasureToolActive ? 'none' : 'auto' }}
+                                    onPointerDown={handleMeasureStart}
+                                    onPointerMove={handleMeasureMove}
+                                    onPointerUp={handleMeasureEnd}
+                                    onPointerCancel={handleMeasureEnd}
                                 >
+                                    {/* TAPE MEASURE LINE */}
+                                    {isMeasureToolActive && !isAnyElementResizing && tapeMeasure.start && tapeMeasure.current && (
+                                        <div className="absolute inset-0 z-[110] pointer-events-none">
+                                            <svg className="w-full h-full overflow-visible">
+                                                <defs>
+                                                    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+                                                        <feGaussianBlur stdDeviation="2" result="blur" />
+                                                        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                                    </filter>
+                                                </defs>
+                                                <line
+                                                    x1={`${tapeMeasure.start.x}%`}
+                                                    y1={`${tapeMeasure.start.y}%`}
+                                                    x2={`${tapeMeasure.current.x}%`}
+                                                    y2={`${tapeMeasure.current.y}%`}
+                                                    stroke="#f97316"
+                                                    strokeWidth="2"
+                                                    strokeDasharray="6 4"
+                                                    filter="url(#glow)"
+                                                />
+                                                <circle cx={`${tapeMeasure.start.x}%`} cy={`${tapeMeasure.start.y}%`} r="4" fill="#f97316" stroke="white" strokeWidth="1" />
+                                                <circle cx={`${tapeMeasure.current.x}%`} cy={`${tapeMeasure.current.y}%`} r="4" fill="#f97316" stroke="white" strokeWidth="1" />
+                                            </svg>
+                                            <div 
+                                                className="absolute bg-orange-600 text-white text-[10px] font-black px-2 py-1 rounded-lg shadow-[0_4px_12px_rgba(234,88,12,0.4)] border border-white/20 -translate-x-1/2 -translate-y-1/2 flex items-center gap-1.5 whitespace-nowrap"
+                                                style={{ 
+                                                    left: `${(tapeMeasure.start.x + tapeMeasure.current.x) / 2}%`, 
+                                                    top: `${(tapeMeasure.start.y + tapeMeasure.current.y) / 2}%`,
+                                                    transform: `translate(-50%, -160%) rotate(${Math.atan2(tapeMeasure.current.y - tapeMeasure.start.y, tapeMeasure.current.x - tapeMeasure.start.x) * 180 / Math.PI}deg)`
+                                                }}
+                                            >
+                                                <i className="fa-solid fa-tape text-[8px]"></i>
+                                                {(Math.sqrt(Math.pow(tapeMeasure.current.x - tapeMeasure.start.x, 2) + Math.pow(tapeMeasure.current.y - tapeMeasure.start.y, 2)) * 0.85).toFixed(1)} cm
+                                            </div>
+                                        </div>
+                                    )}
                                     {/* ALIGNMENT GUIDES (6x6 Grid) */}
                                     {showGuides && (
                                         <div className="absolute inset-0 z-[100] pointer-events-none overflow-hidden">
@@ -3003,27 +3347,26 @@ export
                                         </div>
                                     )}
 
-                                    {/* SignPong Overlay - Visible during generation */}
+                                    {/* Professional Loading Overlay - Visible during generation */}
                                     {(aiGenerating || isGeneratingLocal) && (
-                                        <div className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm rounded-2xl overflow-hidden animate-fade-in">
-                                            <div className="absolute top-10 left-0 right-0 text-center z-20 pointer-events-none">
-                                                <h3 className="text-white text-xl font-black uppercase tracking-widest animate-pulse mb-2 shadow-sm">Magie en cours...</h3>
-                                                <div className="inline-flex items-center gap-2 bg-orange-600 px-4 py-1.5 rounded-full shadow-xl border border-orange-500/50">
-                                                    <i className="fa-solid fa-wand-sparkles text-white text-xs animate-spin-slow"></i>
-                                                    <span className="text-white text-[10px] font-black uppercase tracking-wider">SignPong : Gagne des crédits !</span>
+                                        <div 
+                                            data-html2canvas-ignore="true"
+                                            className="absolute inset-0 z-[200] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md rounded-2xl overflow-hidden animate-fade-in"
+                                        >
+                                            <div className="flex flex-col items-center gap-6 p-8">
+                                                <div className="relative">
+                                                    <i className="fa-solid fa-circle-notch fa-spin text-6xl text-orange-600"></i>
+                                                    <i className="fa-solid fa-wand-sparkles text-white absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xl"></i>
                                                 </div>
-                                            </div>
-                                            <div className="w-full h-full">
-                                                {isGeneratingLocal ? (
-                                                    <div className="flex items-center justify-center w-full h-full">
-                                                        <div className="flex flex-col items-center gap-4 bg-white/10 backdrop-blur-md p-6 rounded-2xl border border-white/20">
-                                                            <i className="fa-solid fa-circle-notch fa-spin text-4xl text-orange-500"></i>
-                                                            <span className="text-white font-bold uppercase tracking-widest text-xs">Génération...</span>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <PongGame onScore={setPongScore} transparent={true} />
-                                                )}
+                                                <div className="flex flex-col items-center gap-2 text-center">
+                                                    <h3 className="text-white text-2xl font-black uppercase tracking-[0.2em] animate-pulse">Génération en cours</h3>
+                                                    <p className="text-gray-400 text-xs font-bold uppercase tracking-widest leading-relaxed">
+                                                        L'intelligence artificielle conçoit <br /> votre design personnalisé...
+                                                    </p>
+                                                </div>
+                                                <div className="w-48 h-1.5 bg-white/10 rounded-full overflow-hidden mt-2 border border-white/5">
+                                                    <div className="h-full bg-gradient-to-r from-orange-600 to-orange-400 animate-loading-bar shadow-[0_0_15px_rgba(234,88,12,0.5)]"></div>
+                                                </div>
                                             </div>
                                         </div>
                                     )}
@@ -3076,50 +3419,128 @@ export
                                                 }
 
                                                 // STANDARD SCALING LOGIC
-                                                // We want all products to be at the same "World Scale"
-                                                const WORKSPACE_HEIGHT_CM = 85; // Reference height (90cm)
-                                                const realHeight = (productDimensions?.[item.productType]?.[previewSize]) || 70;
+                                                const WORKSPACE_HEIGHT_CM = 85; 
+                                                const pType = (item.productType || '').toLowerCase();
+                                                let realHeight = (productDimensions?.[item.productType]?.[previewSize]) || (productDimensions?.[pType]?.[previewSize]) || 70;
+
+                                                // USER OVERRIDES:
+                                                if (pType === 'rt230m') realHeight *= 1.15; // Zoom 1.15x
 
                                                 // 1. Calculate how tall the ORIGINAL mockup would be in our workspace
-                                                // realHeight is the height of the garment CONTENT (the trimmed part)
-                                                const mockupHeightCm = realHeight / metadata.heightRatio;
+                                                // If metadata is not there yet, we guess a heightRatio of 0.85
+                                                const hRatio = metadata?.heightRatio || 0.85;
+                                                const mockupHeightCm = realHeight / hRatio;
                                                 const displayMockupHeightPercent = (mockupHeightCm / WORKSPACE_HEIGHT_CM) * 100;
 
-                                                // 2. Display height of the TRIMMED image
-                                                const displayTrimmedHeightPercent = displayMockupHeightPercent * metadata.heightRatio;
-                                                const displayTrimmedWidthPercent = displayMockupHeightPercent * (metadata.originalWidth / metadata.originalHeight) * metadata.widthRatio * (metadata.originalHeight / metadata.originalWidth);
-                                                // Simplified: width should follow aspect ratio of the trimmed image
-                                                const trimmedAspectRatio = (metadata.originalWidth * metadata.widthRatio) / (metadata.originalHeight * metadata.heightRatio);
-
-                                                // 3. Position to center the ORIGINAL mockup box
+                                                // 2. Position to center the ORIGINAL mockup box
                                                 const mockupTopPercent = (100 - displayMockupHeightPercent) / 2;
-                                                const trimmedTopPercent = mockupTopPercent + (metadata.cropTop / metadata.originalHeight) * displayMockupHeightPercent;
+                                                let trimmedTopPercent = mockupTopPercent + ((metadata?.cropTop || 0) / (metadata?.originalHeight || 1000)) * displayMockupHeightPercent;
+                                                
+                                                if (pType === 'kx167') {
+                                                    trimmedTopPercent += 30; // Descend d'avantage le gilet
+                                                } else if (['tshirt', 'bctu05t', 'sw375', 'polo', 'jn001'].includes(pType)) {
+                                                    trimmedTopPercent += 12; // Descend ces produits légerement plus
+                                                }
+
+                                                if (!metadata) {
+                                                    return (
+                                                        <img
+                                                            src={rawUrl}
+                                                            className="absolute pointer-events-none select-none z-30 left-1/2 -translate-x-1/2 opacity-50 transition-all duration-300"
+                                                            style={{
+                                                                top: `${trimmedTopPercent}%`,
+                                                                height: `${displayMockupHeightPercent}%`,
+                                                                width: 'auto',
+                                                                maxWidth: 'none', // Prevent stretching constraints
+                                                                minWidth: 'auto'
+                                                            }}
+                                                            alt="product-loading"
+                                                        />
+                                                    );
+                                                }
+
+                                                // 3. Display height and width of the TRIMMED image
+                                                const displayTrimmedHeightPercent = displayMockupHeightPercent * metadata.heightRatio;
 
                                                 return (
                                                     <img
+                                                        id="product-mockup-image"
                                                         src={metadata.dataUrl}
                                                         className="absolute pointer-events-none select-none z-30 left-1/2 -translate-x-1/2 transition-all duration-300"
                                                         style={{
                                                             height: `${displayTrimmedHeightPercent}%`,
                                                             top: `${trimmedTopPercent}%`,
-                                                            width: 'auto', // Preserve aspect ratio
+                                                            width: 'auto',
+                                                            maxWidth: 'none'
                                                         }}
                                                         alt={`product-${isBack ? 'back' : 'front'}`}
                                                     />
                                                 );
                                             })()}
 
-                                            {/* Overlays (Logo & Texts) */}
-                                            {(isBack ? item.predefinedLogoUrlBack || item.originalLogoUrlBack : item.predefinedLogoUrlFront || item.originalLogoUrlFront) && (
+                                            {/* Logo Slot 1 */}
+                                            {(isBack ? (item.predefinedLogoUrlBack || item.originalLogoUrlBack || item.processedLogoUrlBack) : (item.predefinedLogoUrlFront || item.originalLogoUrlFront || item.processedLogoUrlFront)) && (
                                                 <DraggableElement
                                                     id={isBack ? "logoBack" : "logoFront"} type="logo" item={item} side={isBack ? "Back" : "Front"}
                                                     isActive={activeEl === 'logo'} setActive={() => setActiveEl('logo')}
                                                     onOpenOptions={() => setActivePanel('import')} onUpdate={updateItem} onSaveHistory={saveHistory}
-                                                    isEditable={true} realHeight={productDimensions?.[item.productType]?.[previewSize]}
+                                                    isEditable={!aiResult && !aiGenerating} 
+                                                    realHeight={(() => {
+                                                        const pType = (item.productType || '').toLowerCase();
+                                                        let h = (productDimensions?.[item.productType]?.[previewSize]) || (productDimensions?.[pType]?.[previewSize]) || 70;
+                                                        if (pType === 'rt230m') h *= 1.15;
+                                                        return h;
+                                                    })()}
                                                     showDimensions={isMeasureToolActive}
                                                     onDragStart={() => handleDragStart(isBack ? "logoBack" : "logoFront")}
                                                     onDragUpdate={handleDragUpdate}
+                                                    onDragEnd={() => logAnalyticsEvent(AnalyticsEvents.MOVE_DESIGN_ELEMENT, { type: 'logo', product: item.productType })}
                                                     onReportDimensions={(w, h) => handleReportDimensions('logo', w, h)}
+                                                    onResizeStateChange={setIsAnyElementResizing}
+                                                />
+                                            )}
+
+                                            {/* Logo Slot 2 */}
+                                            {(isBack ? (item.logoBack2?.processedUrl || item.logoBack2?.originalUrl || item.logoBack2?.predefinedUrl) : (item.logoFront2?.processedUrl || item.logoFront2?.originalUrl || item.logoFront2?.predefinedUrl)) && (
+                                                <DraggableElement
+                                                    id={isBack ? "logoBack2" : "logoFront2"} type="logo" item={item} side={isBack ? "Back" : "Front"}
+                                                    isActive={activeEl === 'logo2'} setActive={() => setActiveEl('logo2')}
+                                                    onOpenOptions={() => setActivePanel('import')} onUpdate={updateItem} onSaveHistory={saveHistory}
+                                                    isEditable={!aiResult && !aiGenerating} 
+                                                    realHeight={(() => {
+                                                        const pType = (item.productType || '').toLowerCase();
+                                                        let h = (productDimensions?.[item.productType]?.[previewSize]) || (productDimensions?.[pType]?.[previewSize]) || 70;
+                                                        if (pType === 'rt230m') h *= 1.15;
+                                                        return h;
+                                                    })()}
+                                                    showDimensions={isMeasureToolActive}
+                                                    onDragStart={() => handleDragStart(isBack ? "logoBack2" : "logoFront2")}
+                                                    onDragUpdate={handleDragUpdate}
+                                                    onDragEnd={() => logAnalyticsEvent(AnalyticsEvents.MOVE_DESIGN_ELEMENT, { type: 'logo2', product: item.productType })}
+                                                    onReportDimensions={(w, h) => handleReportDimensions('logo2', w, h)}
+                                                    onResizeStateChange={setIsAnyElementResizing}
+                                                />
+                                            )}
+
+                                            {/* Logo Slot 3 */}
+                                            {(isBack ? (item.logoBack3?.processedUrl || item.logoBack3?.originalUrl || item.logoBack3?.predefinedUrl) : (item.logoFront3?.processedUrl || item.logoFront3?.originalUrl || item.logoFront3?.predefinedUrl)) && (
+                                                <DraggableElement
+                                                    id={isBack ? "logoBack3" : "logoFront3"} type="logo" item={item} side={isBack ? "Back" : "Front"}
+                                                    isActive={activeEl === 'logo3'} setActive={() => setActiveEl('logo3')}
+                                                    onOpenOptions={() => setActivePanel('import')} onUpdate={updateItem} onSaveHistory={saveHistory}
+                                                    isEditable={!aiResult && !aiGenerating} 
+                                                    realHeight={(() => {
+                                                        const pType = (item.productType || '').toLowerCase();
+                                                        let h = (productDimensions?.[item.productType]?.[previewSize]) || (productDimensions?.[pType]?.[previewSize]) || 70;
+                                                        if (pType === 'rt230m') h *= 1.15;
+                                                        return h;
+                                                    })()}
+                                                    showDimensions={isMeasureToolActive}
+                                                    onDragStart={() => handleDragStart(isBack ? "logoBack3" : "logoFront3")}
+                                                    onDragUpdate={handleDragUpdate}
+                                                    onDragEnd={() => logAnalyticsEvent(AnalyticsEvents.MOVE_DESIGN_ELEMENT, { type: 'logo3', product: item.productType })}
+                                                    onReportDimensions={(w, h) => handleReportDimensions('logo3', w, h)}
+                                                    onResizeStateChange={setIsAnyElementResizing}
                                                 />
                                             )}
                                             {/* Legacy Slot 1 Helper (already handled above) */}
@@ -3129,11 +3550,19 @@ export
                                                     id={isBack ? "textBack" : "textFront"} type="text" item={item} side={isBack ? "Back" : "Front"}
                                                     isActive={activeEl === 'text'} setActive={() => setActiveEl('text')}
                                                     onOpenOptions={() => setActivePanel('text')} onUpdate={updateItem} onSaveHistory={saveHistory}
-                                                    isEditable={true} realHeight={productDimensions?.[item.productType]?.[previewSize]}
+                                                    isEditable={!aiResult && !aiGenerating} 
+                                                    realHeight={(() => {
+                                                        const pType = (item.productType || '').toLowerCase();
+                                                        let h = (productDimensions?.[item.productType]?.[previewSize]) || (productDimensions?.[pType]?.[previewSize]) || 70;
+                                                        if (pType === 'rt230m') h *= 1.15;
+                                                        return h;
+                                                    })()}
                                                     showDimensions={isMeasureToolActive}
                                                     onDragStart={() => handleDragStart(isBack ? "textBack" : "textFront")}
                                                     onDragUpdate={handleDragUpdate}
+                                                    onDragEnd={() => logAnalyticsEvent(AnalyticsEvents.MOVE_DESIGN_ELEMENT, { type: 'text', product: item.productType })}
                                                     onReportDimensions={(w, h) => handleReportDimensions('text', w, h)}
+                                                    onResizeStateChange={setIsAnyElementResizing}
                                                 />
                                             )}
 
@@ -3143,11 +3572,19 @@ export
                                                     id={isBack ? "textBack2" : "textFront2"} type="text" item={item} side={isBack ? "Back" : "Front"}
                                                     isActive={activeEl === 'text2'} setActive={() => setActiveEl('text2')}
                                                     onOpenOptions={() => setActivePanel('text')} onUpdate={updateItem} onSaveHistory={saveHistory}
-                                                    isEditable={true} realHeight={productDimensions?.[item.productType]?.[previewSize]}
+                                                    isEditable={!aiResult && !aiGenerating} 
+                                                    realHeight={(() => {
+                                                        const pType = (item.productType || '').toLowerCase();
+                                                        let h = (productDimensions?.[item.productType]?.[previewSize]) || (productDimensions?.[pType]?.[previewSize]) || 70;
+                                                        if (pType === 'rt230m') h *= 1.15;
+                                                        return h;
+                                                    })()}
                                                     showDimensions={isMeasureToolActive}
                                                     onDragStart={() => handleDragStart(isBack ? "textBack2" : "textFront2")}
                                                     onDragUpdate={handleDragUpdate}
+                                                    onDragEnd={() => logAnalyticsEvent(AnalyticsEvents.MOVE_DESIGN_ELEMENT, { type: 'text2', product: item.productType })}
                                                     onReportDimensions={(w, h) => handleReportDimensions('text2', w, h)}
+                                                    onResizeStateChange={setIsAnyElementResizing}
                                                 />
                                             )}
 
@@ -3157,16 +3594,24 @@ export
                                                     id={isBack ? "textBack3" : "textFront3"} type="text" item={item} side={isBack ? "Back" : "Front"}
                                                     isActive={activeEl === 'text3'} setActive={() => setActiveEl('text3')}
                                                     onOpenOptions={() => setActivePanel('text')} onUpdate={updateItem} onSaveHistory={saveHistory}
-                                                    isEditable={true} realHeight={productDimensions?.[item.productType]?.[previewSize]}
+                                                    isEditable={!aiResult && !aiGenerating} 
+                                                    realHeight={(() => {
+                                                        const pType = (item.productType || '').toLowerCase();
+                                                        let h = (productDimensions?.[item.productType]?.[previewSize]) || (productDimensions?.[pType]?.[previewSize]) || 70;
+                                                        if (pType === 'rt230m') h *= 1.15;
+                                                        return h;
+                                                    })()}
                                                     showDimensions={isMeasureToolActive}
                                                     onDragStart={() => handleDragStart(isBack ? "textBack3" : "textFront3")}
                                                     onDragUpdate={handleDragUpdate}
+                                                    onDragEnd={() => logAnalyticsEvent(AnalyticsEvents.MOVE_DESIGN_ELEMENT, { type: 'text3', product: item.productType })}
                                                     onReportDimensions={(w, h) => handleReportDimensions('text3', w, h)}
+                                                    onResizeStateChange={setIsAnyElementResizing}
                                                 />
                                             )}
 
                                             {/* Group Selection Frame */}
-                                            {isGrouped && (() => {
+                                            {isGrouping && (() => {
                                                 const box = getGroupBoundingBox();
                                                 if (!box) return null;
                                                 return (
@@ -3201,35 +3646,25 @@ export
                                 </div>
                             </div>
 
-                            {/* COLOR SELECTOR - RIGHT (DESKTOP ONLY NOW) */}
-                            {/* RIGHT SELECTOR - LAYERS */}
+                            {/* RIGHT SELECTOR - CONSOLIDATED & CLICKABLE */}
                             {colors.length > 1 && (
-                                <>
-                                    {/* Layer 1: Thumbnail */}
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleColorChangeRequest(colors[nextIndex]); }}
-                                        className="hidden lg:flex absolute -right-32 top-1/2 -translate-y-1/2 group flex-col items-center gap-3 transition-all hover:scale-105 z-50 pointer-events-auto"
-                                    >
-                                        <div className="w-8 h-8 opacity-0"></div> {/* Spacer for Arrow */}
-                                        <div className="w-40 h-56 flex items-center justify-center p-1">
-                                            <img
-                                                src={getProxiedUrl(getOptimizedImageUrl(isBack ? product.backImages[colors[nextIndex]] : product.images[colors[nextIndex]], 200))}
-                                                className="w-full h-full object-contain transition-opacity drop-shadow-md"
-                                                alt="Suivant"
-                                            />
-                                        </div>
-                                    </button>
-                                    {/* Layer 2: Arrow */}
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleColorChangeRequest(colors[nextIndex]); }}
-                                        className="hidden lg:flex absolute -right-40 top-1/2 -translate-y-1/2 group flex-col items-center gap-3 transition-all hover:scale-110 z-[60] pointer-events-none"
-                                    >
-                                        <div className="w-10 h-10 flex items-center justify-center bg-white rounded-full shadow-xl text-gray-500 group-hover:text-orange-600 border border-gray-100 transition-colors pointer-events-auto">
-                                            <i className="fa-solid fa-chevron-right text-sm"></i>
-                                        </div>
-                                        <div className="w-40 h-56 opacity-0"></div> {/* Spacer for Thumbnail */}
-                                    </button>
-                                </>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleColorChangeRequest(colors[nextIndex]); }}
+                                    className="hidden lg:flex absolute -right-48 top-1/2 -translate-y-1/2 group items-center gap-2 transition-all hover:scale-105 z-[100] pointer-events-auto"
+                                >
+                                    {/* Thumbnail */}
+                                    <div className="w-40 h-56 flex items-center justify-center p-1">
+                                        <img
+                                            src={getProxiedUrl(getOptimizedImageUrl(isBack ? product.backImages[colors[nextIndex]] : product.images[colors[nextIndex]], 200))}
+                                            className="w-full h-full object-contain drop-shadow-md opacity-80 group-hover:opacity-100 transition-opacity"
+                                            alt="Suivant"
+                                        />
+                                    </div>
+                                    {/* Arrow at extremity (most right) */}
+                                    <div className="w-10 h-10 flex items-center justify-center bg-white rounded-full shadow-xl text-gray-500 group-hover:text-orange-600 border border-gray-100 transition-colors">
+                                        <i className="fa-solid fa-chevron-right text-sm"></i>
+                                    </div>
+                                </button>
                             )}
 
                             {/* MOBILE RIGHT SELECTOR */}
@@ -3377,8 +3812,9 @@ export
                                     onClick={() => {
                                         const nextState = !isMeasureToolActive;
                                         setIsMeasureToolActive(nextState);
-                                        setShowGuides(!showGuides);
+                                        setShowGuides(nextState);
                                         if (nextState) setShowSizeGuide(true);
+                                        if (!nextState) setTapeMeasure({ start: null, current: null });
                                     }}
                                     className={`w-11 h-11 flex items-center justify-center rounded-xl transition-all hover:scale-110 ${isMeasureToolActive ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                                     title="Mesures"
@@ -3386,8 +3822,15 @@ export
                                     <i className="fa-solid fa-ruler-combined text-xl"></i>
                                 </button>
                                 <button
-                                    onClick={() => setIsGrouped(!isGrouped)}
-                                    className={`w-11 h-11 flex items-center justify-center rounded-xl transition-all hover:scale-110 ${isGrouped ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                    onClick={() => {
+                                        const newGrouping = !isGrouping;
+                                        setIsGrouping(newGrouping);
+                                        if (newGrouping && groupedSlots.length === 0 && activeEl) {
+                                            const slot = getActiveLogoSlot(activeEl);
+                                            setGroupedSlots([slot]);
+                                        }
+                                    }}
+                                    className={`w-11 h-11 flex items-center justify-center rounded-xl transition-all hover:scale-110 ${isGrouping ? 'bg-orange-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                                     title="Grouper les éléments"
                                 >
                                     <i className="fa-solid fa-object-group text-xl"></i>
@@ -3583,14 +4026,14 @@ export
                                                 </div>
                                             </div>
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); if (setAiResult) setAiResult(null); }}
+                                                onClick={(e) => { e.stopPropagation(); if (setAiResult) { setAiResult(null); setIsAiViewVisible(false); } }}
                                                 className="absolute -top-3 -right-3 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 z-10"
                                                 title="Supprimer la création IA"
                                             >
                                                 <i className="fa-solid fa-times text-sm"></i>
                                             </button>
                                         </div>
-                                        <span className="text-[11px] font-black text-orange-600 uppercase tracking-widest">Voir ma création IA en HD</span>
+                                        <span className="text-[11px] font-black text-orange-600 uppercase tracking-widest">Voir ma création en HD</span>
                                     </>
                                 ) : null}
                             </div>
@@ -3707,8 +4150,9 @@ export
                                     onClick={() => {
                                         const nextState = !isMeasureToolActive;
                                         setIsMeasureToolActive(nextState);
-                                        setShowGuides(!showGuides);
+                                        setShowGuides(nextState);
                                         if (nextState) setShowSizeGuide(true);
+                                        if (!nextState) setTapeMeasure({ start: null, current: null });
                                     }}
                                     className={`w-14 h-14 flex flex-col items-center justify-center rounded-2xl transition-all ${isMeasureToolActive ? 'bg-orange-600 text-white shadow-lg' : 'bg-white/90 text-gray-500 shadow-sm'}`}
                                 >
@@ -3859,7 +4303,7 @@ export
                                             </div>
                                         </div>
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); if (setAiResult) setAiResult(null); }}
+                                            onClick={(e) => { e.stopPropagation(); if (setAiResult) { setAiResult(null); setIsAiViewVisible(false); } }}
                                             className="absolute -top-3 -right-3 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 z-10"
                                             title="Supprimer la création IA"
                                         >
@@ -4063,7 +4507,10 @@ export
 
                                 <button
                                     onClick={() => {
-                                        if (setAiResult) setAiResult(null);
+                                        if (setAiResult) {
+                                            setAiResult(null);
+                                            setIsAiViewVisible(false);
+                                        }
                                         setAiResults(null);
                                         setShowAiResultModal(false);
                                         setAiStep('input');
@@ -4103,6 +4550,92 @@ export
                     document.body
                 )}
 
+                {/* MANUAL COLOR PICK MODAL FOR SAFARI/IPAD */}
+                {manualColorPickTarget && createPortal(
+                    <div className="fixed inset-0 z-[10002] bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center animate-fade-in touch-none">
+                        <div className="absolute top-8 left-1/2 -translate-x-1/2 px-6 py-3 bg-white/20 backdrop-blur-md rounded-full border border-white/30 text-white shadow-xl flex items-center gap-3 z-50 pointer-events-none">
+                            <i className="fa-solid fa-eye-dropper text-xl animate-pulse"></i>
+                            <span className="font-black text-sm uppercase tracking-widest text-center leading-tight">Touchez la couleur<br/>à retirer</span>
+                        </div>
+                        <button
+                            onClick={() => setManualColorPickTarget(null)}
+                            className="absolute top-8 right-8 w-12 h-12 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-full text-white z-50 transition-colors"
+                        >
+                            <i className="fa-solid fa-xmark text-xl"></i>
+                        </button>
+
+                        <div className="relative max-w-full max-h-[80vh] flex items-center justify-center p-4"
+                             style={{ touchAction: 'none' }}
+                        >
+                            <canvas
+                                ref={(canvas) => {
+                                    if (canvas && manualColorPickTarget && !canvas.dataset.loaded) {
+                                        canvas.dataset.loaded = "true";
+                                        const ctx = canvas.getContext('2d');
+                                        if (!ctx) return;
+                                        const img = new Image();
+                                        img.crossOrigin = 'anonymous';
+                                        img.onload = () => {
+                                            canvas.width = img.width;
+                                            canvas.height = img.height;
+                                            ctx.drawImage(img, 0, 0);
+                                            canvas.style.maxWidth = '100%';
+                                            canvas.style.maxHeight = '70vh';
+                                            canvas.style.objectFit = 'contain';
+                                        };
+                                        img.src = manualColorPickTarget.url;
+                                    }
+                                }}
+                                onPointerDown={async (e) => {
+                                    const canvas = e.currentTarget;
+                                    const rect = canvas.getBoundingClientRect();
+                                    
+                                    const scaleX = canvas.width / rect.width;
+                                    const scaleY = canvas.height / rect.height;
+                                    
+                                    const clickX = (e.clientX - rect.left) * scaleX;
+                                    const clickY = (e.clientY - rect.top) * scaleY;
+
+                                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                                    if (!ctx) return;
+                                    const pixelData = ctx.getImageData(clickX, clickY, 1, 1).data;
+                                    
+                                    if (pixelData[3] === 0) return; // ignore transparent
+                                    
+                                    const hex = '#' + [pixelData[0], pixelData[1], pixelData[2]].map(x => x.toString(16).padStart(2, '0')).join('');
+                                    
+                                    setManualColorPickTarget(null);
+                                    setIsPickingColor(true);
+                                    
+                                    try {
+                                        const processed = await removeSpecificColor(manualColorPickTarget.url, hex, 30);
+                                        const slot = getActiveLogoSlot(activeEl);
+                                        const isMultiSlot = slot === 'logo2' || slot === 'logo3';
+
+                                        if (isMultiSlot) {
+                                            const targetKey = slot === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (isBack ? 'logoBack3' : 'logoFront3');
+                                            const config = (item as any)[targetKey] as LogoConfig;
+                                            updateItem({ [targetKey]: { ...config, backgroundRemoved: true, processedUrl: processed, processedUrl_original: processed, processedUrl_noBackground: processed } });
+                                        } else {
+                                            updateItem(isBack
+                                                ? { backgroundRemovedBack: true, processedLogoUrlBack: processed, processedLogoUrlBack_original: processed, processedLogoUrlBack_noBackground: processed }
+                                                : { backgroundRemovedFront: true, processedLogoUrlFront: processed, processedLogoUrlFront_original: processed, processedLogoUrlFront_noBackground: processed }
+                                            );
+                                        }
+                                    } catch (err) {
+                                        console.error('Manual color pick failed:', err);
+                                    } finally {
+                                        setIsPickingColor(false);
+                                    }
+                                }}
+                                className="cursor-crosshair rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-white/20 touch-none active:scale-95 transition-transform bg-transparent"
+                                title="Cliquer sur la couleur à retirer"
+                            />
+                        </div>
+                    </div>,
+                    document.body
+                )}
+
 
 
                 {/* IMPORT/COLOR PANEL */}
@@ -4125,18 +4658,83 @@ export
 
                                 <button onClick={() => setActivePanel('none')} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full hover:bg-gray-200 transition-colors no-drag"><i className="fa-solid fa-times text-gray-500"></i></button>
 
-                                {/* LOGO SLOTS REMOVED - FORCED SINGLE LOGO */}
+                                {/* LOGO SLOTS SELECTOR */}
+                                <div className="flex gap-1.5 p-1 bg-gray-100 rounded-xl mb-2 no-drag">
+                                    {[
+                                        { id: 'logo', label: 'Image 1' },
+                                        { id: 'logo2', label: 'Image 2' },
+                                        { id: 'logo3', label: 'Image 3' }
+                                    ].map(slot => {
+                                         const actualActive = getActiveLogoSlot(activeEl);
+                                         const isActiveSlot = actualActive === slot.id;
+                                         const isGroupSelected = groupedSlots.includes(slot.id as any);
+                                         const slotFullId = slot.id === 'logo' ? (isBack ? 'logoBack' : 'logoFront') : (slot.id === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (isBack ? 'logoBack3' : 'logoFront3'));
+                                         
+                                         // Check if this slot has content
+                                         let hasAnyContent = false;
+                                         if (slot.id === 'logo') {
+                                             hasAnyContent = !!(isBack ? (item.originalLogoUrlBack || item.predefinedLogoUrlBack) : (item.originalLogoUrlFront || item.predefinedLogoUrlFront));
+                                         } else {
+                                             const config = (item as any)[slotFullId];
+                                             hasAnyContent = !!(config?.originalUrl || config?.predefinedUrl);
+                                         }
+
+                                         return (
+                                             <button
+                                                 key={slot.id}
+                                                 onClick={() => {
+                                                     if (isGrouping) {
+                                                         setGroupedSlots(prev => prev.includes(slot.id as any) ? prev.filter(s => s !== slot.id) : (prev.length < 3 ? [...prev, slot.id as any] : prev));
+                                                     } else {
+                                                         setActiveEl(slot.id);
+                                                         if (!hasAnyContent) {
+                                                             setUploadedLogoPreview(null);
+                                                         }
+                                                     }
+                                                 }}
+                                                 className={`flex-1 py-2.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isGrouping ? (isGroupSelected ? 'bg-indigo-600 text-white shadow-lg scale-105' : 'bg-white text-indigo-400 border border-indigo-100') : (isActiveSlot ? 'bg-white text-orange-600 shadow-sm border border-orange-100' : 'text-gray-400 hover:text-gray-600')}`}
+                                             >
+                                                 {isGrouping ? (
+                                                     <i className={`fa-solid ${isGroupSelected ? 'fa-check-circle' : 'fa-circle-plus'} text-xs`}></i>
+                                                 ) : (
+                                                     hasAnyContent && <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
+                                                 )}
+                                                 {slot.label}
+                                             </button>
+                                         );
+                                    })}
+                                </div>
 
                                 {(() => {
-                                    const logoData = {
-                                        originalUrl: isBack ? item.originalLogoUrlBack : item.originalLogoUrlFront,
-                                        predefinedUrl: isBack ? item.predefinedLogoUrlBack : item.predefinedLogoUrlFront,
-                                        processedUrl: isBack ? item.processedLogoUrlBack : item.processedLogoUrlFront,
-                                        processedUrl_original: isBack ? item.processedLogoUrlBack_original : item.processedLogoUrlFront_original,
-                                        backgroundRemoved: isBack ? item.backgroundRemovedBack : item.backgroundRemovedFront,
-                                        activeColor: isBack ? item.activeLogoColorBack : item.activeLogoColorFront,
-                                        inverted: isBack ? item.logoInvertedBack : item.logoInvertedFront
-                                    };
+                                    const logoData = (() => {
+                                        const actualActive = getActiveLogoSlot(activeEl);
+                                        const isMultiSlot = actualActive === 'logo2' || actualActive === 'logo3';
+                                        
+                                        if (isMultiSlot) {
+                                            const slotFullId = actualActive === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (isBack ? 'logoBack3' : 'logoFront3');
+                                            const config = (item as any)[slotFullId] as LogoConfig;
+                                            return {
+                                                originalUrl: config?.originalUrl,
+                                                predefinedUrl: config?.predefinedUrl,
+                                                processedUrl: config?.processedUrl,
+                                                processedUrl_original: config?.processedUrl_original,
+                                                backgroundRemoved: config?.backgroundRemoved,
+                                                activeColor: config?.activeColor,
+                                                inverted: config?.inverted,
+                                                isHd: config?.isHd
+                                            };
+                                        }
+                                        return {
+                                            originalUrl: isBack ? item.originalLogoUrlBack : item.originalLogoUrlFront,
+                                            predefinedUrl: isBack ? item.predefinedLogoUrlBack : item.predefinedLogoUrlFront,
+                                            processedUrl: isBack ? item.processedLogoUrlBack : item.processedLogoUrlFront,
+                                            processedUrl_original: isBack ? item.processedLogoUrlBack_original : item.processedLogoUrlFront_original,
+                                            backgroundRemoved: isBack ? item.backgroundRemovedBack : item.backgroundRemovedFront,
+                                            activeColor: isBack ? item.activeLogoColorBack : item.activeLogoColorFront,
+                                            inverted: isBack ? item.logoInvertedBack : item.logoInvertedFront,
+                                            isHd: isBack ? item.isHdBack : item.isHdFront
+                                        };
+                                    })();
 
                                     const hasContent = !!(logoData.originalUrl || logoData.predefinedUrl || logoData.processedUrl);
 
@@ -4210,7 +4808,9 @@ export
                                                             if (!url) return;
 
                                                             if (!('EyeDropper' in window)) {
-                                                                alert("Votre navigateur ne supporte pas l'outil pipette.");
+                                                                const slot = getActiveLogoSlot(activeEl);
+                                                                const targetSlotId = slot === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (slot === 'logo3' ? (isBack ? 'logoBack3' : 'logoFront3') : (isBack ? 'logoBack' : 'logoFront'));
+                                                                setManualColorPickTarget({ url, side: isBack ? 'back' : 'front', slotId: targetSlotId });
                                                                 return;
                                                             }
 
@@ -4223,10 +4823,19 @@ export
 
                                                                 const processed = await removeSpecificColor(url, hex, 30);
 
-                                                                updateItem(isBack
-                                                                    ? { backgroundRemovedBack: true, processedLogoUrlBack: processed, processedLogoUrlBack_original: processed, processedLogoUrlBack_noBackground: processed }
-                                                                    : { backgroundRemovedFront: true, processedLogoUrlFront: processed, processedLogoUrlFront_original: processed, processedLogoUrlFront_noBackground: processed }
-                                                                );
+                                                                const actualActive = getActiveLogoSlot(activeEl);
+                                                                const isMultiSlot = actualActive === 'logo2' || actualActive === 'logo3';
+
+                                                                if (isMultiSlot) {
+                                                                    const targetKey = actualActive === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (isBack ? 'logoBack3' : 'logoFront3');
+                                                                    const config = (item as any)[targetKey] as LogoConfig;
+                                                                    updateItem({ [targetKey]: { ...config, backgroundRemoved: true, processedUrl: processed, processedUrl_original: processed, processedUrl_noBackground: processed } });
+                                                                } else {
+                                                                    updateItem(isBack
+                                                                        ? { backgroundRemovedBack: true, processedLogoUrlBack: processed, processedLogoUrlBack_original: processed, processedLogoUrlBack_noBackground: processed }
+                                                                        : { backgroundRemovedFront: true, processedLogoUrlFront: processed, processedLogoUrlFront_original: processed, processedLogoUrlFront_noBackground: processed }
+                                                                    );
+                                                                }
                                                             } catch (e: any) {
                                                                 console.error("Color picking/removal failed", e);
                                                             } finally {
@@ -4238,6 +4847,58 @@ export
                                                         {isPickingColor ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-eye-dropper"></i>}
                                                         <span className="text-[10px]">RETIRER</span>
                                                     </button>
+
+                                                    <button
+                                                        onClick={async () => {
+                                                            let url = logoData.processedUrl_original || logoData.originalUrl || logoData.predefinedUrl;
+                                                            if (Array.isArray(url)) url = url[0];
+                                                            if (!url || isUpscalingImage) return;
+
+                                                            setIsUpscalingImage(true);
+                                                            try {
+                                                                const hdUrl = await intelligentUpscale(url);
+
+                                                                // RE-APPLY CURRENT COLOR IF ANY
+                                                                let finalHdUrl = hdUrl;
+                                                                if (logoData.activeColor && logoData.activeColor !== 'original') {
+                                                                    try {
+                                                                        finalHdUrl = await processLogoColor(hdUrl, logoData.activeColor);
+                                                                    } catch (colorErr) {
+                                                                        console.warn("Failed to re-apply color after HD upscale", colorErr);
+                                                                    }
+                                                                }
+
+                                                                const actualActive = getActiveLogoSlot(activeEl);
+                                                                const isMultiSlot = actualActive === 'logo2' || actualActive === 'logo3';
+                                                                const targetSlotId = isMultiSlot ? (actualActive === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (isBack ? 'logoBack3' : 'logoFront3')) : (isBack ? 'logoBack' : 'logoFront');
+
+                                                                if (isMultiSlot) {
+                                                                    const config = (item as any)[targetSlotId] as LogoConfig;
+                                                                    const up: any = { ...config, processedUrl: finalHdUrl, processedUrl_original: hdUrl, isHd: true };
+                                                                    if (config.backgroundRemoved) up.processedUrl_noBackground = hdUrl;
+                                                                    updateItem({ [targetSlotId]: up });
+                                                                } else {
+                                                                    const up: any = isBack
+                                                                        ? { processedLogoUrlBack: finalHdUrl, processedLogoUrlBack_original: hdUrl, isHdBack: true }
+                                                                        : { processedLogoUrlFront: finalHdUrl, processedLogoUrlFront_original: hdUrl, isHdFront: true };
+                                                                    
+                                                                    if (isBack && item.backgroundRemovedBack) up.processedLogoUrlBack_noBackground = hdUrl;
+                                                                    if (!isBack && item.backgroundRemovedFront) up.processedLogoUrlFront_noBackground = hdUrl;
+                                                                    
+                                                                    updateItem(up);
+                                                                }
+                                                            } catch (err) {
+                                                                console.error("Upscale failed", err);
+                                                            } finally {
+                                                                setIsUpscalingImage(false);
+                                                            }
+                                                        }}
+                                                        className={`flex-1 h-14 rounded-xl border font-bold transition-all flex flex-col items-center justify-center gap-1 ${isUpscalingImage ? 'bg-indigo-50 text-indigo-600 border-indigo-200' : (logoData?.isHd ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-600 border-gray-200 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200')}`}
+                                                    >
+                                                        {isUpscalingImage ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-wand-magic-sparkles"></i>}
+                                                        <span className="text-[10px]">HD</span>
+                                                    </button>
+                                                    
                                                     <button
                                                         onClick={() => {
                                                             let url = logoData.processedUrl_original || logoData.originalUrl || logoData.predefinedUrl;
@@ -4266,7 +4927,9 @@ export
                                                                     logoSizeFront: item.logoSizeBack,
                                                                     logoPositionXFront: item.logoPositionXBack,
                                                                     logoPositionYFront: item.logoPositionYBack,
-                                                                    logoAspectRatioFront: item.logoAspectRatioBack
+                                                                    logoAspectRatioFront: item.logoAspectRatioBack,
+                                                                    logoFront2: item.logoBack2,
+                                                                    logoFront3: item.logoBack3
                                                                 });
                                                             } else {
                                                                 // Copy FRONT -> BACK
@@ -4282,7 +4945,9 @@ export
                                                                     logoSizeBack: item.logoSizeFront,
                                                                     logoPositionXBack: item.logoPositionXFront,
                                                                     logoPositionYBack: item.logoPositionYFront,
-                                                                    logoAspectRatioBack: item.logoAspectRatioFront
+                                                                    logoAspectRatioBack: item.logoAspectRatioFront,
+                                                                    logoBack2: item.logoFront2,
+                                                                    logoBack3: item.logoFront3
                                                                 });
                                                             }
                                                         }}
@@ -4293,20 +4958,51 @@ export
                                                     </button>
                                                     <button
                                                         onClick={() => {
-                                                            const cleanup = isBack ? {
-                                                                originalLogoUrlBack: null, processedLogoUrlBack_original: null,
-                                                                isPredefinedLogoBack: false, predefinedLogoUrlBack: null,
-                                                                processedLogoUrlBack: null, processedLogoUrlBack_noBackground: null,
-                                                                processedLogoUrlBack_white: null, processedLogoUrlBack_black: null
-                                                            } : {
-                                                                originalLogoUrlFront: null, processedLogoUrlFront_original: null,
-                                                                isPredefinedLogoFront: false, predefinedLogoUrlFront: null,
-                                                                processedLogoUrlFront: null, processedLogoUrlFront_noBackground: null,
-                                                                processedLogoUrlFront_white: null, processedLogoUrlFront_black: null
-                                                            };
-                                                            updateItem(cleanup);
-                                                            setActiveEl(null);
+                                                            const actualActive = getActiveLogoSlot(activeEl);
+                                                            const isMultiSlot = actualActive === 'logo2' || actualActive === 'logo3';
+                                                            
+                                                            if (isMultiSlot) {
+                                                                const targetSlotId = actualActive === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (isBack ? 'logoBack3' : 'logoFront3');
+                                                                const config = (item as any)[targetSlotId];
+                                                                if (config) {
+                                                                    updateItem({ [targetSlotId]: { ...config, position: { ...config.position, x: 50 } } });
+                                                                }
+                                                            } else {
+                                                                updateItem(isBack
+                                                                    ? { logoPositionXBack: 50 }
+                                                                    : { logoPositionXFront: 50 }
+                                                                );
+                                                            }
+                                                        }}
+                                                        className="flex-1 h-14 rounded-xl border border-gray-200 bg-white font-bold text-gray-600 transition-all flex flex-col items-center justify-center gap-1 hover:bg-gray-50 active:scale-95"
+                                                    >
+                                                        <i className="fa-solid fa-arrows-to-dot"></i>
+                                                        <span className="text-[10px]">RECENTRER</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            const slot = getActiveLogoSlot(activeEl);
+                                                            const isMultiSlot = slot === 'logo2' || slot === 'logo3';
+
+                                                            if (isMultiSlot) {
+                                                                const targetSlotId = slot === 'logo2' ? (isBack ? 'logoBack2' : 'logoFront2') : (isBack ? 'logoBack3' : 'logoFront3');
+                                                                updateItem({ [targetSlotId]: undefined });
+                                                            } else {
+                                                                const cleanup = isBack ? {
+                                                                    originalLogoUrlBack: null, processedLogoUrlBack_original: null,
+                                                                    isPredefinedLogoBack: false, predefinedLogoUrlBack: null,
+                                                                    processedLogoUrlBack: null, processedLogoUrlBack_noBackground: null,
+                                                                    processedLogoUrlBack_white: null, processedLogoUrlBack_black: null
+                                                                } : {
+                                                                    originalLogoUrlFront: null, processedLogoUrlFront_original: null,
+                                                                    isPredefinedLogoFront: false, predefinedLogoUrlFront: null,
+                                                                    processedLogoUrlFront: null, processedLogoUrlFront_noBackground: null,
+                                                                    processedLogoUrlFront_white: null, processedLogoUrlFront_black: null
+                                                                };
+                                                                updateItem(cleanup);
+                                                            }
                                                             setUploadedLogoPreview(null);
+                                                            setActiveEl(slot);
                                                         }}
                                                         className="flex-1 h-14 rounded-xl border border-red-100 bg-red-50 font-bold text-red-500 flex flex-col items-center justify-center gap-1"
                                                     >
@@ -4937,7 +5633,7 @@ export
                                             <div className="w-full h-full flex flex-col">
                                                 <div className="flex-1 relative rounded-2xl overflow-hidden shadow-xl bg-black">
                                                     <div className="absolute inset-0 border-[12px] border-black/20 z-20 pointer-events-none"></div>
-                                                    <img src={capturedImage} className={`w-full h-full object-contain bg-black transition-all duration-500 ${aiGenerating ? 'blur-md scale-105 opacity-50' : ''}`} alt="Captured" />
+                                                    <img src={capturedImage} className="w-full h-full object-contain bg-black transition-all duration-500" alt="Captured" />
 
                                                     {/* SignPong Overlay - Full Border Version */}
                                                     {(aiGenerating || isGeneratingLocal) && (
@@ -4964,49 +5660,65 @@ export
                                 )}
 
                                 {/* STEP 3: RESULT OR GENERATING */}
-                                {(aiGenerating || isGeneratingLocal || (aiStep === 'result' || (aiResult && aiStep !== 'prompt' && aiStep !== 'input'))) && (
+                                {((aiGenerating || isGeneratingLocal || aiStep === 'result') && aiStep !== 'prompt' && aiStep !== 'input') && (
                                     <div className="h-full flex flex-col bg-black">
                                         {(aiGenerating || isGeneratingLocal) ? (
-                                            <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden">
+                                            <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden bg-black">
                                                 {capturedImage && (
                                                     <img
                                                         src={capturedImage}
-                                                        className="absolute inset-0 w-full h-full object-cover blur-xl opacity-30 scale-110"
-                                                        alt="Blur background"
+                                                        className="absolute inset-0 w-full h-full object-contain"
+                                                        alt="Captured Image"
                                                     />
                                                 )}
                                                 <div className="relative z-10 flex flex-col items-center justify-center w-full h-full">
-                                                    <div className="absolute top-12 left-0 right-0 text-center z-20">
-                                                        <h3 className="text-white text-2xl font-black uppercase tracking-widest animate-pulse mb-2">Magie en cours...</h3>
-                                                        <div className="inline-flex items-center gap-2 bg-orange-600 px-4 py-1.5 rounded-full shadow-lg">
-                                                            <i className="fa-solid fa-wand-sparkles text-white text-xs animate-spin-slow"></i>
-                                                            <span className="text-white text-[10px] font-black uppercase tracking-wider">SignPong : Gagne des crédits !</span>
-                                                        </div>
-                                                    </div>
-
                                                     <div className="w-full h-full">
-                                                        <LoadingScreen message="Un instant..." />
+                                                        <LoadingScreen message="Génération..." />
                                                     </div>
                                                 </div>
                                             </div>
                                         ) : aiResult ? (
                                             /* Final Result View */
                                             <div className="flex-1 flex flex-col relative animate-fade-in">
-                                                <div className="flex-1 bg-black relative flex items-center justify-center py-4">
-                                                    <div className="h-full max-w-[90vw] aspect-[9/16] relative rounded-2xl overflow-hidden shadow-2xl">
-                                                        <img src={aiResult} className="w-full h-full object-cover" alt="AI Result" />
+                                            <div className="flex-1 bg-black relative flex items-center justify-center py-4 overflow-x-auto gap-4 md:gap-8 px-4">
+                                                {aiResults?.front ? (
+                                                    <div className="h-full max-w-[90vw] aspect-[9/16] relative rounded-2xl overflow-hidden shadow-2xl border border-white/10 group">
+                                                        <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/40 backdrop-blur-md rounded-full border border-white/20">
+                                                            <span className="text-[8px] font-black text-white uppercase tracking-widest">Face</span>
+                                                        </div>
+                                                        <img src={aiResults.front} className="w-full h-full object-cover" alt="AI Front" />
                                                     </div>
-                                                </div>
+                                                ) : aiResult && !aiResults?.back ? (
+                                                     <div className="h-full max-w-[90vw] aspect-[9/16] relative rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+                                                        <img src={aiResult} className="w-full h-full object-cover" alt="AI Single" />
+                                                    </div>
+                                                ) : null}
+
+                                                {aiResults?.back && (
+                                                    <div className="h-full max-w-[90vw] aspect-[9/16] relative rounded-2xl overflow-hidden shadow-2xl border border-white/10 group">
+                                                        <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/40 backdrop-blur-md rounded-full border border-white/20">
+                                                            <span className="text-[8px] font-black text-white uppercase tracking-widest">Dos</span>
+                                                        </div>
+                                                        <img src={aiResults.back} className="w-full h-full object-cover" alt="AI Back" />
+                                                    </div>
+                                                )}
+                                            </div>
                                                 <div className="flex-none bg-black/80 backdrop-blur-md p-6 pt-8 pb-10 flex flex-col gap-3 rounded-t-3xl -mt-6 z-10 border-t border-white/10">
                                                     <h3 className="text-white font-bold text-center mb-2">🔥 Résultat généré !</h3>
                                                     <button
-                                                        onClick={() => { setCapturedImage(null); setAiModalOpen(false); }}
+                                                        onClick={() => { setCapturedImage(null); setAiModalOpen(false); setAiStep('input'); }}
                                                         className="w-full py-4 bg-green-500 text-white font-black uppercase tracking-widest rounded-xl shadow-[0_0_20px_rgba(34,197,94,0.4)] hover:bg-green-400 transition-all hover:scale-[1.02]"
                                                     >
                                                         Utiliser ce design
                                                     </button>
                                                     <button
-                                                        onClick={() => { setAiResult && setAiResult(null); setAiStep('input'); }}
+                                                        onClick={() => { 
+                                                            if (setAiResult) {
+                                                                setAiResult(null);
+                                                                setIsAiViewVisible(false);
+                                                            }
+                                                            setAiStep('input'); 
+                                                        }}
                                                         className="w-full py-3 bg-white/10 border border-white/20 text-white font-bold rounded-xl hover:bg-white/20"
                                                     >
                                                         Réessayer

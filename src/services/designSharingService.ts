@@ -113,6 +113,33 @@ class DesignSharingService {
             return null;
         }
     }
+
+    /**
+     * Retrieves all shared designs for a specific user.
+     */
+    async getUserSharedDesigns(userId: string): Promise<any[]> {
+        try {
+            const { query, where, getDocs, orderBy } = await import('firebase/firestore');
+            const q = query(this.sharedDesignsCollection, where("userId", "==", userId), orderBy('createdAt', 'desc'));
+            const snapshot = await getDocs(q);
+            const designs: any[] = [];
+            snapshot.forEach(doc => {
+                designs.push({ ...doc.data(), id: doc.id });
+            });
+            return designs;
+        } catch (error) {
+            console.warn("Shared designs index missing, falling back to unordered query:", error);
+            const { query, where, getDocs } = await import('firebase/firestore');
+            const qFallback = query(this.sharedDesignsCollection, where("userId", "==", userId));
+            const snapshot = await getDocs(qFallback);
+            const designs: any[] = [];
+            snapshot.forEach(doc => {
+                designs.push({ ...doc.data(), id: doc.id });
+            });
+            designs.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+            return designs;
+        }
+    }
 }
 
 export const designSharingService = new DesignSharingService();

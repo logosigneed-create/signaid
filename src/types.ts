@@ -6,6 +6,10 @@ export interface User {
     username: string;
     avatarUrl: string;
     credits: number;
+    slug?: string; // Unique URL slug (e.g. "fabrizio" for signaid.eu/fabrizio)
+    totalSales?: number; // Total units sold
+    revenue?: number; // Total revenue generated in EUR
+    ordersCount?: number; // Total orders count
     isAdmin?: boolean;
     wishlist?: string[];
     savedPostIds?: string[];
@@ -67,6 +71,7 @@ export interface Product {
     boxPrice?: number;
     weight?: number;
     sizePrices?: { [size: string]: number };
+    aiDisabled?: boolean;
 }
 
 export interface GeneralSettings {
@@ -91,6 +96,7 @@ export interface LogoConfig {
     inverted?: boolean;
     backgroundRemoved?: boolean;
     backgroundRemovalMode?: 'white' | 'all' | 'black';
+    isHd?: boolean;
 }
 
 export interface TextConfig {
@@ -138,6 +144,8 @@ export interface CartItem {
     predefinedLogoUrlBack?: string | null;
     isPredefinedLogoFront?: boolean;
     isPredefinedLogoBack?: boolean;
+    isHdFront?: boolean;
+    isHdBack?: boolean;
 
     logoPositionXFront: number;
     logoPositionYFront: number;

@@ -3,15 +3,244 @@ import { createPortal } from 'react-dom';
 import { User, Post } from '../types';
 import { authService } from '../services/authService';
 import { postService } from '../services/postService';
+import { designSharingService } from '../services/designSharingService';
 import { resizeImage, getProxiedUrl } from '../utils/helpers';
 import { getOptimizedImageUrl } from '../utils/imageUtils';
 import { LazyImage } from './LazyImage';
 import { Link } from 'react-router-dom';
+import { productDatabase } from '../constants';
+import { downloadTechnicalPackage } from '../utils/technicalExport';
+
+// --- SUB-COMPONENT: PostPreviewModal ---
+// Extracted to be outside of ProfileView to respect hooks rules and improve performance.
+const PostPreviewModal: React.FC<{
+    post: Post;
+    user: User;
+    isOwnProfile: boolean;
+    onClose: () => void;
+    onPostClick: (post: Post) => void;
+    onTogglePrivacy?: (postId: string, isPrivate: boolean) => void;
+    onDeletePost: (postId: string) => void;
+}> = ({ post, user, isOwnProfile, onClose, onPostClick, onTogglePrivacy, onDeletePost }) => {
+    const [viewMode, setViewMode] = useState<'front' | 'back'>(post.customization?.previewImageUrlFront ? 'front' : (post.customization?.previewImageUrlBack ? 'back' : 'front'));
+    
+    // Administration States (Moved inside modal as they are specific to this view)
+    const [exportFront, setExportFront] = useState(true);
+    const [exportBack, setExportBack] = useState(true);
+    const [exportMode, setExportMode] = useState<'quick' | 'manual'>('quick');
+    const [selectedElements, setSelectedElements] = useState<string[]>([]);
+    const [exportSize, setExportSize] = useState('L');
+
+    const hasFront = !!post.customization?.previewImageUrlFront || !!post.imageUrl;
+    const hasBack = !!post.customization?.previewImageUrlBack;
+    const currentImg = viewMode === 'front' ? (post.customization?.previewImageUrlFront || post.imageUrl) : (post.customization?.previewImageUrlBack || post.imageUrl);
+
+    const handleDownloadAdminPackage = async (p: Post) => {
+        if (!p.customization) {
+            alert("Ce projet n'a pas de données de personnalisation éditables.");
+            return;
+        }
+        await downloadTechnicalPackage(p.customization, productDatabase, {
+            front: exportFront,
+            back: exportBack,
+            size: exportSize,
+            elements: exportMode === 'manual' ? selectedElements : undefined
+        });
+    };
+
+    return createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in p-4" onClick={onClose}>
+            <button
+                onClick={(e) => { e.stopPropagation(); onClose(); }}
+                className="fixed top-6 right-6 z-[100000] w-12 h-12 bg-white/40 hover:bg-white/60 backdrop-blur-md rounded-full text-gray-800 flex items-center justify-center transition-all border border-white/20 shadow-xl"
+            >
+                <i className="fa-solid fa-xmark text-xl"></i>
+            </button>
+
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{ maxWidth: '600px', maxHeight: '520px', width: '90%', height: 'auto', margin: 'auto' }}
+                className="relative bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row transition-all duration-300"
+            >
+                {/* Image Section */}
+                <div className="relative w-full md:flex-1 bg-gray-50 flex items-center justify-center overflow-hidden p-4 md:p-6 md:min-h-0 min-h-[300px]">
+                    <img
+                        src={currentImg}
+                        className="w-full h-full object-contain drop-shadow-2xl animate-fade-in"
+                        style={{ maxHeight: '460px' }}
+                        key={viewMode}
+                        alt="Post Preview"
+                    />
+
+                    {hasFront && hasBack && (
+                        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 bg-white/50 backdrop-blur-md p-1 rounded-full border border-white/30 shadow-lg z-30">
+                            <button
+                                onClick={() => setViewMode('front')}
+                                className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'front' ? 'bg-orange-600 text-white shadow-md' : 'text-gray-600 hover:bg-white/50'}`}
+                            >
+                                Devant
+                            </button>
+                            <button
+                                onClick={() => setViewMode('back')}
+                                className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === 'back' ? 'bg-orange-600 text-white shadow-md' : 'text-gray-600 hover:bg-white/50'}`}
+                            >
+                                Dos
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* Sidebar */}
+                <div className="w-full md:w-[220px] bg-white flex flex-col justify-between p-5 shrink-0 border-t md:border-t-0 md:border-l border-gray-100">
+                    <div className="overflow-y-auto custom-scrollbar pr-1">
+                        <div className="flex items-center gap-2 mb-4">
+                            <div className="w-8 h-8 rounded-full bg-gray-100 overflow-hidden border border-gray-200">
+                                <img src={post.user?.avatarUrl || "https://ui-avatars.com/api/?name=" + (post.user?.username || "User")} className="w-full h-full object-cover" alt="Avatar" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-900 text-xs">@{post.user?.username || 'Membre'}</h3>
+                                <p className="text-[10px] text-gray-400">Créateur</p>
+                            </div>
+                        </div>
+
+                        {post.stylePrompt && (
+                            <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                <p className="text-[9px] uppercase font-bold text-gray-400 mb-1 tracking-wider">Style</p>
+                                <p className="text-xs font-medium text-gray-800 italic line-clamp-3">"{post.stylePrompt}"</p>
+                            </div>
+                        )}
+
+                        {isOwnProfile && user.email === 'logosigneed@gmail.com' && (
+                            <div className="mb-4 bg-orange-50 p-4 rounded-2xl border border-orange-100">
+                                <p className="text-[9px] uppercase font-black text-orange-400 tracking-wider mb-2">Administration</p>
+
+                                <div className="flex bg-orange-100/50 p-1 rounded-xl mb-3">
+                                    <button
+                                        onClick={() => setExportMode('quick')}
+                                        className={`flex-1 py-1 px-2 text-[9px] font-black rounded-lg transition-all ${exportMode === 'quick' ? 'bg-orange-600 text-white shadow-sm' : 'text-orange-600'}`}
+                                    >
+                                        RAPIDE
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setExportMode('manual');
+                                            const els = [];
+                                            if (post.customization?.originalLogoUrlFront) els.push('LOGO_F1');
+                                            if (post.customization?.logoFront2?.originalUrl) els.push('LOGO_F2');
+                                            if (post.customization?.logoFront3?.originalUrl) els.push('LOGO_F3');
+                                            if (post.customization?.originalLogoUrlBack) els.push('LOGO_B1');
+                                            if (post.customization?.logoBack2?.originalUrl) els.push('LOGO_B2');
+                                            if (post.customization?.logoBack3?.originalUrl) els.push('LOGO_B3');
+                                            if (post.customization?.textFront?.text) els.push('TEXT_F1');
+                                            if (post.customization?.textFront2?.text) els.push('TEXT_F2');
+                                            if (post.customization?.textBack?.text) els.push('TEXT_B1');
+                                            if (post.customization?.textBack2?.text) els.push('TEXT_B2');
+                                            setSelectedElements(els);
+                                        }}
+                                        className={`flex-1 py-1 px-2 text-[9px] font-black rounded-lg transition-all ${exportMode === 'manual' ? 'bg-orange-600 text-white shadow-sm' : 'text-orange-600'}`}
+                                    >
+                                        MANUEL
+                                    </button>
+                                </div>
+
+                                {exportMode === 'quick' ? (
+                                    <div className="grid grid-cols-2 gap-2 mb-3">
+                                        <div onClick={() => setExportFront(!exportFront)} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all border ${exportFront ? 'bg-white border-orange-200 shadow-sm' : 'bg-transparent border-transparent opacity-50'}`}>
+                                            <i className={`fa-solid ${exportFront ? 'fa-square-check text-orange-600' : 'fa-square text-gray-300'}`}></i>
+                                            <span className="text-[10px] font-bold">Face</span>
+                                        </div>
+                                        <div onClick={() => setExportBack(!exportBack)} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-all border ${exportBack ? 'bg-white border-orange-200 shadow-sm' : 'bg-transparent border-transparent opacity-50'}`}>
+                                            <i className={`fa-solid ${exportBack ? 'fa-square-check text-orange-600' : 'fa-square text-gray-300'}`}></i>
+                                            <span className="text-[10px] font-bold">Dos</span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="mb-3 max-h-[120px] overflow-y-auto pr-1 custom-scrollbar space-y-1 bg-white/50 p-2 rounded-xl border border-orange-100">
+                                        {[
+                                            { id: 'LOGO_F1', label: 'Logo 1 Devant' },
+                                            { id: 'LOGO_F2', label: 'Logo 2 Devant' },
+                                            { id: 'LOGO_F3', label: 'Logo 3 Devant' },
+                                            { id: 'LOGO_B1', label: 'Logo 1 Dos' },
+                                            { id: 'LOGO_B2', label: 'Logo 2 Dos' },
+                                            { id: 'LOGO_B3', label: 'Logo 3 Dos' },
+                                            { id: 'TEXT_F1', label: 'Texte 1 Face' },
+                                            { id: 'TEXT_F2', label: 'Texte 2 Face' },
+                                            { id: 'TEXT_B1', label: 'Texte 1 Dos' },
+                                            { id: 'TEXT_B2', label: 'Texte 2 Dos' }
+                                        ].map(el => {
+                                            const isActive = (id: string) => {
+                                                if (id === 'LOGO_F1') return !!post.customization?.originalLogoUrlFront;
+                                                if (id === 'LOGO_F2') return !!post.customization?.logoFront2?.originalUrl;
+                                                if (id === 'LOGO_F3') return !!post.customization?.logoFront3?.originalUrl;
+                                                if (id === 'LOGO_B1') return !!post.customization?.originalLogoUrlBack;
+                                                if (id === 'LOGO_B2') return !!post.customization?.logoBack2?.originalUrl;
+                                                if (id === 'LOGO_B3') return !!post.customization?.logoBack3?.originalUrl;
+                                                if (id === 'TEXT_F1') return !!post.customization?.textFront?.text;
+                                                if (id === 'TEXT_F2') return !!post.customization?.textFront2?.text;
+                                                if (id === 'TEXT_B1') return !!post.customization?.textBack?.text;
+                                                if (id === 'TEXT_B2') return !!post.customization?.textBack2?.text;
+                                                return false;
+                                            };
+                                            if (!isActive(el.id)) return null;
+                                            return (
+                                                <div key={el.id} onClick={() => setSelectedElements(prev => prev.includes(el.id) ? prev.filter(i => i !== el.id) : [...prev, el.id])} className="flex items-center justify-between p-1.5 hover:bg-orange-50 rounded-lg cursor-pointer transition-colors">
+                                                    <span className="text-[10px] font-bold text-gray-700">{el.label}</span>
+                                                    <i className={`fa-solid ${selectedElements.includes(el.id) ? 'fa-check-circle text-orange-600' : 'fa-circle text-gray-200'} text-xs`}></i>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+
+                                <div className="mb-3">
+                                    <label className="text-[8px] uppercase font-bold text-orange-400 block mb-1 ml-1">Taille Référence</label>
+                                    <select value={exportSize} onChange={(e) => setExportSize(e.target.value)} className="w-full bg-white border border-orange-100 rounded-lg py-1 px-2 text-[10px] font-bold focus:outline-none shadow-sm">
+                                        {['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'].map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                </div>
+
+                                <button onClick={() => handleDownloadAdminPackage(post)} className="w-full py-2 bg-orange-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-700 active:scale-95 transition-all shadow-md">
+                                    <i className="fa-solid fa-file-export mr-2"></i> Télécharger Pack
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col gap-2">
+                        <button
+                            onClick={() => onPostClick(post)}
+                            className="w-full py-3 bg-gray-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-black active:scale-95 transition-all shadow-xl"
+                        >
+                            Modifier
+                        </button>
+                        {isOwnProfile && (
+                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                                <div className="flex flex-col">
+                                    <span className="text-[9px] uppercase font-black text-gray-400 tracking-wider">Visibilité</span>
+                                    <span className={`text-[10px] font-black uppercase ${post.isPrivate ? 'text-orange-600' : 'text-gray-900'}`}>{post.isPrivate ? 'Privé' : 'Public'}</span>
+                                </div>
+                                <div onClick={() => onTogglePrivacy?.(post.id, !post.isPrivate)} className={`relative w-10 h-5 rounded-full cursor-pointer transition-all duration-300 ${!post.isPrivate ? 'bg-orange-600' : 'bg-gray-300'}`}>
+                                    <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-md transition-all duration-300 transform ${!post.isPrivate ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                </div>
+                            </div>
+                        )}
+                        {isOwnProfile && (
+                            <button onClick={() => { if(confirm("Supprimer ce design ?")) onDeletePost(post.id); onClose(); }} className="w-full py-2 text-[9px] font-bold text-red-500 bg-red-50 hover:bg-red-100 rounded-xl transition-colors">
+                                <i className="fa-solid fa-trash-can mr-2"></i> Supprimer
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+};
 
 export const ProfileView: React.FC<{
     user: User,
     posts: Post[],
-    onUpdateUser: (updatedUser: Partial<User>) => void,
+    onUpdateUser: (updatedUser: Partial<User>) => void | Promise<void>,
     onPostClick: (post: Post) => void,
     onBack: () => void,
     onLogout: () => void,
@@ -22,16 +251,17 @@ export const ProfileView: React.FC<{
     onGoToRewards: () => void, // NEW PROP
     onTogglePrivacy?: (postId: string, isPrivate: boolean) => void,
     isOwnProfile: boolean,
-    isFollowing?: boolean;
     onToggleFollow?: (userId: string) => void;
+    isFollowing?: boolean;
     isGuest?: boolean;
     onLoginRequest?: () => void;
 }> = ({ user, posts, onUpdateUser, onPostClick, onBack, onLogout, onAdmin, onProductClick, onRemoveValidation, onDeletePost, onGoToRewards, onTogglePrivacy, isOwnProfile, isFollowing, onToggleFollow, isGuest, onLoginRequest }) => {
+
     const [isEditing, setIsEditing] = useState(false);
     const [editName, setEditName] = useState(user.username);
     const [editBio, setEditBio] = useState(user.bio || '');
     const [editLink, setEditLink] = useState(user.websiteLink || '');
-    const [activeTab, setActiveTab] = useState<'creations' | 'support'>('creations');
+    const [activeTab, setActiveTab] = useState<'creations' | 'support' | 'quotes'>('creations');
     const [selectedPost, setSelectedPost] = useState<Post | null>(null);
     const [activeOverlayPostId, setActiveOverlayPostId] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -45,25 +275,93 @@ export const ProfileView: React.FC<{
         return isNaN(d.getTime()) ? 0 : d.getTime();
     };
 
+    const [fetchedPosts, setFetchedPosts] = useState<Post[]>([]);
+    const [fetchedShared, setFetchedShared] = useState<any[]>([]);
+    const [fetchedQuotes, setFetchedQuotes] = useState<any[]>([]);
+    const [isFetchingPosts, setIsFetchingPosts] = useState(false);
+
+
+    useEffect(() => {
+        const fetchAllUserContent = async () => {
+            if (!user.id) return;
+            setIsFetchingPosts(true);
+            try {
+                const [pResults, sResults] = await Promise.all([
+                    postService.getUserPosts(user.id, user.username),
+                    designSharingService.getUserSharedDesigns(user.id)
+                ]);
+                setFetchedPosts(pResults);
+                setFetchedShared(sResults);
+
+                // Fetch Quotes
+                const { collection, query, where, getDocs, orderBy } = await import('firebase/firestore');
+                const { db } = await import('../firebaseConfig');
+                let qList: any[] = [];
+                try {
+                    const qQuotes = query(collection(db, 'quotes'), where("userId", "==", user.id), orderBy('createdAt', 'desc'));
+                    const qSnap = await getDocs(qQuotes);
+                    qSnap.forEach(d => qList.push({ ...d.data(), id: d.id }));
+                } catch (e) {
+                    console.warn("Quotes index missing, falling back to unordered:", e);
+                    const qFallback = query(collection(db, 'quotes'), where("userId", "==", user.id));
+                    const qSnapFallback = await getDocs(qFallback);
+                    qSnapFallback.forEach(d => qList.push({ ...d.data(), id: d.id }));
+                    qList.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                }
+                setFetchedQuotes(qList);
+
+            } catch (err) {
+                console.error("Error loading profile content:", err);
+            } finally {
+                setIsFetchingPosts(false);
+            }
+        };
+        fetchAllUserContent();
+    }, [user.id, user.username]);
+
     const sortedAllUserPosts = React.useMemo(() => {
-        return posts
-            .filter(p => p.user.id === user.id)
+        // Merge prop posts with fetched posts to ensure real-time updates for newly created items
+        // while also showing older/private items fetched from the service.
+        // Start with a clone of fetchedPosts
+        let combinedMap = new Map<string, Post>();
+        fetchedPosts.forEach(p => combinedMap.set(p.id, p));
+
+        // Overwrite or Add items from the posts PROP (most up-to-date local state)
+        posts.forEach(p => {
+            const postUserId = p.user?.id || (p as any).userId;
+            const postUsername = p.user?.username;
+            
+            const isMatch = (postUserId && postUserId === user.id) || 
+                             (postUsername && (postUsername.toLowerCase() === user.username.toLowerCase() || 
+                                              postUsername.toLowerCase() === ('@' + user.username).toLowerCase() || 
+                                              ('@' + postUsername).toLowerCase() === user.username.toLowerCase()));
+
+            if (isMatch) {
+                combinedMap.set(p.id, p);
+            }
+        });
+
+        return Array.from(combinedMap.values())
             .sort((a, b) => {
                 const timeA = getTime(a.createdAt);
                 const timeB = getTime(b.createdAt);
                 const diff = timeB - timeA;
-
-                // If dates are equal (or invalid/0), fall back to ID to ensure deterministic order (Newest/Highest ID first assumption)
-                // This prevents the 'shuffled' order from App.tsx leaking into the Profile view
                 if (diff === 0) {
                     return (b.id || "").localeCompare(a.id || "");
                 }
                 return diff;
             });
-    }, [posts, user.id]);
+    }, [fetchedPosts, posts, user.id, user.username]);
+
+
 
     const visibleUserPosts = React.useMemo(() => {
-        return sortedAllUserPosts.filter(p => !p.archived && (isOwnProfile || !p.isPrivate));
+        return sortedAllUserPosts.filter(p => {
+            // NEVER show archived posts in the main grid
+            if (p.archived) return false;
+            if (isOwnProfile) return true; // Show private items only to the owner
+            return !p.isPrivate; // Show only active public posts to others
+        });
     }, [sortedAllUserPosts, isOwnProfile]);
 
     // For products, we show all posts (including archived), as they are part of the user's collection/portfolio that they want to keep
@@ -332,6 +630,12 @@ export const ProfileView: React.FC<{
                     <i className="fa-solid fa-shirt mr-2"></i> Créations
                 </button>
                 <button
+                    onClick={() => setActiveTab('quotes')}
+                    className={`flex-1 pb-3 font-bold text-sm ${activeTab === 'quotes' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}
+                >
+                    <i className="fa-solid fa-file-invoice mr-2"></i> Mes Devis
+                </button>
+                <button
                     onClick={() => setActiveTab('support')}
                     className={`flex-1 pb-3 font-bold text-sm ${activeTab === 'support' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}
                 >
@@ -354,7 +658,11 @@ export const ProfileView: React.FC<{
                                     onClick={() => setSelectedPost(post)}
                                     className="aspect-[3/4] bg-white rounded-xl overflow-hidden relative group cursor-pointer border border-gray-200 hover:border-orange-500 transition-all shadow-sm"
                                 >
-                                    <img src={post.imageUrl} className="w-full h-full object-cover transition-transform group-hover:scale-105" alt="Post" />
+                                     <LazyImage
+                                        src={post.customization?.previewImageUrlFront || post.imageUrl}
+                                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                        alt="Post"
+                                    />
                                     <div className="absolute bottom-0 left-0 w-full p-2 bg-gradient-to-t from-black/80 to-transparent">
                                         <div className="flex items-center gap-1 text-white text-[10px]">
                                             <i className="fa-solid fa-check text-green-500"></i>
@@ -378,8 +686,56 @@ export const ProfileView: React.FC<{
             }
 
             {
+                activeTab === 'quotes' && (
+                    fetchedQuotes.length === 0 ? (
+                        <div className="text-center py-12 bg-gray-50 rounded-xl border border-gray-200 border-dashed">
+                            <p className="text-gray-500 mb-2">Vous n'avez aucun devis en cours.</p>
+                            <p className="text-[10px] text-gray-400">Configurez un produit et cliquez sur "Demander un devis" !</p>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col gap-4">
+                            {fetchedQuotes.map((quote) => (
+                                <div key={quote.id} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                                    <div className="absolute top-0 right-0 w-24 h-24 bg-orange-50/50 rounded-full -mr-12 -mt-12 transition-transform group-hover:scale-110"></div>
+                                    <div className="relative z-10">
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <h4 className="font-black text-gray-900 uppercase tracking-tight text-sm">Devis #{quote.id.slice(-6)}</h4>
+                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                                                    {quote.createdAt?.toDate ? quote.createdAt.toDate().toLocaleDateString() : 'Date inconnue'}
+                                                </p>
+                                            </div>
+                                            <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                                                quote.status === 'validated' ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'
+                                            }`}>
+                                                {quote.status === 'validated' ? 'Validé' : 'En attente'}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {quote.cart?.map((item: any, idx: number) => (
+                                                <div key={idx} className="flex flex-col gap-1 items-center bg-gray-50 p-2 rounded-xl border border-gray-100">
+                                                    {item.previewImageUrl ? (
+                                                        <img src={item.previewImageUrl} className="w-12 h-12 object-contain" alt="Produit" />
+                                                    ) : (
+                                                        <div className="w-12 h-12 flex items-center justify-center bg-gray-200 rounded-lg">
+                                                            <i className="fa-solid fa-shirt text-gray-400 text-xl"></i>
+                                                        </div>
+                                                    )}
+                                                    <span className="text-[8px] font-black uppercase text-gray-500">{item.productType}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )
+                )
+            }
+
+            {
                 activeTab === 'creations' && (
-                    userPosts.length === 0 ? (
+                    (userPosts.length === 0 && fetchedShared.length === 0) ? (
                         <div className="flex flex-col items-center gap-4 py-8 text-center bg-gray-50 rounded-xl border border-gray-200 border-dashed">
                             <p className="text-gray-600 mb-2">Vous n'avez pas encore publié de design.</p>
 
@@ -409,8 +765,8 @@ export const ProfileView: React.FC<{
                                     onClick={() => setActiveOverlayPostId(activeOverlayPostId === post.id ? null : post.id)}
                                     className={`aspect-[3/4] bg-white rounded-xl overflow-hidden relative group cursor-pointer border transition-all shadow-sm ${activeOverlayPostId === post.id ? 'border-orange-500 ring-2 ring-orange-100' : 'border-gray-200 hover:border-orange-500'}`}
                                 >
-                                    <LazyImage
-                                        src={getProxiedUrl(getOptimizedImageUrl(post.imageUrl, 400), { width: 400, quality: 80 })}
+                                     <LazyImage
+                                        src={getProxiedUrl(getOptimizedImageUrl(post.customization?.previewImageUrlFront || post.imageUrl, 400), { width: 400, quality: 80 })}
                                         className={`w-full h-full object-cover transition-transform duration-300 ${activeOverlayPostId === post.id ? 'scale-105 blur-[2px] brightness-50' : 'group-hover:scale-105'}`}
                                         alt="Post"
                                     />
@@ -461,145 +817,67 @@ export const ProfileView: React.FC<{
                                                 <i className="fa-solid fa-heart text-orange-500"></i>
                                                 <span>{post.validations || 0}</span>
                                             </div>
-                                            {post.isPrivate && (
+                                            {post.isPrivate && !post.archived && (
                                                 <div className="flex items-center gap-1 text-white text-[10px] bg-black/40 px-2 py-0.5 rounded-full backdrop-blur-sm mt-1">
                                                     <i className="fa-solid fa-lock text-[8px]"></i>
                                                     <span>Privé</span>
+                                                </div>
+                                            )}
+                                            {post.archived && (
+                                                <div className="flex items-center gap-1 text-white text-[10px] bg-red-600/80 px-2 py-0.5 rounded-full backdrop-blur-sm mt-1">
+                                                    <i className="fa-solid fa-trash-can text-[8px]"></i>
+                                                    <span>Archivé</span>
                                                 </div>
                                             )}
                                         </div>
                                     )}
                                 </div>
                             ))}
+
+                            {/* [NEW] Render Shared Designs that are not Posts */}
+                            {fetchedShared.map(shared => {
+                                // Skip if already represented in userPosts
+                                if (userPosts.some(up => up.id === shared.id)) return null;
+
+                                return (
+                                    <div
+                                        key={shared.id}
+                                        onClick={() => onPostClick({ ...shared, imageUrl: shared.previewImageUrl || '' } as any)}
+                                        className="aspect-[3/4] bg-gray-50 rounded-xl overflow-hidden relative group cursor-pointer border border-gray-100 hover:border-orange-500 transition-all shadow-sm flex flex-col items-center justify-center p-4"
+                                    >
+                                        {shared.previewImageUrl ? (
+                                            <img src={shared.previewImageUrl} className="w-full h-full object-cover opacity-60 group-hover:opacity-100" />
+                                        ) : (
+                                            <>
+                                                <i className="fa-solid fa-link text-3xl text-gray-300 mb-2"></i>
+                                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest text-center">Design Partagé</span>
+                                            </>
+                                        )}
+                                        <div className="absolute top-2 right-2 bg-blue-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full">Lien</div>
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <span className="bg-white text-gray-900 px-3 py-1.5 rounded-full font-bold text-[10px] shadow-lg">Éditer</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     )
                 )
             }
 
             {/* FULL SCREEN POST MODAL */}
-            {selectedPost && createPortal(
-                <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in p-4" onClick={() => setSelectedPost(null)}>
-
-                    {/* Close Button (Top Right Fixed) */}
-                    <button
-                        onClick={(e) => { e.stopPropagation(); setSelectedPost(null); }}
-                        className="fixed top-6 right-6 z-[100000] w-12 h-12 bg-white/40 hover:bg-white/60 backdrop-blur-md rounded-full text-gray-800 flex items-center justify-center transition-all border border-white/20 shadow-xl"
-                    >
-                        <i className="fa-solid fa-xmark text-xl"></i>
-                    </button>
-
-                    {/* Modal Content - Centered Card on Mobile & Desktop */}
-                    <div
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                            maxWidth: '600px',
-                            maxHeight: '520px',
-                            width: '90%',
-                            height: 'auto',
-                            margin: 'auto'
-                        }}
-                        className="relative bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row transition-all duration-300"
-                    >
-                        {/* Image Section - Light Background */}
-                        <div className="relative w-full md:flex-1 bg-gray-50 flex items-center justify-center overflow-hidden p-4 md:p-6 md:min-h-0">
-                            <img
-                                src={selectedPost.imageUrl}
-                                className="w-full h-full object-contain drop-shadow-lg"
-                                style={{ maxHeight: '460px' }}
-                                alt="Post Preview"
-                            />
-                        </div>
-
-                        {/* Sidebar / Bottom Bar (Details & Action) */}
-                        <div
-                            className="w-full md:w-[220px] bg-white flex flex-col justify-between p-5 shrink-0 border-t md:border-t-0 md:border-l border-gray-100"
-                        >
-                            <div>
-                                <div className="flex items-center gap-2 mb-4">
-                                    <div className="w-8 h-8 rounded-full bg-gray-100 overflow-hidden border border-gray-200">
-                                        <img src={selectedPost.user?.avatarUrl || "https://ui-avatars.com/api/?name=" + (selectedPost.user?.username || "User")} className="w-full h-full object-cover" alt="Avatar" />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-gray-900 text-xs">@{selectedPost.user?.username || 'Membre'}</h3>
-                                        <p className="text-[10px] text-gray-400">Créateur</p>
-                                    </div>
-                                </div>
-
-                                {selectedPost.stylePrompt && (
-                                    <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
-                                        <p className="text-[9px] uppercase font-bold text-gray-400 mb-1 tracking-wider">Style</p>
-                                        <p className="text-xs font-medium text-gray-800 italic line-clamp-3">"{selectedPost.stylePrompt}"</p>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="mt-2 md:mt-auto">
-                                <button
-                                    onClick={() => {
-                                        onPostClick(selectedPost);
-                                        setSelectedPost(null);
-                                    }}
-                                    className="w-full py-2.5 bg-gray-900 hover:bg-black text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition-all flex items-center justify-center gap-2 group text-xs text-nowrap"
-                                >
-                                    <i className="fa-solid fa-wand-magic-sparkles text-orange-500 group-hover:rotate-12 transition-transform"></i>
-                                    <span>Remixer ce design</span>
-                                </button>
-
-                                {isOwnProfile && onTogglePrivacy && (
-                                    <div className="mt-4 p-4 bg-gray-50 rounded-2xl border border-gray-100 animate-fade-in">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <div className="flex flex-col">
-                                                <span className="text-[9px] uppercase font-black text-gray-400 tracking-wider mb-0.5">Visibilité</span>
-                                                <span className={`text-xs font-black transition-colors flex items-center gap-1.5 ${selectedPost.isPrivate ? 'text-orange-600' : 'text-gray-900'}`}>
-                                                    {selectedPost.isPrivate ? (
-                                                        <><i className="fa-solid fa-lock text-[10px]"></i> PRIVÉ</>
-                                                    ) : (
-                                                        <><i className="fa-solid fa-globe text-[10px]"></i> PUBLIC</>
-                                                    )}
-                                                </span>
-                                            </div>
-                                            
-                                            <div
-                                                onClick={async (e) => { 
-                                                    e.stopPropagation(); 
-                                                    const newVal = !selectedPost.isPrivate;
-                                                    // Instant feedback: Update local selectedPost state immediately
-                                                    setSelectedPost(prev => prev ? { ...prev, isPrivate: newVal } : null);
-                                                    await onTogglePrivacy(selectedPost.id, newVal); 
-                                                }}
-                                                className={`relative w-11 h-6 rounded-full cursor-pointer transition-all duration-300 ${!selectedPost.isPrivate ? 'bg-orange-600' : 'bg-gray-300'}`}
-                                            >
-                                                <div className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-md transition-all duration-300 transform flex items-center justify-center ${!selectedPost.isPrivate ? 'translate-x-5' : 'translate-x-0'}`}>
-                                                    <i className={`fa-solid ${!selectedPost.isPrivate ? 'fa-globe text-orange-600' : 'fa-lock text-gray-400'} text-[8px]`}></i>
-                                                </div>
-                                            </div>
-
-                                        </div>
-                                        <p className="text-[9px] text-gray-400 opacity-80 mt-1">
-                                            {selectedPost.isPrivate 
-                                                ? "Masqué de la galerie." 
-                                                : "Visible par tous."}
-                                        </p>
-
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onDeletePost(selectedPost.id); }}
-                                            className="w-full py-2 mt-3 text-[10px] font-bold text-red-500 bg-red-50 hover:bg-red-100 rounded-xl transition-colors border border-red-100 flex items-center justify-center gap-2"
-                                        >
-                                            <i className="fa-solid fa-trash-can"></i>
-                                            Supprimer
-                                        </button>
-                                    </div>
-                                )}
-                                
-                                <p className="text-center text-[9px] text-gray-400 mt-2">
-                                    Créez votre version unique
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>,
-                document.body
+            {selectedPost && (
+                <PostPreviewModal 
+                    post={selectedPost} 
+                    user={user}
+                    isOwnProfile={isOwnProfile}
+                    onClose={() => setSelectedPost(null)}
+                    onPostClick={onPostClick}
+                    onTogglePrivacy={onTogglePrivacy}
+                    onDeletePost={onDeletePost}
+                />
             )}
+
         </div>
     );
 };

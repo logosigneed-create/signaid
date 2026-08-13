@@ -15,7 +15,7 @@ export const BatchProgressWidget: React.FC<{ localQty?: number }> = ({ localQty 
 
     const fetchData = async () => {
         try {
-            const response = await fetch('https://us-central1-signaid-d2d08.cloudfunctions.net/getCurrentBatchSession');
+            const response = await fetch('https://us-central1-signaid-prod.cloudfunctions.net/getCurrentBatchSession');
             if (response.ok) {
                 const result = await response.json();
                 setData(result);

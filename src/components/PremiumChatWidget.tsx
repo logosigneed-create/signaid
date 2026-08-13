@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { MessageCircle, Send, X, ChevronRight } from 'lucide-react';
 
 const SOCIAL_LINKS = {
     WHATSAPP: "https://wa.me/32479359439?text=Bonjour%20Signeed!%20J'ai%20une%20question%20sur%20mon%20projet.",
@@ -42,9 +43,10 @@ export const PremiumChatWidget = () => {
 
                         <button
                             onClick={() => setIsOpen(false)}
+                            aria-label="Fermer"
                             className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"
                         >
-                            <i className="fa-solid fa-xmark"></i>
+                            <X size={18} />
                         </button>
                     </div>
 
@@ -58,13 +60,13 @@ export const PremiumChatWidget = () => {
                             className="group relative flex items-center gap-4 p-4 bg-green-500 hover:bg-green-600 rounded-2xl transition-all shadow-lg hover:shadow-green-500/30 transform hover:-translate-y-1"
                         >
                             <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center text-white scale-110 group-hover:rotate-6 transition-transform">
-                                <i className="fa-brands fa-whatsapp text-2xl"></i>
+                                <MessageCircle size={24} />
                             </div>
                             <div className="flex flex-col">
                                 <span className="text-white font-black text-sm">WhatsApp</span>
                                 <span className="text-white/80 text-[10px] font-bold">Réponse ultra-rapide</span>
                             </div>
-                            <i className="fa-solid fa-chevron-right ml-auto text-white/50 group-hover:text-white transition-colors"></i>
+                            <ChevronRight size={18} className="ml-auto text-white/50 group-hover:text-white transition-colors" />
                         </a>
 
                         {/* Messenger Button */}
@@ -75,13 +77,13 @@ export const PremiumChatWidget = () => {
                             className="group relative flex items-center gap-4 p-4 bg-blue-600 hover:bg-blue-700 rounded-2xl transition-all shadow-lg hover:shadow-blue-600/30 transform hover:-translate-y-1"
                         >
                             <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center text-white scale-110 group-hover:rotate-6 transition-transform">
-                                <i className="fa-brands fa-facebook-messenger text-2xl"></i>
+                                <Send size={24} />
                             </div>
                             <div className="flex flex-col">
                                 <span className="text-white font-black text-sm">Messenger</span>
                                 <span className="text-white/80 text-[10px] font-bold">Support Facebook</span>
                             </div>
-                            <i className="fa-solid fa-chevron-right ml-auto text-white/50 group-hover:text-white transition-colors"></i>
+                            <ChevronRight size={18} className="ml-auto text-white/50 group-hover:text-white transition-colors" />
                         </a>
 
                         <p className="text-center text-[9px] font-bold text-gray-400 mt-2 italic px-4">
@@ -90,8 +92,6 @@ export const PremiumChatWidget = () => {
                     </div>
                 </div>
             )}
-
-
         </div>
     );
 };

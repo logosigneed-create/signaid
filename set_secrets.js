@@ -35,8 +35,8 @@ async function setSecrets() {
 
         await new Promise((resolve) => {
             // Echo the value and pipe it to firebase functions:secrets:set
-            // --project signaid-d2d08 ensures it targets the right DB
-            const cmd = `echo ${value} | npx firebase functions:secrets:set ${key} --project signaid-d2d08`;
+            // --project signaid-prod ensures it targets the right DB
+            const cmd = `echo ${value} | npx firebase functions:secrets:set ${key} --project signaid-prod`;
 
             exec(cmd, (error, stdout, stderr) => {
                 if (error) {

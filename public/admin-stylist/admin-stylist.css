@@ -1,0 +1,656 @@
+/* AdminStylist UI - Premium Design */
+#admin-stylist-panel {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 320px;
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    z-index: 999999;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    color: #1a1a1a;
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+    overflow: hidden;
+    user-select: none;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+#admin-stylist-panel.minimized {
+    width: auto;
+    min-width: 150px;
+}
+
+#admin-stylist-panel.minimized .as-body,
+#admin-stylist-panel.minimized .as-actions {
+    display: none;
+}
+
+.as-header-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.as-btn-icon {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    transition: background 0.2s;
+}
+
+.as-btn-icon:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+
+.as-header {
+    padding: 16px;
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    color: white;
+    border-radius: 16px 16px 0 0;
+    cursor: grab;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: relative;
+}
+
+.as-header:active {
+    cursor: grabbing;
+}
+
+.as-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.as-body {
+    padding: 16px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.as-section {
+    margin-bottom: 20px;
+}
+
+.as-section h3 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin-bottom: 12px;
+}
+
+.as-control-group {
+    margin-bottom: 12px;
+}
+
+.as-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+.as-value {
+    color: #6366f1;
+    font-weight: 600;
+}
+
+/* Mode Toggle */
+.as-mode-toggle {
+    display: flex;
+    gap: 8px;
+    background: #f1f5f9;
+    padding: 4px;
+    border-radius: 10px;
+}
+
+.as-mode-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    color: #64748b;
+    transition: all 0.2s ease;
+}
+
+.as-mode-btn:hover {
+    color: #475569;
+}
+
+.as-mode-btn.active {
+    background: white;
+    color: #6366f1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.as-mode-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.as-mode-indicator {
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: 8px;
+}
+
+/* Mobile Size Selector */
+.as-mobile-sizes {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e2e8f0;
+}
+
+.as-size-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 10px;
+}
+
+.as-size-btn {
+    padding: 4px 8px;
+    font-size: 10px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.as-size-btn:hover {
+    border-color: #6366f1;
+    color: #6366f1;
+}
+
+.as-size-btn.active {
+    background: #6366f1;
+    color: white;
+    border-color: #6366f1;
+}
+
+.as-size-custom {
+    margin-top: 8px;
+}
+
+.as-size-custom label {
+    font-size: 11px;
+    color: #64748b;
+    display: block;
+    margin-bottom: 4px;
+}
+
+.as-size-custom label span {
+    color: #6366f1;
+    font-weight: 600;
+}
+
+/* Themed Sections */
+.as-sub-section {
+    margin-bottom: 24px;
+    padding: 12px;
+    background: rgba(248, 250, 252, 0.5);
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+}
+
+.as-sub-section h4 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    margin: 0 0 12px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.as-control-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.as-action-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 8px;
+    font-size: 10px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.as-action-btn:hover {
+    border-color: #6366f1;
+    color: #6366f1;
+}
+
+.as-action-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Toggle switches */
+.as-toggle-label {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    cursor: pointer;
+    padding: 6px 8px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+}
+
+.as-toggle-label input {
+    display: none;
+}
+
+.as-toggle-switch {
+    width: 28px;
+    height: 16px;
+    background: #cbd5e1;
+    border-radius: 8px;
+    position: relative;
+    transition: background 0.2s;
+}
+
+.as-toggle-switch::after {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    transition: transform 0.2s;
+}
+
+.as-toggle-label input:checked+.as-toggle-switch {
+    background: #6366f1;
+}
+
+.as-toggle-label input:checked+.as-toggle-switch::after {
+    transform: translateX(12px);
+}
+
+/* Warning button */
+.as-btn-warning {
+    background: #f59e0b;
+    color: white;
+}
+
+.as-btn-warning.active {
+    background: #10b981;
+}
+
+/* Decompose mode drag handle */
+.as-drag-handle {
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    width: 24px;
+    height: 24px;
+    background: #6366f1;
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: bold;
+    cursor: pointer;
+    z-index: 1000;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.as-drag-handle:hover {
+    transform: scale(1.1);
+}
+
+/* Sliders */
+.as-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    outline: none;
+}
+
+.as-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #6366f1;
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Highlight Overlay */
+#as-overlay {
+    position: fixed;
+    pointer-events: none;
+    border: 2px solid #6366f1;
+    background: rgba(99, 102, 241, 0.1);
+    z-index: 999998;
+    transition: all 0.1s ease-out;
+    display: none;
+}
+
+.as-tag {
+    position: absolute;
+    top: -25px;
+    left: 0;
+    background: #6366f1;
+    color: white;
+    padding: 2px 8px;
+    font-size: 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+/* Actions */
+.as-actions {
+    display: flex;
+    gap: 8px;
+    padding: 16px;
+    border-top: 1px solid #e2e8f0;
+    background: #f8fafc;
+}
+
+.as-btn {
+    flex: 1;
+    padding: 8px;
+    border-radius: 8px;
+    border: none;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.as-btn-primary {
+    background: #6366f1;
+    color: white;
+}
+
+.as-btn-secondary {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.as-btn:hover {
+    filter: brightness(1.1);
+}
+
+/* Invisible Elements List */
+.as-layers-list {
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 4px;
+}
+
+.as-layer-item {
+    padding: 6px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.as-layer-item:hover {
+    background: #f1f5f9;
+}
+
+.as-layer-item.selected {
+    background: #e0e7ff;
+    color: #4338ca;
+}
+
+/* ============================================
+   MOBILE PREVIEW MODE
+   ============================================ */
+
+:root {
+    --as-mobile-width: 375px;
+}
+
+/* Mobile Frame (Phone Mockup) */
+#as-mobile-frame {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: calc(var(--as-mobile-width) + 24px);
+    max-height: 90vh;
+    background: #1a1a1a;
+    border-radius: 40px;
+    padding: 12px;
+    box-shadow:
+        0 0 0 3px #333,
+        0 25px 50px rgba(0, 0, 0, 0.4),
+        inset 0 0 0 2px #444;
+    z-index: 999990;
+    display: none;
+    flex-direction: column;
+    transition: width 0.3s ease;
+}
+
+#as-mobile-frame.active {
+    display: flex;
+}
+
+.as-mobile-notch {
+    width: 150px;
+    height: 30px;
+    background: #1a1a1a;
+    border-radius: 0 0 20px 20px;
+    margin: 0 auto 8px;
+    position: relative;
+}
+
+.as-mobile-notch::before {
+    content: '';
+    position: absolute;
+    width: 60px;
+    height: 6px;
+    background: #333;
+    border-radius: 3px;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.as-mobile-screen {
+    flex: 1;
+    background: white;
+    border-radius: 20px;
+    overflow: hidden;
+    position: relative;
+}
+
+.as-mobile-home {
+    width: 120px;
+    height: 5px;
+    background: #666;
+    border-radius: 3px;
+    margin: 10px auto 0;
+}
+
+/* When mobile preview is active, scale the page content */
+body.as-mobile-preview {
+    overflow: hidden;
+}
+
+/* Create an iframe-like container effect for the mobile content */
+body.as-mobile-preview>#root,
+body.as-mobile-preview>.app,
+body.as-mobile-preview>main,
+body.as-mobile-preview>div:first-of-type:not(#admin-stylist-panel):not(#as-overlay):not(#as-mobile-frame) {
+    position: fixed !important;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: var(--as-mobile-width, 375px) !important;
+    max-width: var(--as-mobile-width, 375px) !important;
+    height: 80vh !important;
+    max-height: 80vh !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    z-index: 999991 !important;
+    background: white !important;
+    border-radius: 20px !important;
+    box-shadow: 0 0 0 12px #1a1a1a, 0 25px 50px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Hide the phone mockup frame since we're using box-shadow */
+body.as-mobile-preview #as-mobile-frame {
+    display: none !important;
+}
+
+/* Make internal content responsive */
+body.as-mobile-preview>#root *,
+body.as-mobile-preview>.app *,
+body.as-mobile-preview>main *,
+body.as-mobile-preview>div:first-of-type:not(#admin-stylist-panel):not(#as-overlay):not(#as-mobile-frame) * {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* Force images to be responsive */
+body.as-mobile-preview img {
+    max-width: 100% !important;
+    height: auto !important;
+}
+
+
+/* Dim the background when mobile mode is active */
+body.as-mobile-preview::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 999989;
+}
+
+/* Mobile mode indicator badge */
+body.as-mobile-preview #admin-stylist-panel .as-header::after {
+    content: '📱 Mobile';
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: #f59e0b;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.as-header {
+    position: relative;
+}
+
+/* ============================================
+   CODE PREVIEW PANEL
+   ============================================ */
+
+.as-code-preview {
+    padding: 12px;
+    background: #1e293b;
+    border-top: 1px solid #334155;
+}
+
+.as-code-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.as-code-header .as-btn-icon {
+    width: 20px;
+    height: 20px;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 14px;
+}
+
+.as-code-header .as-btn-icon:hover {
+    color: white;
+}
+
+#as-code-content {
+    background: #0f172a;
+    color: #a5f3fc;
+    padding: 12px;
+    border-radius: 8px;
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 200px;
+    margin: 0 0 10px 0;
+}
+
+#as-copy-code {
+    font-size: 11px;
+    padding: 8px;
+}
+
+/* Default Workspace Centering */
+body.as-active #root {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    min-height: 100vh !important;
+    width: 100% !important;
+}

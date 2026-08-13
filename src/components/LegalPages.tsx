@@ -37,7 +37,7 @@ export const ConditionsGenerales: React.FC = () => (
         </p>
 
         <h2>2. Objet</h2>
-        <p>Les présentes Conditions Générales d'Utilisation et de Vente (CGU/CGV) régissent l'utilisation de la plateforme SIGNAID, accessible à l'adresse <a href="https://signaid-d2d08.web.app" target="_blank" rel="noopener noreferrer">signaid-d2d08.web.app</a>, ainsi que la vente de produits personnalisés proposés par Logo Signeed.</p>
+        <p>Les présentes Conditions Générales d'Utilisation et de Vente (CGU/CGV) régissent l'utilisation de la plateforme SIGNAID, accessible à l'adresse <a href="https://signaid.eu" target="_blank" rel="noopener noreferrer">signaid.eu</a>, ainsi que la vente de produits personnalisés proposés par Logo Signeed.</p>
 
         <h2>3. Acceptation des conditions</h2>
         <p>L'accès et l'utilisation de la plateforme impliquent l'acceptation pleine et entière des présentes CGU/CGV. Si vous n'acceptez pas ces conditions, veuillez ne pas utiliser nos services.</p>

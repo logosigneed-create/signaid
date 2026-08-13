@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Super Agent Signaid V3 - Command Center</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script type="importmap">
+      {
+        "imports": {
+          "@google/generative-ai": "https://esm.run/@google/generative-ai"
+        }
+      }
+    </script>
+    <style>
+        :root {
+            --bg-deep: #020203;
+            --bg-card: #0a0a0c;
+            --primary: #c084fc;
+            --secondary: #22d3ee;
+            --text-main: #f1f5f9;
+            --text-muted: #64748b;
+            --glass: rgba(255, 255, 255, 0.02);
+            --border: rgba(255, 255, 255, 0.08);
+        }
+
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            background: var(--bg-deep);
+            color: var(--text-main);
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar responsive */
+        .sidebar {
+            width: 280px;
+            background: var(--bg-card);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+        }
+
+        .logo-type { font-weight: 800; font-size: 1.2rem; letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px; }
+        .logo-orb { width: 12px; height: 12px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 15px var(--primary); }
+
+        .nav-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 16px; margin-top: 30px; }
+
+        .agent-list { display: flex; flex-direction: column; gap: 6px; }
+        .agent-item {
+            padding: 12px 16px; border-radius: 12px; cursor: pointer; transition: 0.2s;
+            display: flex; align-items: center; gap: 12px; border: 1px solid transparent;
+        }
+        .agent-item:hover { background: var(--glass); }
+        .agent-item.active { background: rgba(192, 132, 252, 0.1); border-color: rgba(192, 132, 252, 0.2); }
+        .agent-item.cerveau { background: linear-gradient(to right, rgba(168, 85, 247, 0.1), transparent); font-weight: 800; border-color: rgba(168, 85, 247, 0.3); }
+
+        .add-agent-btn {
+            margin-top: 20px; padding: 10px; border-radius: 12px; border: 1px dashed var(--border);
+            color: var(--text-muted); text-align: center; cursor: pointer; font-size: 0.8rem;
+        }
+
+        /* Main View */
+        .main-view { flex:1; display: flex; flex-direction: column; background: radial-gradient(circle at top right, #08080a, #020203); }
+        .header { padding: 20px 30px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        
+        .chat-area { flex:1; padding: 30px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+        
+        .msg-bubble { 
+            padding: 14px 18px; border-radius: 20px; font-size: 0.9rem; line-height: 1.6;
+            background: var(--glass); border: 1px solid var(--border); white-space: pre-wrap;
+        }
+        .msg.user { align-self: flex-end; }
+        .msg.user .msg-bubble { background: var(--primary); color: white; border-bottom-right-radius: 4px; border:none; }
+
+        /* Mobile specific adjustments */
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            .sidebar { width: 100%; height: auto; padding: 15px; border-right: none; border-bottom: 1px solid var(--border); }
+            .right-panel { display: none; }
+            .header { padding: 15px; }
+            .chat-area { padding: 15px; }
+            .agent-list { flex-direction: row; overflow-x: auto; padding-bottom: 10px; }
+            .agent-item { white-space: nowrap; }
+        }
+
+        /* Input Zone */
+        .input-zone { padding: 20px; }
+        .input-box {
+            background: var(--bg-card); border: 1px solid var(--border); border-radius: 24px;
+            padding: 10px 20px; display: flex; gap: 15px; align-items: flex-end;
+        }
+        textarea {
+            flex:1; background: transparent; border:none; color: white; resize:none;
+            padding: 8px 0; font-family: inherit; font-size: 0.95rem; outline:none; max-height: 150px;
+        }
+
+        .right-panel { width: 320px; background: var(--bg-card); border-left: 1px solid var(--border); padding: 24px; overflow-y: auto; }
+        .data-card { background: var(--glass); border: 1px solid var(--border); border-radius: 16px; padding: 20px; margin-bottom: 20px; }
+        .data-title { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; color: var(--text-muted); margin-bottom: 12px; }
+        .data-item { font-size: 0.75rem; padding: 6px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 5px; border-left: 2px solid var(--primary); }
+
+        .typing { font-size: 0.7rem; color: var(--primary); font-weight: 700; margin-bottom: 5px; opacity: 0; transition: 0.3s; }
+        .typing.visible { opacity: 1; }
+
+        #modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(10px); }
+        .modal-content { background: var(--bg-card); padding: 30px; border-radius: 24px; width: 90%; max-width: 500px; border: 1px solid var(--border); }
+        input, textarea { width: 100%; border: 1px solid var(--border); background: var(--glass); color: white; padding: 12px; border-radius: 12px; margin: 10px 0; outline:none; font-family: inherit; }
+    </style>
+</head>
+<body>
+
+    <aside class="sidebar">
+        <div class="logo-type"><div class="logo-orb"></div> SUPER.AGENT</div>
+        
+        <div class="nav-label">Agents</div>
+        <div class="agent-list" id="agent-list-dynamic">
+            <div class="agent-item active cerveau" onclick="switchAgent('super')"><span>🧠 SUPER</span></div>
+            <!-- Dynamic Agents -->
+        </div>
+        <div class="add-agent-btn" onclick="openModal('agent')">+ Agent</div>
+    </aside>
+
+    <main class="main-view">
+        <header class="header">
+            <div>
+                <h2 id="current-agent-name" style="font-size: 1.1rem;">Super Agent</h2>
+                <p id="current-agent-desc" style="font-size: 0.7rem; color: var(--text-muted);">Prêt pour l'analyse.</p>
+            </div>
+            <button onclick="localStorage.clear(); location.reload();" style="background:none; border: 1px solid var(--border); color: var(--text-muted); padding: 4px 10px; border-radius: 20px; font-size: 0.6rem;">Reset</button>
+        </header>
+
+        <section class="chat-area" id="chat-box"></section>
+
+        <footer class="input-zone">
+            <div id="typing-indicator" class="typing">Gemini analyse...</div>
+            <div class="input-box">
+                <textarea id="user-input" placeholder="Instruction..." rows="1" oninput="this.style.height = ''; this.style.height = this.scrollHeight + 'px'"></textarea>
+                <button id="send-btn" style="background: var(--primary); color:black; border:none; padding: 10px 18px; border-radius: 15px; font-weight: 800;">OK</button>
+            </div>
+        </footer>
+    </main>
+
+    <aside class="right-panel">
+        <div class="data-card">
+            <div class="data-title">📂 Data Room <button style="float:right; border:none; background:var(--primary); width:18px; height:18px; border-radius:50%; font-size:12px; cursor:pointer" onclick="openModal('data')">+</button></div>
+            <div id="data-list"></div>
+        </div>
+        <div class="data-card">
+            <div class="data-title">🧠 Mémoire Inter-Agent</div>
+            <label style="font-size: 0.65rem; color: var(--text-muted); cursor:pointer">
+                <input type="checkbox" id="cross-consult" checked> Mode Cerveau Partagé
+            </label>
+        </div>
+    </aside>
+
+    <div id="modal" onclick="if(event.target === this) closeModal()">
+        <div class="modal-content" id="modal-agent" style="display:none">
+            <h3>Nouvel Agent</h3>
+            <input type="text" id="new-agent-name" placeholder="Nom">
+            <textarea id="new-agent-prompt" placeholder="Instruction système..." rows="4"></textarea>
+            <button onclick="saveAgent()" style="width:100%; padding:15px; background:var(--primary); border:none; border-radius:12px; font-weight:800; margin-top:10px;">Lancer</button>
+        </div>
+        <div class="modal-content" id="modal-data" style="display:none">
+            <h3>Data Injection</h3>
+            <input type="text" id="data-label" placeholder="Label">
+            <textarea id="data-content" placeholder="Contenu (JSON/Texte)..." rows="6"></textarea>
+            <button onclick="saveData()" style="width:100%; padding:15px; background:var(--secondary); border:none; border-radius:12px; font-weight:800; margin-top:10px;">Injecter</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { GoogleGenerativeAI } from "@google/generative-ai";
+        const API_KEY = "AIzaSyA72FVAbnQqyybCS6NMAesXVkjyV7D6ozc";
+        const genAI = new GoogleGenerativeAI(API_KEY);
+        
+        let state = JSON.parse(localStorage.getItem('signaid_hub_v3')) || {
+            currentAgentId: 'super',
+            agents: { 'super': { name: "SUPER AGENT", system: "Tu es le Cerveau Central de Signaid V24. Tu coordonnes la stratégie SaaS." } },
+            dataItems: [],
+            history: { 'super': [] }
+        };
+
+        const persist = () => localStorage.setItem('signaid_hub_v3', JSON.stringify(state));
+
+        window.switchAgent = (id) => {
+            state.currentAgentId = id;
+            refreshAgents();
+            renderMessages();
+            persist();
+        };
+
+        window.openModal = (t) => {
+            document.getElementById('modal').style.display='flex';
+            document.getElementById('modal-agent').style.display= t==='agent'?'block':'none';
+            document.getElementById('modal-data').style.display= t==='data'?'block':'none';
+        };
+        window.closeModal = () => document.getElementById('modal').style.display='none';
+
+        window.saveAgent = () => {
+            const n=document.getElementById('new-agent-name').value, s=document.getElementById('new-agent-prompt').value;
+            const id='a_'+Date.now(); if(!n||!s) return;
+            state.agents[id]={name:n, system:s}; state.history[id]=[];
+            closeModal(); refreshAgents(); persist();
+        };
+
+        window.saveData = () => {
+            const l=document.getElementById('data-label').value, c=document.getElementById('data-content').value;
+            if(!l||!c) return; state.dataItems.push({label:l, content:c});
+            closeModal(); refreshData(); persist();
+        };
+
+        function refreshAgents() {
+            const c=document.getElementById('agent-list-dynamic'); c.innerHTML='';
+            Object.keys(state.agents).forEach(id => {
+                const d=document.createElement('div');
+                d.className=`agent-item ${id==='super'?'cerveau':''} ${state.currentAgentId===id?'active':''}`;
+                d.onclick=()=>switchAgent(id);
+                d.innerHTML=`<span>${state.agents[id].name}</span>`;
+                c.appendChild(d);
+            });
+        }
+
+        function refreshData() {
+            const c=document.getElementById('data-list'); c.innerHTML='';
+            state.dataItems.forEach(i => {
+                const d=document.createElement('div'); d.className='data-item';
+                d.innerHTML=`<strong>${i.label}</strong>`; c.appendChild(d);
+            });
+        }
+
+        async function runGemini(input) {
+            document.getElementById('typing-indicator').classList.add('visible');
+            try {
+                const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+                let sys = state.agents[state.currentAgentId].system;
+                if(state.dataItems.length) sys += "\nDATA:\n" + state.dataItems.map(d=> `${d.label}: ${d.content}`).join("\n");
+                if(document.getElementById('cross-consult').checked) {
+                    sys += "\nMEMOIRE AUTRES AGENTS:\n" + Object.keys(state.history).filter(id=>id!==state.currentAgentId).map(id=> {
+                        const m=state.history[id].slice(-1)[0]; return m? `@${state.agents[id].name}: ${m.text.substring(0,150)}` : "";
+                    }).join("\n");
+                }
+                const chat = model.startChat({ history: [{role:"user", parts:[{text: "System:"+sys}]}, {role:"model", parts:[{text:"OK."}]}] });
+                const r = await chat.sendMessage(input); return (await r.response).text();
+            } catch(e) { return "Erreur: "+e.message; }
+            finally { document.getElementById('typing-indicator').classList.remove('visible'); }
+        }
+
+        function renderMessages() {
+            const b=document.getElementById('chat-box'); b.innerHTML='';
+            (state.history[state.currentAgentId]||[]).forEach(m=>{
+                const d=document.createElement('div'); d.className=`msg ${m.role}`;
+                d.innerHTML=`<div class="msg-bubble">${m.text}</div>`; b.appendChild(d);
+            });
+            b.scrollTop = b.scrollHeight;
+        }
+
+        document.getElementById('send-btn').onclick = async () => {
+            const i=document.getElementById('user-input'), t=i.value.trim(); if(!t) return;
+            if(!state.history[state.currentAgentId]) state.history[state.currentAgentId]=[];
+            state.history[state.currentAgentId].push({role:'user', text:t});
+            i.value=''; renderMessages();
+            const res = await runGemini(t);
+            state.history[state.currentAgentId].push({role:'agent', text:res});
+            renderMessages(); persist();
+        };
+
+        refreshAgents(); refreshData(); renderMessages();
+    </script>
+</body>
+</html>

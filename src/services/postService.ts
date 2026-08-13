@@ -111,36 +111,79 @@ class PostService {
         }
     }
 
+    async getUserPosts(userId: string, username?: string): Promise<Post[]> {
+        try {
+            let combined: Post[] = [];
+
+            // 1. Primary: By User ID (Nested or Root)
+            const idQueries = [
+                query(this.postsCollection, where("user.id", "==", userId)),
+                query(this.postsCollection, where("userId", "==", userId))
+            ];
+            
+            for (const q of idQueries) {
+                const snap = await getDocs(q);
+                this.processDocs(snap).forEach(p => {
+                    if (!combined.some(cp => cp.id === p.id)) combined.push(p);
+                });
+            }
+
+            // 2. Fallback: By Username (Various variants)
+            if (username) {
+                const names = new Set([username, username.toLowerCase(), username.toUpperCase()]);
+                // Also try with and without @
+                names.forEach(n => {
+                    if (n.startsWith('@')) names.add(n.substring(1));
+                    else names.add('@' + n);
+                });
+
+                for (const name of Array.from(names)) {
+                    const nameQueries = [
+                        query(this.postsCollection, where("user.username", "==", name)),
+                        query(this.postsCollection, where("user.name", "==", name)) // Secondary field variant
+                    ];
+                    for (const q of nameQueries) {
+                        try {
+                            const snap = await getDocs(q);
+                            this.processDocs(snap).forEach(p => {
+                                if (!combined.some(cp => cp.id === p.id)) combined.push(p);
+                            });
+                        } catch (e) { /* skip */ }
+                    }
+                }
+            }
+
+            // Final sort (merged results)
+            combined.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+            return combined;
+        } catch (error) {
+            console.error("Error fetching user posts:", error);
+            const qFallback = query(this.postsCollection, where("user.id", "==", userId));
+            const snapshot = await getDocs(qFallback);
+            return this.processDocs(snapshot);
+        }
+    }
+
     async getPosts(lastDoc: any = null, limitCount: number = 12): Promise<{ posts: Post[], lastDoc: any }> {
         try {
-            // OPTIMIZATION: Restore server-side orderBy to reduce client-side processing
-            // and ensure we only fetch THE latest items, not a random set limited to X.
             let q;
             if (lastDoc) {
                 q = query(this.postsCollection, orderBy('createdAt', 'desc'), startAfter(lastDoc), limit(limitCount));
             } else {
                 q = query(this.postsCollection, orderBy('createdAt', 'desc'), limit(limitCount));
             }
-
             const querySnapshot = await getDocs(q);
             let posts = this.processDocs(querySnapshot);
-
-            console.log(`[PostService] Fetched ${posts.length} posts (Server-Side Ordered).`);
             const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1];
             return { posts, lastDoc: lastVisible };
-
         } catch (error) {
             console.error("Error fetching posts:", error);
-            // Fallback for missing index error (if user hasn't clicked the link yet)
-            console.warn("Retrying without server-side sort (Index might be missing)...");
             const qFallback = lastDoc 
                 ? query(this.postsCollection, startAfter(lastDoc), limit(limitCount))
                 : query(this.postsCollection, limit(limitCount));
-            
             const querySnapshot = await getDocs(qFallback);
             let posts = this.processDocs(querySnapshot);
             posts.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-            
             const lastVisible = querySnapshot.docs[querySnapshot.docs.length - 1];
             return { posts, lastDoc: lastVisible };
         }

@@ -56,7 +56,7 @@ export const CartItemRow: React.FC<CartItemRowProps> = ({
                 <div className="flex flex-col sm:flex-row w-full h-full">
                     {/* LEFT COLUMN: AI Image OR AI Launcher */}
                     <div className="flex flex-col w-full sm:w-1/2 bg-gray-50/50 flex-shrink-0 border-b sm:border-b-0 sm:border-r border-gray-100 relative group/ai pb-4 sm:pb-0">
-                        {item.aiImageUrl ? (
+                        {(item.aiImageUrl || item.aiImageUrlFront || item.aiImageUrlBack) ? (
                             <>
                                 <div className="relative w-full aspect-[3/4] group overflow-hidden">
                                     <div className="w-full h-full cursor-pointer animate-fade-in" onClick={() => onEdit(item)}>
@@ -64,8 +64,26 @@ export const CartItemRow: React.FC<CartItemRowProps> = ({
                                             <i className="fa-solid fa-microchip"></i>
                                             Modèle IA
                                         </div>
+                                        
+                                        {((item.aiImageUrlFront || item.aiImageUrl) && (item.aiImageUrlBack)) && (
+                                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur rounded-lg shadow-sm border border-gray-100 p-1 flex z-10" onClick={(e) => e.stopPropagation()}>
+                                                <button
+                                                    onClick={() => setGhostView('face')}
+                                                    className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest transition-all ${ghostView === 'face' ? 'bg-orange-500 text-white' : 'text-gray-500'}`}
+                                                >
+                                                    Face
+                                                </button>
+                                                <button
+                                                    onClick={() => setGhostView('back')}
+                                                    className={`px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest transition-all ${ghostView === 'back' ? 'bg-orange-500 text-white' : 'text-gray-500'}`}
+                                                >
+                                                    Dos
+                                                </button>
+                                            </div>
+                                        )}
+
                                         <CartItemImage
-                                            src={item.aiImageUrl}
+                                            src={(ghostView === 'back' ? (item.aiImageUrlBack || item.aiImageUrl) : (item.aiImageUrlFront || item.aiImageUrl)) as string}
                                             className="w-full h-full !object-contain"
                                             alt={product.name + " AI"}
                                         />

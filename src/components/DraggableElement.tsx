@@ -19,11 +19,15 @@ interface DraggableElementProps {
     onDragStart?: () => void;
     onDragUpdate?: (dx: number, dy: number) => void;
     onReportDimensions?: (w: number, h: number) => void;
+    onResizeStateChange?: (isResizing: boolean) => void;
+    isManualPicking?: boolean;
+    onColorPicked?: (hex: string) => void;
+    onDragEnd?: () => void;
 }
 
 export function DraggableElement({
     id, type, item, side, isActive, setActive, onUpdate, onSaveHistory, isEditable, realHeight, onOpenOptions, showDimensions,
-    isGrouped, onDragStart, onDragUpdate, onReportDimensions
+    isGrouped, onDragStart, onDragUpdate, onReportDimensions, onResizeStateChange, isManualPicking, onColorPicked, onDragEnd
 }: DraggableElementProps) {
     const elementRef = useRef<HTMLDivElement>(null);
     const [isDragging, setIsDragging] = useState(false);
@@ -71,6 +75,7 @@ export function DraggableElement({
                 if (!dragInfo.current.initialPinchDist) {
                     dragInfo.current.initialPinchDist = dist;
                     dragInfo.current.initialSize = getProp('logoSize');
+                    onResizeStateChange?.(true);
                     return;
                 }
 
@@ -88,12 +93,13 @@ export function DraggableElement({
             const { startX, startY, initialPosX, initialPosY, initialSize, parentWidth, parentHeight } = dragInfo.current;
 
             if (isDragging) {
+                if (showDimensions) return; // BLOCK MOVEMENT IN MEASUREMENT MODE
                 const dx = ((clientX - startX) / parentWidth) * 100;
                 const dy = ((clientY - startY) / parentHeight) * 100;
 
                 // Mark as moved if movement exceeds 5 pixels (Threshold to avoid accidental micro-moves)
                 const dist = Math.hypot(clientX - startX, clientY - startY);
-                if (dist > 5) {
+                if (dist > 8) { // Increased threshold for touch reliability
                     hasMoved.current = true;
 
                     if (isGrouped && onDragUpdate) {
@@ -101,8 +107,13 @@ export function DraggableElement({
                         return;
                     }
 
-                    const newX = Math.min(100, Math.max(0, initialPosX + dx));
+                    let newX = Math.min(100, Math.max(0, initialPosX + dx));
                     const newY = Math.min(100, Math.max(0, initialPosY + dy));
+
+                    // SNAP TO CENTER (X=50)
+                    if (newX > 48.5 && newX < 51.5) {
+                        newX = 50;
+                    }
 
                     // OPTIMIZATION: Update local state instead of parent on every pixel
                     setTempPos({ x: newX, y: newY });
@@ -164,10 +175,14 @@ export function DraggableElement({
                 }
             }
 
+            if (isResizing) onResizeStateChange?.(false);
             setIsDragging(false);
             setIsResizing(false);
             setTempPos(null); // Clear local drag state
             dragInfo.current.initialPinchDist = 0; // Reset pinch
+            if (hasMoved.current) {
+                onDragEnd?.();
+            }
             onSaveHistory();
         };
 
@@ -182,7 +197,7 @@ export function DraggableElement({
             window.removeEventListener('mouseup', handleUp);
             window.removeEventListener('touchend', handleUp);
         };
-    }, [isDragging, isResizing, type, side, onUpdate, onSaveHistory, tempPos]);
+    }, [isDragging, isResizing, type, side, onUpdate, onSaveHistory, tempPos, onDragEnd]);
 
     // --- TEXT DIMENSION CALCULATION ---
     const [textDims, setTextDims] = useState<{ w: number, h: number } | null>(null);
@@ -230,14 +245,18 @@ export function DraggableElement({
         if (type === 'logo') {
             if (id.startsWith('logoFront') && id !== 'logoFront') {
                 const config = (itemRef.current as any)[id] as LogoConfig;
-                if (key === 'logoPositionX') return config?.position?.x ?? 50;
-                if (key === 'logoPositionY') return config?.position?.y ?? 50;
-                if (key === 'logoSize') return config?.size ?? 50;
+                if (!config) return undefined;
+                if (key === 'logoPositionX') return config.position?.x ?? 50;
+                if (key === 'logoPositionY') return config.position?.y ?? 50;
+                if (key === 'logoSize') return config.size ?? 50;
+                return undefined;
             } else if (id.startsWith('logoBack') && id !== 'logoBack') {
                 const config = (itemRef.current as any)[id] as LogoConfig;
-                if (key === 'logoPositionX') return config?.position?.x ?? 50;
-                if (key === 'logoPositionY') return config?.position?.y ?? 50;
-                if (key === 'logoSize') return config?.size ?? 50;
+                if (!config) return undefined;
+                if (key === 'logoPositionX') return config.position?.x ?? 50;
+                if (key === 'logoPositionY') return config.position?.y ?? 50;
+                if (key === 'logoSize') return config.size ?? 50;
+                return undefined;
             }
         }
         return (itemRef.current as any)[`${key}${side}`];
@@ -249,26 +268,30 @@ export function DraggableElement({
         if (type === 'logo') {
             if (id.startsWith('logoFront') && id !== 'logoFront') {
                 const config = (item as any)[id] as LogoConfig;
-                if (key === 'logoPositionX') return config?.position?.x ?? 50;
-                if (key === 'logoPositionY') return config?.position?.y ?? 50;
-                if (key === 'logoSize') return config?.size ?? 50;
-                if (key === 'processedLogoUrl') return config?.processedUrl;
-                if (key === 'originalLogoUrl') return config?.originalUrl;
-                if (key === 'predefinedLogoUrl') return config?.predefinedUrl;
-                if (key === 'activeLogoColor') return config?.activeColor;
-                if (key === 'logoInverted') return config?.inverted;
-                if (key === 'backgroundRemoved') return config?.backgroundRemoved;
+                if (!config) return undefined;
+                if (key === 'logoPositionX') return config.position?.x ?? 50;
+                if (key === 'logoPositionY') return config.position?.y ?? 50;
+                if (key === 'logoSize') return config.size ?? 50;
+                if (key === 'processedLogoUrl') return config.processedUrl;
+                if (key === 'originalLogoUrl') return config.originalUrl;
+                if (key === 'predefinedLogoUrl') return config.predefinedUrl;
+                if (key === 'activeLogoColor') return config.activeColor || 'original';
+                if (key === 'logoInverted') return config.inverted || false;
+                if (key === 'backgroundRemoved') return config.backgroundRemoved || false;
+                return undefined;
             } else if (id.startsWith('logoBack') && id !== 'logoBack') {
                 const config = (item as any)[id] as LogoConfig;
-                if (key === 'logoPositionX') return config?.position?.x ?? 50;
-                if (key === 'logoPositionY') return config?.position?.y ?? 50;
-                if (key === 'logoSize') return config?.size ?? 50;
-                if (key === 'processedLogoUrl') return config?.processedUrl;
-                if (key === 'originalLogoUrl') return config?.originalUrl;
-                if (key === 'predefinedLogoUrl') return config?.predefinedUrl;
-                if (key === 'activeLogoColor') return config?.activeColor;
-                if (key === 'logoInverted') return config?.inverted;
-                if (key === 'backgroundRemoved') return config?.backgroundRemoved;
+                if (!config) return undefined;
+                if (key === 'logoPositionX') return config.position?.x ?? 50;
+                if (key === 'logoPositionY') return config.position?.y ?? 50;
+                if (key === 'logoSize') return config.size ?? 50;
+                if (key === 'processedLogoUrl') return config.processedUrl;
+                if (key === 'originalLogoUrl') return config.originalUrl;
+                if (key === 'predefinedLogoUrl') return config.predefinedUrl;
+                if (key === 'activeLogoColor') return config.activeColor || 'original';
+                if (key === 'logoInverted') return config.inverted || false;
+                if (key === 'backgroundRemoved') return config.backgroundRemoved || false;
+                return undefined;
             }
         }
         return (item as any)[`${key}${side}`];
@@ -318,15 +341,41 @@ export function DraggableElement({
     if (type === 'text' && !content) return null;
 
     const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
-        if (!isEditable) return;
-        e.stopPropagation(); // Prevent preview click
-        wasActiveOnMouseDown.current = isActive;
-        setActive();
-        hasMoved.current = false; // Reset on start
-        if (isGrouped) onDragStart?.();
-
         const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+
+        if (isManualPicking && type === 'logo' && onColorPicked) {
+            e.stopPropagation();
+            const img = elementRef.current?.querySelector('img');
+            if (img) {
+                const rect = img.getBoundingClientRect();
+                const rx = (clientX - rect.left) / rect.width;
+                const ry = (clientY - rect.top) / rect.height;
+
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.drawImage(img, 0, 0);
+                    const pixel = ctx.getImageData(
+                        Math.max(0, Math.min(canvas.width - 1, Math.floor(rx * canvas.width))),
+                        Math.max(0, Math.min(canvas.height - 1, Math.floor(ry * canvas.height))),
+                        1, 1
+                    ).data;
+                    const hex = `#${pixel[0].toString(16).padStart(2, '0')}${pixel[1].toString(16).padStart(2, '0')}${pixel[2].toString(16).padStart(2, '0')}`;
+                    onColorPicked(hex.toUpperCase());
+                }
+            }
+            return;
+        }
+
+        if (!showDimensions) e.stopPropagation(); // Allow tape measure start if measuring
+        wasActiveOnMouseDown.current = isActive;
+        setActive();
+        if (!isEditable) return;
+        hasMoved.current = false; // Reset on start
+        if (isGrouped) onDragStart?.();
 
         const parent = elementRef.current?.offsetParent as HTMLElement;
         if (!parent) return;
@@ -370,6 +419,7 @@ export function DraggableElement({
         const startDist = Math.hypot(clientX - centerX, clientY - centerY);
 
         setIsResizing(true);
+        onResizeStateChange?.(true);
         dragInfo.current = {
             ...dragInfo.current,
             startX: clientX,
@@ -388,7 +438,7 @@ export function DraggableElement({
         left: `${posX}%`,
         top: `${posY}%`,
         transform: 'translate(-50%, -50%)',
-        cursor: isEditable ? 'move' : 'default',
+        cursor: isEditable ? (showDimensions ? 'default' : 'move') : 'default',
         border: (isActive || showDimensions) && isEditable ? '1px dashed #f97316' : 'none',
         zIndex: isActive ? 50 : 40,
         maxWidth: '80%',
@@ -423,9 +473,12 @@ export function DraggableElement({
             <div
                 ref={elementRef}
                 style={style}
-                onMouseDown={handleMouseDown}
-                onTouchStart={handleMouseDown}
-                onClick={(e) => { e.stopPropagation(); if (!hasMoved.current && wasActiveOnMouseDown.current && onOpenOptions) onOpenOptions(); }}
+                onPointerDown={handleMouseDown}
+                onClick={(e) => { 
+                    e.stopPropagation(); 
+                    setActive(); // Fallback to ensure selection even if PointerDown was missed/interrupted
+                    if (!hasMoved.current && wasActiveOnMouseDown.current && onOpenOptions) onOpenOptions(); 
+                }}
                 onDoubleClick={(e) => { e.stopPropagation(); if (onOpenOptions) onOpenOptions(); }}
             >
                 <img
@@ -491,30 +544,26 @@ export function DraggableElement({
                         {/* Top Left */}
                         <div
                             className="absolute -top-2.5 -left-2.5 w-6 h-6 bg-orange-500 rounded-full cursor-nwse-resize z-[100] shadow-md border-2 border-white pointer-events-auto"
-                            onMouseDown={handleResizeStart}
-                            onTouchStart={handleResizeStart}
+                            onPointerDown={handleResizeStart}
                         />
                         {/* Top Right */}
                         <div
                             className="absolute -top-2.5 -right-2.5 w-6 h-6 bg-orange-500 rounded-full cursor-nesw-resize z-[100] shadow-md border-2 border-white pointer-events-auto"
-                            onMouseDown={handleResizeStart}
-                            onTouchStart={handleResizeStart}
+                            onPointerDown={handleResizeStart}
                         />
                         {/* Bottom Left */}
                         <div
                             className="absolute -bottom-2.5 -left-2.5 w-6 h-6 bg-orange-500 rounded-full cursor-nesw-resize z-[100] shadow-md border-2 border-white pointer-events-auto"
-                            onMouseDown={handleResizeStart}
-                            onTouchStart={handleResizeStart}
+                            onPointerDown={handleResizeStart}
                         />
                         {/* Bottom Right */}
                         <div
                             className="absolute -bottom-2.5 -right-2.5 w-6 h-6 bg-orange-500 rounded-full cursor-nwse-resize z-[100] shadow-md border-2 border-white pointer-events-auto"
-                            onMouseDown={handleResizeStart}
-                            onTouchStart={handleResizeStart}
+                            onPointerDown={handleResizeStart}
                         />
                     </>
                 )}
-                {dimensionsText && showDimensions && !isGrouped && (
+                {dimensionsText && (isActive || showDimensions) && !isGrouped && (
                     <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap pointer-events-none shadow-lg z-[60]">
                         {dimensionsText}
                     </div>
@@ -533,7 +582,7 @@ export function DraggableElement({
             zIndex: isActive ? 50 : 40,
             maxWidth: '80%',
             maxHeight: '80%',
-            cursor: isEditable ? 'move' : 'default',
+            cursor: isEditable ? (showDimensions ? 'default' : 'move') : 'default',
             border: (isActive || showDimensions) && isEditable ? '1px dashed #f97316' : 'none',
             userSelect: 'none',
             width: 'max-content',
@@ -626,10 +675,10 @@ export function DraggableElement({
             <div
                 ref={elementRef}
                 style={containerStyle}
-                onMouseDown={handleMouseDown}
-                onTouchStart={handleMouseDown}
+                onPointerDown={handleMouseDown}
                 onClick={(e) => {
                     e.stopPropagation();
+                    setActive(); // Selection fallback
                     if (!hasMoved.current && wasActiveOnMouseDown.current && onOpenOptions) {
                         onOpenOptions();
                     }
@@ -769,34 +818,30 @@ export function DraggableElement({
                         {/* Top Left */}
                         <div
                             className="absolute -top-1 -left-1 w-4 h-4 bg-orange-500 rounded-full cursor-nwse-resize z-50 shadow-md border border-white"
-                            onMouseDown={handleResizeStart}
-                            onTouchStart={handleResizeStart}
+                            onPointerDown={handleResizeStart}
                             contentEditable={false} // Prevent edit
                         />
                         {/* Top Right */}
                         <div
                             className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full cursor-nesw-resize z-50 shadow-md border border-white"
-                            onMouseDown={handleResizeStart}
-                            onTouchStart={handleResizeStart}
+                            onPointerDown={handleResizeStart}
                             contentEditable={false}
                         />
                         {/* Bottom Left */}
                         <div
                             className="absolute -bottom-1 -left-1 w-4 h-4 bg-orange-500 rounded-full cursor-nesw-resize z-50 shadow-md border border-white"
-                            onMouseDown={handleResizeStart}
-                            onTouchStart={handleResizeStart}
+                            onPointerDown={handleResizeStart}
                             contentEditable={false}
                         />
                         {/* Bottom Right */}
                         <div
                             className="absolute -bottom-1 -right-1 w-4 h-4 bg-orange-500 rounded-full cursor-nwse-resize z-50 shadow-md border border-white"
-                            onMouseDown={handleResizeStart}
-                            onTouchStart={handleResizeStart}
+                            onPointerDown={handleResizeStart}
                             contentEditable={false}
                         />
                     </>
                 )}
-                {showDimensions && !isGrouped && (
+                {(isActive || showDimensions) && !isGrouped && (
                     <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 rounded whitespace-nowrap pointer-events-none z-[60] shadow-lg" contentEditable={false}>
                         {textDims ? `${textDims.w.toFixed(1)} x ${textDims.h.toFixed(1)} cm` : `Taille: ${Math.round(textObj.fontSize)} px`}
                     </div>

@@ -54,43 +54,64 @@ export const TextRenderer: React.FC<TextRendererProps> = ({ textObj, style }) =>
                     preserveAspectRatio="xMidYMid meet"
                 >
                     {(() => {
+                        const mCanvas = document.createElement('canvas');
+                        const mCtx = mCanvas.getContext('2d');
+                        if (!mCtx) return null;
+                        
+                        const fontFamily = textObj.fontFamily || 'Inter';
+                        const fontSize = textObj.fontSize;
+                        const fontWeight = textObj.fontWeight || '700';
+                        const pkgSpacing = textObj.letterSpacing || 0;
+
+                        mCtx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+                        
+                        const chars = textObj.text.split('');
+                        const charWidths = chars.map(c => mCtx.measureText(c).width);
+                        const totalTextWidth = charWidths.reduce((a, b) => a + b, 0) + (pkgSpacing * (chars.length - 1));
+
+                        const scX = Math.abs(textObj.scaleX || 1);
+                        const scaledTotalWidth = totalTextWidth * scX;
+
                         const getQuadraticBezierPoint = (t: number, p0: any, p1: any, p2: any) => {
                             const x = (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * p1.x + t * t * p2.x;
                             const y = (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * p1.y + t * t * p2.y;
                             return { x, y };
                         };
-                        const P0 = { x: 30, y: baselineY };
-                        const P1 = { x: svgWidth / 2, y: baselineY + (textObj.curve * 3) };
-                        const P2 = { x: svgWidth - 30, y: baselineY };
 
-                        const isUpright = textObj.curveStyle === 'upright';
+                        // Use the real measured width for the curve start/end
+                        const horizontalMargin = 40;
+                        const svgWidthReal = scaledTotalWidth + horizontalMargin * 2;
+                        
+                        const P0 = { x: horizontalMargin, y: baselineY };
+                        const P1 = { x: svgWidthReal / 2, y: baselineY + (textObj.curve * 3) };
+                        const P2 = { x: svgWidthReal - horizontalMargin, y: baselineY };
 
+                        let currentWidthSum = 0;
                         return (
-                            <>
-                                {textObj.text.split('').map((char, i) => {
-                                    const t = (i + 0.5) / textObj.text.length;
+                            <g transform={`translate(${(svgWidth - svgWidthReal)/2}, 0)`}>
+                                {chars.map((char, i) => {
+                                    const w = charWidths[i] * scX;
+                                    const sp = pkgSpacing * scX;
+                                    const charCenter = currentWidthSum + w/2;
+                                    const t = charCenter / (scaledTotalWidth || 1);
+                                    
                                     const point = getQuadraticBezierPoint(t, P0, P1, P2);
-
-                                    let angle = 0;
-                                    const renderY = point.y;
 
                                     const dx = 2 * ((1 - t) * (P1.x - P0.x) + t * (P2.x - P1.x));
                                     const dy = 2 * ((1 - t) * (P1.y - P0.y) + t * (P2.y - P1.y));
-                                    angle = Math.atan2(dy, dx) * (180 / Math.PI);
+                                    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-                                    return (
+                                    const element = (
                                         <text
                                             key={i}
                                             x={point.x}
-                                            y={renderY}
+                                            y={point.y}
                                             style={{
                                                 ...textStyle,
                                                 transform: `rotate(${angle}deg) scale(${textObj.scaleX || 1}, ${textObj.scaleY || 1})`,
-                                                transformOrigin: `${point.x}px ${renderY}px`,
-                                                dominantBaseline: "alphabetic",
+                                                transformOrigin: `${point.x}px ${point.y}px`,
+                                                dominantBaseline: "middle",
                                                 textAnchor: "middle",
-                                                textShadow: textStyle.textShadow,
-                                                WebkitTextStroke: textStyle.WebkitTextStroke
                                             }}
                                             fill={textObj.noFill ? 'transparent' : textObj.color}
                                             stroke={textObj.outline ? (textObj.outlineColor || 'black') : 'none'}
@@ -99,8 +120,11 @@ export const TextRenderer: React.FC<TextRendererProps> = ({ textObj, style }) =>
                                             {char}
                                         </text>
                                     );
+                                    
+                                    currentWidthSum += w + sp;
+                                    return element;
                                 })}
-                            </>
+                            </g>
                         );
                     })()}
                 </svg>

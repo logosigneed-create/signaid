@@ -17,6 +17,7 @@ function generateDesignHash(str: string): string {
 // Fields that constitute the "Heavy Design" (Images)
 const HEAVY_KEYS = [
     'aiImageUrl',
+    'aiImageUrlFront', 'aiImageUrlBack',
     'previewImageUrlFront', 'previewImageUrlBack',
     'processedLogoUrlFront', 'processedLogoUrlBack',
     'processedLogoUrlFront_original', 'processedLogoUrlBack_original',

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signaid - Super Hub (Ultra Light)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #ffffff;
+            --sidebar: #f8fafc;
+            --header: #ffffff;
+            --primary: #7c3aed;
+            --border: #f1f5f9;
+            --text: #0f172a;
+            --muted: #94a3b8;
+            --card: #ffffff;
+        }
+
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { 
+            background: var(--bg); 
+            color: var(--text); 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            display: flex; 
+            height: 100vh; 
+            overflow: hidden; 
+        }
+        
+        .sidebar { 
+            width: 260px; 
+            background: var(--sidebar); 
+            border-right: 1px solid var(--border); 
+            display: flex; 
+            flex-direction: column; 
+            padding: 20px; 
+            flex-shrink:0; 
+        }
+        
+        .logo { 
+            font-weight: 800; 
+            font-size: 1.1rem; 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+            margin-bottom: 40px; 
+            color: var(--text);
+        }
+        
+        .orb { 
+            width: 10px; 
+            height: 10px; 
+            border-radius: 50%; 
+            background: var(--primary); 
+        }
+
+        .nav-label {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--muted);
+            margin-bottom: 12px;
+            font-weight: 800;
+        }
+
+        .agent-list { display: flex; flex-direction: column; gap: 4px; }
+        .agent-item { 
+            padding: 10px 14px; 
+            border-radius: 10px; 
+            cursor: pointer; 
+            transition: 0.2s; 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--muted);
+        }
+        .agent-item:hover { background: rgba(0,0,0,0.03); color: var(--text); }
+        .agent-item.active { 
+            background: white; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            color: var(--primary); 
+        }
+
+        .main { flex: 1; display: flex; flex-direction: column; }
+        
+        .header { 
+            padding: 15px 30px; 
+            border-bottom: 1px solid var(--border); 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }
+        
+        .chat { flex: 1; padding: 30px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+        
+        .msg { max-width: 85%; display: flex; gap: 12px; }
+        .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+        
+        .msg-bubble { 
+            padding: 14px 18px; 
+            border-radius: 18px; 
+            font-size: 0.95rem; 
+            line-height: 1.6; 
+            background: #f1f5f9; 
+            color: var(--text);
+            white-space: pre-wrap; 
+        }
+        .msg.user .msg-bubble { 
+            background: var(--primary); 
+            color: white; 
+            border-bottom-right-radius: 4px; 
+        }
+
+        .input-area { padding: 20px 30px 30px; }
+        .input-box { 
+            background: #f8fafc; 
+            border: 1px solid var(--border); 
+            border-radius: 20px; 
+            padding: 12px 20px; 
+            display: flex; 
+            gap: 10px; 
+            align-items: flex-end; 
+        }
+        
+        textarea { 
+            flex: 1; 
+            background: transparent; 
+            border: none; 
+            color: var(--text); 
+            resize: none; 
+            font-family: inherit; 
+            font-size: 0.95rem; 
+            outline: none; 
+            max-height: 150px; 
+        }
+        
+        .right { 
+            width: 300px; 
+            background: var(--sidebar); 
+            border-left: 1px solid var(--border); 
+            padding: 20px; 
+            overflow-y: auto; 
+            flex-shrink:0; 
+        }
+        
+        .card { 
+            background: white; 
+            border: 1px solid var(--border); 
+            border-radius: 16px; 
+            padding: 16px; 
+            margin-bottom: 16px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+        .card-title { font-size: 0.65rem; font-weight: 800; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+
+        .btn-send { background: var(--primary); color: white; border: none; width: 36px; height: 36px; border-radius: 10px; font-weight: 900; }
+
+        #modal { position: fixed; inset: 0; background: rgba(0,0,0,0.3); display: none; align-items: center; justify-content: center; z-index: 100; backdrop-filter: blur(4px); }
+        .modal-c { background: white; padding: 30px; border-radius: 20px; width: 450px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+        input, textarea { width: 100%; border: 1px solid var(--border); background: #f8fafc; padding: 12px; border-radius: 10px; margin: 8px 0; outline: none; }
+    </style>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="logo"><div class="orb"></div> SUPER.HUB</div>
+        <div class="nav-label">Agents</div>
+        <div class="agent-list" id="agent-list">
+            <div class="agent-item active" onclick="switchAgent('super')">🧠 SUPER AGENT</div>
+        </div>
+        <button onclick="openModal('agent')" style="margin-top:20px; background:white; border:1px solid var(--border); color:var(--muted); padding:8px; border-radius:10px; font-size:0.75rem; cursor:pointer">+ Agent</button>
+    </aside>
+
+    <main class="main">
+        <header class="header">
+            <h2 id="agent-name" style="font-size: 1rem; font-weight: 800;">Super Agent</h2>
+            <button onclick="localStorage.clear(); location.reload();" style="border:none; background:none; font-size:0.6rem; color:var(--muted); cursor:pointer">Reset</button>
+        </header>
+        <section class="chat" id="chat"></section>
+        <footer class="input-area">
+            <div class="input-box">
+                <textarea id="user-input" placeholder="Instruction..." rows="1" oninput="this.style.height='';this.style.height=this.scrollHeight+'px'"></textarea>
+                <button id="send-btn" class="btn-send">→</button>
+            </div>
+        </footer>
+    </main>
+
+    <aside class="right">
+        <div class="card">
+            <div class="card-title">📂 Data Room <button onclick="openModal('data')" style="float:right; border:none; background:var(--primary); color:white; width:16px; height:16px; border-radius:50%;">+</button></div>
+            <div id="data-list"></div>
+        </div>
+        <div class="card">
+            <div class="card-title">Mode Cerveau</div>
+            <label style="font-size:0.7rem; color:var(--muted); cursor:pointer"><input type="checkbox" id="cross" checked> Consultation inter-agents</label>
+        </div>
+    </aside>
+
+    <div id="modal" onclick="if(event.target===this)closeModal()">
+        <div class="modal-c" id="m-agent" style="display:none">
+            <h3>Nouveau Spécialiste</h3>
+            <input id="n-name" placeholder="Nom">
+            <textarea id="n-prompt" placeholder="Instructions..." rows="4"></textarea>
+            <button onclick="saveAgent()" style="width:100%; padding:12px; background:var(--primary); color:white; border:none; border-radius:10px; font-weight:800; margin-top:10px; cursor:pointer">Activer</button>
+        </div>
+        <div class="modal-c" id="m-data" style="display:none">
+            <h3>Injection Data</h3>
+            <input id="d-label" placeholder="Label">
+            <textarea id="d-content" placeholder="Contenu..." rows="6"></textarea>
+            <button onclick="saveData()" style="width:100%; padding:12px; background:#0ea5e9; color:white; border:none; border-radius:10px; font-weight:800; margin-top:10px; cursor:pointer">Injecter</button>
+        </div>
+    </div>
+
+    <script>
+        const API_KEY = "AIzaSyA72FVAbnQqyybCS6NMAesXVkjyV7D6ozc";
+        let state = JSON.parse(localStorage.getItem('signaid_hub_v3')) || {
+            currentAgentId: 'super',
+            agents: { 'super': { name: "SUPER AGENT", system: "Tu es le Cerveau Central de Signaid V24. Analytique et direct." } },
+            dataItems: [],
+            history: { 'super': [] }
+        };
+
+        const persist = () => localStorage.setItem('signaid_hub_v3', JSON.stringify(state));
+
+        function switchAgent(id) { state.currentAgentId = id; refreshAgents(); render(); persist(); }
+        function openModal(t) { document.getElementById('modal').style.display='flex'; document.getElementById('m-agent').style.display=t==='agent'?'block':'none'; document.getElementById('m-data').style.display=t==='data'?'block':'none'; }
+        function closeModal() { document.getElementById('modal').style.display='none'; }
+
+        function saveAgent() {
+            const n=document.getElementById('n-name').value, s=document.getElementById('n-prompt').value, id='a_'+Date.now();
+            if(!n||!s) return; state.agents[id]={name:n, system:s}; state.history[id]=[];
+            closeModal(); refreshAgents(); persist();
+        }
+
+        function saveData() {
+            const l=document.getElementById('d-label').value, c=document.getElementById('d-content').value;
+            if(!l||!c) return; state.dataItems.push({label:l, content:c});
+            closeModal(); refreshData(); persist();
+        }
+
+        function refreshAgents() {
+            const c=document.getElementById('agent-list'); c.innerHTML='';
+            Object.keys(state.agents).forEach(id => {
+                const d=document.createElement('div');
+                d.className=`agent-item ${state.currentAgentId===id?'active':''}`;
+                d.onclick=()=>switchAgent(id);
+                d.innerHTML=`<span>${state.agents[id].name}</span>`;
+                c.appendChild(d);
+            });
+            document.getElementById('agent-name').innerText = state.agents[state.currentAgentId].name;
+        }
+
+        function refreshData() {
+            const c=document.getElementById('data-list'); c.innerHTML='';
+            state.dataItems.forEach(i => {
+                const d=document.createElement('div'); d.className='data-item'; d.style='font-size:0.75rem; padding:6px; background:#f1f5f9; border-radius:6px; margin-bottom:4px;'; d.innerHTML=`<strong>${i.label}</strong>`; c.appendChild(d);
+            });
+        }
+
+        async function run(input) {
+            try {
+                let sys = state.agents[state.currentAgentId].system;
+                if(state.dataItems.length) sys += "\nDATA:\n" + state.dataItems.map(d=> `${d.label}: ${d.content}`).join("\n");
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: "Système : " + sys + "\n\nInstruction : " + input }] }] })
+                });
+                const data = await response.json();
+                return data.candidates[0].content.parts[0].text;
+            } catch(e) { return "Erreur: "+e.message; }
+        }
+
+        function render() {
+            const b=document.getElementById('chat'); b.innerHTML='';
+            (state.history[state.currentAgentId]||[]).forEach(m=>{
+                const d=document.createElement('div'); d.className=`msg ${m.role}`;
+                d.innerHTML=`<div class="msg-bubble">${m.text}</div>`; b.appendChild(d);
+            });
+            b.scrollTop = b.scrollHeight;
+        }
+
+        document.getElementById('send-btn').onclick = async () => {
+            const i=document.getElementById('user-input'), t=i.value.trim(); if(!t) return;
+            if(!state.history[state.currentAgentId]) state.history[state.currentAgentId]=[];
+            state.history[state.currentAgentId].push({role:'user', text:t});
+            i.value=''; render();
+            const res = await run(t);
+            state.history[state.currentAgentId].push({role:'agent', text:res});
+            render(); persist();
+        };
+
+        window.switchAgent = switchAgent; window.saveAgent = saveAgent; window.saveData = saveData; window.openModal = openModal; window.closeModal = closeModal;
+        refreshAgents(); refreshData(); render();
+    </script>
+</body>
+</html>

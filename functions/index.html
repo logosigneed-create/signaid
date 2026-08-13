@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Auto-reload on stale script 404 error after new deployments -->
+    <script>
+        window.addEventListener('error', function(e) {
+            if (e.target && e.target.tagName === 'SCRIPT') {
+                const refreshed = sessionStorage.getItem('script_404_refreshed');
+                if (!refreshed) {
+                    sessionStorage.setItem('script_404_refreshed', 'true');
+                    window.location.reload();
+                }
+            }
+        }, true);
+    </script>
+
+    <title>Signaid | La machine à revenus passive pour DJs, clubs et collectifs (Zéro logistique)</title>
+    <meta name="description"
+        content="Boutique merchandising DJ, revenue passif musique électronique, logistique marque blanche. Déployez votre vitrine officielle et votre boutique textile automatisée sans stock ni gestion humaine.">
+    <meta name="keywords"
+        content="Boutique merchandising DJ, revenue passif musique électronique, logistique marque blanche, impression textile à la demande, merch DJ, Signaid, e-commerce artiste">
+
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+    <meta name="author" content="Signaid Inc." />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://signaid.eu/">
+    <meta property="og:title" content="Signaid | La machine à revenus passive pour DJs, clubs et collectifs (Zéro logistique)">
+    <meta property="og:description"
+        content="Boutique merchandising DJ et musique électronique. Déployez votre boutique officielle en marque blanche sans stock ni gestion physique.">
+    <meta property="og:image" content="https://signaid.eu/logo.png">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://signaid.eu/">
+    <meta property="twitter:title" content="Signaid | La machine à revenus passive pour DJs, clubs et collectifs (Zéro logistique)">
+    <meta property="twitter:description"
+        content="Infrastructure automatisée de merchandising en marque blanche pour la musique électronique.">
+    <meta property="twitter:image" content="https://signaid.eu/logo.png">
+
+    <!-- JSON-LD Structured Data for AI & Search Engines -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": ["Organization", "LocalBusiness", "Service"],
+          "@id": "https://signaid.eu/#organization",
+          "name": "Signaid",
+          "alternateName": "Signaid Merch Infrastructure",
+          "url": "https://signaid.eu/",
+          "logo": "https://signaid.eu/logo.png",
+          "image": "https://signaid.eu/logo.png",
+          "description": "Signaid est la première infrastructure automatisée de merchandising en marque blanche pour DJs, artistes, clubs et collectifs de musique électronique. Production textile à la demande et livraison sous 48h sans gestion de stock.",
+          "telephone": "+33189000000",
+          "email": "contact@signeedclub.com",
+          "contactPoint": {
+            "@type": "ContactPoint",
+            "telephone": "+33189000000",
+            "contactType": "customer service",
+            "email": "logosigneed@gmail.com",
+            "availableLanguage": ["French", "English"]
+          },
+          "address": {
+            "@type": "PostalAddress",
+            "addressCountry": "FR",
+            "addressRegion": "Île-de-France",
+            "addressLocality": "Paris"
+          },
+          "areaServed": [
+            { "@type": "Country", "name": "France" },
+            { "@type": "Country", "name": "Belgique" },
+            { "@type": "Country", "name": "Suisse" },
+            { "@type": "Country", "name": "Luxembourg" },
+            { "@type": "AdministrativeArea", "name": "Europe" }
+          ],
+          "priceRange": "€€",
+          "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.9",
+            "reviewCount": "152",
+            "bestRating": "5"
+          },
+          "offers": {
+            "@type": "Offer",
+            "name": "Boutique Merchandising DJ Zéro Stock",
+            "price": "0.00",
+            "priceCurrency": "EUR",
+            "availability": "https://schema.org/InStock",
+            "description": "Déploiement immédiat d'une boutique officielle en marque blanche sans avance de frais ni stock."
+          }
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://signaid.eu/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "Qu'est-ce que Signaid ?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Une infrastructure automatisée qui déploie une boutique de vêtements et d'accessoires pour les acteurs de la musique électronique (DJs, clubs, festivals et collectifs)."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Est-ce que l'artiste doit gérer la production ou la livraison ?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Non, tout est automatisé en marque blanche via API de production et logistique physique à la demande. L'artiste ne gère aucun stock."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Comment créer son profil et sa boutique ?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "En quelques clics via notre interface de déploiement instantané, sans aucun stock à acheter à l'avance."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Quelles zones géographiques sont desservies par Signaid ?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Signaid assure la production et l'expédition en France, Belgique, Suisse, Luxembourg et dans toute l'Europe sous 48h."
+              }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
+
+    <!-- CRITICAL: Preconnect to core origins -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://signaid-prod.firebaseapp.com" crossorigin />
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Roboto:wght@400;700&family=Montserrat:wght@400;700&family=Playfair+Display:wght@400;700&family=Bebas+Neue&family=Graduate&family=Permanent+Marker&family=Lobster&family=Pacifico&family=Dancing+Script:wght@400;700&family=Oswald:wght@400;700&display=swap&text=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%E2%82%AC%C3%A9%C3%A8%C3%AA%C3%A0%C3%A2%C3%AE%C3%AF%C3%B4%C3%BB%C3%B9%C3%A7%C3%80%C3%88%C3%89%C3%8A%C3%8E%C3%AF%C3%94%C3%9B%C3%99%C3%87"
+        rel="stylesheet" media="print" onload="this.media='all'" />
+    <noscript>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet" />
+    </noscript>
+
+
+
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+                'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        #root {
+            width: 100%;
+            min-height: 100vh;
+        }
+
+        /* Loading animation */
+        .pulse-animation {
+            animation: pulse 1.5s infinite ease-in-out;
+            width: 80px;
+            height: 80px;
+            -o-object-fit: contain;
+               object-fit: contain;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(0.95);
+                opacity: 0.7;
+            }
+
+            50% {
+                transform: scale(1.1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(0.95);
+                opacity: 0.7;
+            }
+        }
+
+        /* Tailwind-like utility classes for animations */
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+
+
+
+    <!-- Deferred Facebook Pixel Load (Non-blocking FCP/LCP) -->
+    <script>
+        (function() {
+            var loaded = false;
+            function loadFbPxl() {
+                if (loaded) return;
+                loaded = true;
+                window.removeEventListener('pointerdown', loadFbPxl);
+                window.removeEventListener('scroll', loadFbPxl);
+                window.removeEventListener('touchstart', loadFbPxl);
+                !function (f, b, e, v, n, t, s) {
+                    if (f.fbq) return; n = f.fbq = function () {
+                        n.callMethod ?
+                            n.callMethod.apply(n, arguments) : n.queue.push(arguments)
+                    };
+                    if (!f._fbq) f._fbq = n; n.push = n; n.loaded = !0; n.version = '2.0';
+                    n.queue = []; t = b.createElement(e); t.async = !0;
+                    t.src = v; s = b.getElementsByTagName(e)[0];
+                    s.parentNode.insertBefore(t, s)
+                }(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
+                fbq('init', '783934498029261');
+                fbq('track', 'PageView');
+                console.log("[Performance] Facebook Pixel loaded (deferred).");
+            }
+            window.addEventListener('pointerdown', loadFbPxl, { passive: true });
+            window.addEventListener('scroll', loadFbPxl, { passive: true });
+            window.addEventListener('touchstart', loadFbPxl, { passive: true });
+            setTimeout(loadFbPxl, 2500);
+        })();
+    </script>
+    <!-- End Deferred Facebook Pixel Code -->
+
+  <script type="module" crossorigin src="/assets/index-DfKUSthZ.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/vendor-react-BMdZHK_A.js">
+  <link rel="modulepreload" crossorigin href="/assets/vendor-firebase-BXkjib-c.js">
+  <link rel="modulepreload" crossorigin href="/assets/vendor-utils-BlOEjuHv.js">
+  <link rel="stylesheet" crossorigin href="/assets/index-TwkOJVOG.css">
+</head>
+
+<body>
+    <div id="root">
+        <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;background-color:#ffffff;gap:20px;">
+            <img src="/logo.png" alt="Chargement..." class="pulse-animation" />
+            <a href="https://signaid.eu" style="color:#000000; text-decoration:none; font-weight:bold; font-size:0.8rem; opacity:0.5; letter-spacing:2px;">SIGNAID.EU</a>
+        </div>
+    </div>
+
+</body>
+
+</html>

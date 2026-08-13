@@ -1,10 +1,17 @@
 {
     "hosting": {
         "public": "dist",
+        "trailingSlash": false,
         "ignore": [
             "firebase.json",
             "**/.*",
-            "**/node_modules/**"
+            "**/node_modules/**",
+            "imported_products/**",
+            "admin-stylist/**",
+            "assets/prospects/**",
+            "**/*.zip",
+            "**/*.php",
+            "**/*.bak"
         ],
         "rewrites": [
             {
@@ -13,6 +20,15 @@
             }
         ],
         "headers": [
+            {
+                "source": "**",
+                "headers": [
+                    {
+                        "key": "Cache-Control",
+                        "value": "no-cache, no-store, must-revalidate, max-age=0"
+                    }
+                ]
+            },
             {
                 "source": "**/*.@(jpg|jpeg|gif|png|webp|svg|ico)",
                 "headers": [

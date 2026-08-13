@@ -7,16 +7,31 @@ const DEFAULT_SIZE_CHART = {
 };
 
 export const productDatabase: ProductDatabase = {
+  bctu05t: {
+    name: "T-shirt Sport",
+    price: 20,
+    sizes: ["S", "M", "L", "XL", "XXL", "3XL"],
+    slideImage: "/imported_products/VETEMENTS/BCTU05T_Sport-Grey-(Heather).jpg",
+    supplierLink: "https://signeed.printwear.store/detail/1297900",
+    reference: "BCTU05T",
+    sizeChart: DEFAULT_SIZE_CHART,
+    images: {
+      "#A9A9A9": "/imported_products/VETEMENTS/BCTU05T_Sport-Grey-(Heather).jpg"
+    },
+    backImages: {
+      "#A9A9A9": "/imported_products/VETEMENTS/BCTU05T_Sport-Grey-(Heather) vue dos .jpg"
+    }
+  },
   tshirt: {
     name: "T-shirt",
     price: 18,
     sizes: ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL", "6XL", "7XL", "8XL", "9XL", "10XL"],
-    slideImage: "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-black-JHK170.png",
+    slideImage: "/assets/tshirt-black-JHK170.png",
     supplierLink: "https://signeed.printwear.store/detail/1297900",
     reference: "JHK170",
     sizeChart: DEFAULT_SIZE_CHART,
     images: {
-      "#000000": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-black-JHK170.png?alt=media",
+      "#000000": "/assets/tshirt-black-JHK170.png",
       "#FFFFFF": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-white-JHK170.png?alt=media",
       "#EF4444": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-red-JHK170.png?alt=media",
       "#FFA500": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-orange-JHK170.png?alt=media",
@@ -25,7 +40,7 @@ export const productDatabase: ProductDatabase = {
       "#FFFF00": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-yellow-JHK170.png?alt=media",
     },
     backImages: {
-      "#000000": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-black-JHK170-dos.png?alt=media",
+      "#000000": "/assets/tshirt-black-JHK170-dos.png",
       "#FFFFFF": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-white-JHK170-dos.png?alt=media",
       "#EF4444": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-red-JHK170-dos.png?alt=media",
       "#FFA500": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-orange-JHK170-dos.png?alt=media",
@@ -101,17 +116,26 @@ export const productDatabase: ProductDatabase = {
       "#FFFFFF": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirtfemme%2Fbctw02t%2Ftshirtfemme-white-bctw02-tdos.png?alt=media",
     },
   },
+  SW375: {
+    name: "Sweatshirt",
+    price: 25,
+    sizes: ["S", "M", "L", "XL", "XXL", "3XL"],
+    reference: "SW375",
+    sizeChart: DEFAULT_SIZE_CHART,
+    images: { "#000000": "/imported_products/VETEMENTS/SW375/SW375-black.png" },
+    backImages: { "#000000": "/imported_products/VETEMENTS/SW375/SW375-black-dos.png" }
+  },
   hoodie: {
     name: "Sweat capuche",
     price: 27,
     sizes: ["S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL", "6XL", "7XL", "8XL", "9XL", "10XL"],
-    slideImage: "/imported_products/VETEMENTS/JHK421/hoodie-black-JHK421.png",
+    slideImage: "/assets/hoodie-black-JHK421.png",
     supplierLink: "https://signeed.printwear.store/detail/638292",
     reference: "JHK421",
     sizeChart: DEFAULT_SIZE_CHART,
     images: {
       "#FFFFFF": "/imported_products/VETEMENTS/JHK421/hoodie-white-JHK421.png",
-      "#000000": "/imported_products/VETEMENTS/JHK421/hoodie-black-JHK421.png",
+      "#000000": "/assets/hoodie-black-JHK421.png",
       "#4CBB17": "/imported_products/VETEMENTS/JHK421/hoodie-kellygreen-JHK421.png",
       "#4169E1": "/imported_products/VETEMENTS/JHK421/hoodie-royalblue-JHK421.png",
       "#87CEEB": "/imported_products/VETEMENTS/JHK421/hoodie-sky-JHK421.png",
@@ -125,7 +149,7 @@ export const productDatabase: ProductDatabase = {
     },
     backImages: {
       "#FFFFFF": "/imported_products/VETEMENTS/JHK421/hoodie-white-JHK421-dos.png",
-      "#000000": "/imported_products/VETEMENTS/JHK421/hoodie-black-JHK421-dos.png",
+      "#000000": "/assets/hoodie-black-JHK421-dos.png",
       "#4CBB17": "/imported_products/VETEMENTS/JHK421/hoodie-kellygreen-JHK421-dos.jpg",
       "#4169E1": "/imported_products/VETEMENTS/JHK421/hoodie-royalblue-JHK421-dos.png",
       "#87CEEB": "/imported_products/VETEMENTS/JHK421/hoodie-sky-JHK421-dos.png",
@@ -355,21 +379,7 @@ export const productDatabase: ProductDatabase = {
       "#A9A9A9": "/imported_products/VETEMENTS/BCPUI12_Heather-Grey-dos.jpg"
     }
   },
-  bctu05t: {
-    name: "T-shirt Sport",
-    price: 20,
-    sizes: ["S", "M", "L", "XL", "XXL", "3XL"],
-    slideImage: "/imported_products/VETEMENTS/BCTU05T_Sport-Grey-(Heather).jpg",
-    supplierLink: "https://signeed.printwear.store/detail/1297900",
-    reference: "BCTU05T",
-    sizeChart: DEFAULT_SIZE_CHART,
-    images: {
-      "#A9A9A9": "/imported_products/VETEMENTS/BCTU05T_Sport-Grey-(Heather).jpg"
-    },
-    backImages: {
-      "#A9A9A9": "/imported_products/VETEMENTS/BCTU05T_Sport-Grey-(Heather) vue dos .jpg"
-    }
-  },
+
   kx167: {
     name: "Gilet de Sécurité",
     price: 15,
@@ -393,6 +403,7 @@ export const productDatabase: ProductDatabase = {
     supplierLink: "https://signeed.printwear.store/detail/1297900",
     reference: "RT230M",
     sizeChart: DEFAULT_SIZE_CHART,
+    aiDisabled: true,
     images: {
       "#4169E1": "/imported_products/VETEMENTS/RT230M/RT230M bleu.jpg"
     },
@@ -413,8 +424,8 @@ export const productDatabase: ProductDatabase = {
 };
 
 export const POSE_IMAGES = {
-  front: "/imported_products/VETEMENTS/JHK421/hoodie-black-JHK421.png",
-  back: "/imported_products/VETEMENTS/JHK421/hoodie-black-JHK421-dos.png"
+  front: "/assets/hoodie-grey-JHK421.png",
+  back: "/assets/hoodie-grey-JHK421-dos.png"
 };
 
 export const users: User[] = [
@@ -445,7 +456,7 @@ const mockCustomizationTshirt: CartItem = {
   isPredefinedLogoFront: false, predefinedLogoUrlFront: null,
   isPredefinedLogoBack: false, predefinedLogoUrlBack: null,
   serviceRetouche: false, serviceModernisation: false,
-  previewImageUrlFront: "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-black-JHK170.png"
+  previewImageUrlFront: "/assets/tshirt-grey-JHK170.png"
 };
 
 const mockCustomizationHoodie: CartItem = {
@@ -461,7 +472,7 @@ const mockCustomizationHoodie: CartItem = {
   isPredefinedLogoFront: false, predefinedLogoUrlFront: null,
   isPredefinedLogoBack: false, predefinedLogoUrlBack: null,
   serviceRetouche: false, serviceModernisation: false,
-  previewImageUrlFront: "/imported_products/VETEMENTS/JHK421/hoodie-black-JHK421.png"
+  previewImageUrlFront: "/assets/hoodie-grey-JHK421.png"
 };
 
 

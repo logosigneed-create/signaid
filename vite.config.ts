@@ -5,12 +5,13 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
+    base: '/',
     server: {
-      port: 3001,
+      port: 3000,
       host: '0.0.0.0',
       proxy: {
         '/api/gemini-proxy': {
-          target: 'https://generatetryonimageproxy-l7t746ydma-uc.a.run.app',
+          target: 'https://us-central1-signaid-prod.cloudfunctions.net/generateTryOnImageProxy',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/gemini-proxy/, ''),
         },

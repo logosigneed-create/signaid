@@ -30,7 +30,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({ message = "Traitem
                 <div className="flex flex-col gap-4 w-full">
                     <div className="flex flex-col gap-1">
                         <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter">
-                            Signaid <span className="text-orange-500">IA</span>
+                            Signaid
                         </h3>
                         <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">
                             {message}

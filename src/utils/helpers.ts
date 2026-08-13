@@ -19,7 +19,7 @@ export function getProxiedUrl(url: string | null | undefined, options: { width?:
             return url;
         }
 
-        const prodUrl = `https://signaid-d2d08.web.app${url}`;
+        const prodUrl = `https://signaid.eu${url}`;
         const { width, quality } = options;
         let params = `output=webp&q=${quality || 60}&l=5`;
         if (width) params += `&w=${width}`;
@@ -255,8 +255,8 @@ export async function removeBackground(inputStr: string, mode: 'white' | 'black'
 
         if (!base64String) return inputStr;
 
-        const functions = getFunctions(app);
-        const removeBgProxy = httpsCallableFromURL(functions, 'https://removebgproxy-l7t746ydma-uc.a.run.app');
+        const functions = getFunctions(app, 'us-central1');
+        const removeBgProxy = httpsCallable(functions, 'removeBgProxy');
 
         const result = await removeBgProxy({
             imageBase64: base64String
@@ -602,7 +602,7 @@ export function cleanCartItem(obj: any, key?: string): any {
         // 2. Preserve USER ASSETS (Logos, Uploads) as much as possible
         // Aggressively clean if too large (> 800KB) to prevent crashing the browser/session
         if (key && (key.includes('originalLogo') || key.includes('originalUrl') || key.includes('processedLogo') || key.includes('processedUrl') || key.includes('customImage') || key.includes('aiResult') || key.includes('capturedImage'))) {
-            if (obj.startsWith('data:image') && obj.length > 800000) {
+            if (obj.startsWith('data:image') && obj.length > 10000000) {
                 console.warn(`[Storage] Cleaning large asset: ${key} (${Math.round(obj.length / 1024)}KB)`);
                 return ''; // Remove from storage to save quota
             }
@@ -610,7 +610,7 @@ export function cleanCartItem(obj: any, key?: string): any {
         }
 
         // 3. General catch-all for other large strings
-        if (obj.startsWith('data:image') && obj.length > 200000) { 
+        if (obj.startsWith('data:image') && obj.length > 1000000) { 
             return '';
         }
 
@@ -784,4 +784,122 @@ export function calculateBaseUnitPrice(product: any, size: string, color: string
     }
 
     return price;
+}
+
+/**
+ * Cleans the logo based on the Python preprocessing script:
+ * 1. Grayscale (to kill chromatic noise)
+ * 2. Blur (to smooth edges)
+ * 3. Threshold (to force contrast and kill dirt)
+ */
+export async function preprocessLogoForAI(imageSrc: string): Promise<string> {
+    const createImage = (url: string) =>
+        new Promise<HTMLImageElement>((resolve, reject) => {
+            const image = new Image();
+            image.addEventListener('load', () => resolve(image));
+            image.addEventListener('error', (error) => reject(error));
+            image.setAttribute('crossOrigin', 'anonymous');
+            image.src = url;
+        });
+
+    try {
+        const img = await createImage(imageSrc);
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return imageSrc;
+
+        // --- 1. Grayscale + High Contrast ---
+        ctx.filter = 'grayscale(100%) brightness(1.1) contrast(150%)';
+        ctx.drawImage(img, 0, 0);
+
+        // --- 2. Blur (Simulate Python GaussianBlur) ---
+        // We do this by redrawing with blur filter, or just using ctx.filter
+        ctx.filter = 'blur(1px)';
+        ctx.drawImage(canvas, 0, 0);
+
+        // --- 3. Threshold (Simulate cv2.threshold) ---
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+            // If it's very transparent, keep it transparent
+            if (a < 10) continue;
+
+            const gray = (r + g + b) / 3;
+            // Threshold at 200 as requested
+            const color = gray > 200 ? 255 : 0;
+            data[i] = data[i + 1] = data[i + 2] = color;
+            
+            // If user wants Noir et Blanc strict, we might want to kill the alpha 
+            // but for logos, we usually keep alpha if the background was already removed.
+            // However, the script suggests killing "gris/sales", so we force a or 0/255
+            data[i + 3] = gray > 200 ? 0 : 255; // If light -> transparent (white background), if dark -> black
+            // Wait, Python script saves binary image (black/white).
+            // Usually logos are Transparent vs Color.
+            // I'll stick to making it Black vs Transparent if White background is detect.
+        }
+        ctx.putImageData(imageData, 0, 0);
+
+        return canvas.toDataURL('image/png');
+    } catch (e) {
+        console.error("Preprocessing failed", e);
+        return imageSrc;
+    }
+}
+
+/**
+ * Intelligent Upscaler simulating Super-Resolution.
+ * Upscales the image (if needed) up to 4724px on the longest side (300 DPI for 40cm maximum print size).
+ */
+export async function intelligentUpscale(imageSrc: string): Promise<string> {
+    const createImage = (url: string) =>
+        new Promise<HTMLImageElement>((resolve, reject) => {
+            const image = new Image();
+            image.addEventListener('load', () => resolve(image));
+            image.addEventListener('error', (error) => reject(error));
+            image.setAttribute('crossOrigin', 'anonymous');
+            image.src = url;
+        });
+
+    try {
+        // --- STEP 1: CLEANING (as requested by user with Python logic) ---
+        const cleanDataUrl = await preprocessLogoForAI(imageSrc);
+        const image = await createImage(cleanDataUrl);
+
+        const maxDim = 4724; 
+        
+        let width = image.width;
+        let height = image.height;
+        
+        if (width >= maxDim || height >= maxDim) {
+             return cleanDataUrl; 
+        }
+
+        if (width > height) {
+            width = maxDim;
+            height = Math.floor(image.height * (maxDim / image.width));
+        } else {
+            height = maxDim;
+            width = Math.floor(image.width * (maxDim / image.height));
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return cleanDataUrl;
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        
+        ctx.drawImage(image, 0, 0, width, height);
+        
+        // Export as PNG to preserve transparency for logos!
+        return canvas.toDataURL('image/png'); 
+    } catch (e) {
+        console.error("Upscale failed", e);
+        return imageSrc;
+    }
 }
