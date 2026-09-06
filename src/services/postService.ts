@@ -19,6 +19,7 @@ import {
     startAfter,
     limit
 } from 'firebase/firestore';
+import { sanitizeForFirestore } from '../utils/firestoreSanitizer';
 import { Post } from '../types';
 
 class PostService {
@@ -28,7 +29,10 @@ class PostService {
         try {
             const filename = `posts/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
             const storageRef = ref(storage, filename);
-            await uploadString(storageRef, base64Image, 'data_url');
+            await uploadString(storageRef, base64Image, 'data_url', {
+                contentType: 'image/jpeg',
+                cacheControl: 'public, max-age=86400'
+            });
             return await getDownloadURL(storageRef);
         } catch (error) {
             console.error("Error uploading image:", error);
@@ -71,10 +75,10 @@ class PostService {
             console.log("DEBUG - Post sanitized (postService.ts). No Base64 should remain.");
 
             // 3. Save to Firestore
-            await setDoc(doc(db, 'posts', cleanData.id), {
+            await setDoc(doc(db, 'posts', cleanData.id), sanitizeForFirestore({
                 ...cleanData,
                 createdAt: new Date()
-            });
+            }));
         } catch (error) {
             console.error("Error creating post:", error);
             throw error;
@@ -204,9 +208,9 @@ class PostService {
     async validatePost(postId: string, userId: string, isValidation: boolean): Promise<void> {
         // Optimisation: try direct update first if PostID == DocID
         try {
-            await updateDoc(doc(this.postsCollection, postId), {
+            await updateDoc(doc(this.postsCollection, postId), sanitizeForFirestore({
                 validations: increment(isValidation ? 1 : -1)
-            });
+            }));
             return;
         } catch (e: any) {
             // Continue if not found
@@ -217,16 +221,16 @@ class PostService {
 
         if (!querySnapshot.empty) {
             const docRef = querySnapshot.docs[0].ref;
-            await updateDoc(docRef, {
+            await updateDoc(docRef, sanitizeForFirestore({
                 validations: increment(isValidation ? 1 : -1)
-            });
+            }));
         }
     }
 
     async archivePost(postId: string): Promise<void> {
         // Try direct update first (most common case now)
         try {
-            await updateDoc(doc(this.postsCollection, postId), { archived: true });
+            await updateDoc(doc(this.postsCollection, postId), sanitizeForFirestore({ archived: true }));
             return;
         } catch (error: any) {
             console.log(`Failed to archive by direct ID ${postId}, trying search...`);
@@ -242,7 +246,7 @@ class PostService {
             // Found it!
             const docRef = querySnapshot.docs[0].ref;
             console.log(`Found post ${postId} with doc ID ${docRef.id}, archiving...`);
-            await updateDoc(docRef, { archived: true });
+            await updateDoc(docRef, sanitizeForFirestore({ archived: true }));
         } else {
             console.error(`Post with ID ${postId} not found in Firestore.`);
             throw new Error(`Post with ID ${postId} not found`);
@@ -251,7 +255,7 @@ class PostService {
 
     async updatePost(postId: string, data: Partial<Post>): Promise<void> {
         try {
-            await updateDoc(doc(this.postsCollection, postId), data);
+            await updateDoc(doc(this.postsCollection, postId), sanitizeForFirestore(data));
             return;
         } catch (error: any) {
             if (error.code !== 'not-found') throw error;
@@ -262,7 +266,7 @@ class PostService {
 
         if (!querySnapshot.empty) {
             const docRef = querySnapshot.docs[0].ref;
-            await updateDoc(docRef, data);
+            await updateDoc(docRef, sanitizeForFirestore(data));
         } else {
             throw new Error(`Post with ID ${postId} not found`);
         }
@@ -340,18 +344,21 @@ class PostService {
             // 1. Upload Image to separate folder
             const filename = `generated_history/${userId}_${Date.now()}.jpg`;
             const storageRef = ref(storage, filename);
-            await uploadString(storageRef, base64Image, 'data_url');
+            await uploadString(storageRef, base64Image, 'data_url', {
+                contentType: 'image/jpeg',
+                cacheControl: 'public, max-age=86400'
+            });
             const imageUrl = await getDownloadURL(storageRef);
 
             // 2. Log to Firestore
-            await addDoc(collection(db, 'generation_logs'), {
+            await addDoc(collection(db, 'generation_logs'), sanitizeForFirestore({
                 userId,
                 userEmail, // Passed directly
                 imageUrl,
                 prompt,
                 styleCategory,
                 timestamp: serverTimestamp()
-            });
+            }));
             console.log("Generation archived successfully.");
             return imageUrl;
         } catch (error) {

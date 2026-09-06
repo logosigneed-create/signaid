@@ -3,13 +3,13 @@ const fs = require('fs');
 
 // Initialize Firebase Admin (will use application default credentials if available, or FIREBASE_CONFIG)
 admin.initializeApp({
-  projectId: "signaid-d2d08",
+  projectId: "signaid-prod",
 });
 
 async function run() {
   try {
     const db = admin.firestore();
-    const storage = admin.storage().bucket('signaid-d2d08.firebasestorage.app');
+    const storage = admin.storage().bucket('signaid-prod-assets');
     const crypto = require('crypto');
     
     const session_id = "guest_dj_moli_" + Date.now().toString(36);

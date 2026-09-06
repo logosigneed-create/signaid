@@ -1,6 +1,6 @@
 import sys
 
-html_path = r'c:\Partage\Projet\Signaid V24\vector_editor.html'
+html_path = r'c:\Partage\Projet\signaid-studio\vector_editor.html'
 with open(html_path, 'r', encoding='utf-8') as f:
     lines = f.readlines()
 

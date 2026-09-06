@@ -34,20 +34,23 @@ body {
   font-family: var(--font-main);
   background: var(--bg-color);
   background-image: var(--bg-gradient);
-  background-attachment: fixed;
+  background-repeat: no-repeat;
   color: var(--text-color);
-  transition: all 0.4s ease;
-  min-height: 100vh;
+  transition: background-color 0.4s ease, color 0.4s ease;
+  min-height: 100%;
+  min-height: 100dvh;
+  -webkit-overflow-scrolling: touch;
 }
 
 .container {
   max-width: 480px;
   margin: 0 auto;
-  padding: 1rem 1.25rem 3rem 1.25rem;
+  padding: 1rem 1.25rem calc(6.5rem + env(safe-area-inset-bottom, 24px)) 1.25rem;
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 2rem;
+  box-sizing: border-box;
 }
 
 /* Logo */
@@ -294,6 +297,15 @@ body {
   border-bottom: 1px solid var(--border-color);
 }
 
+body.admin-console-light .admin-header {
+  border-bottom-color: rgba(15, 23, 42, 0.12);
+  color: #0f172a;
+}
+
+body.admin-console-light .admin-header h1 {
+  color: #0f172a;
+}
+
 .admin-section {
   background: var(--card-bg);
   backdrop-filter: blur(10px);
@@ -445,25 +457,58 @@ input, textarea {
   opacity: 0.8;
 }
 
+.footer {
+  margin-top: 3rem;
+  text-align: center;
+  padding: 1.5rem 1rem calc(2.5rem + env(safe-area-inset-bottom, 20px)) 1rem;
+  position: relative;
+  z-index: 20;
+}
+
 .footer-links {
   display: flex;
   justify-content: center;
-  gap: 2rem;
-  margin-bottom: 1rem;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
 }
 
 .footer-link {
-  color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.6rem 1.4rem;
+  border-radius: 100px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
   text-decoration: none;
   font-weight: 700;
-  letter-spacing: 0.1em;
-  opacity: 0.6;
-  transition: opacity 0.3s ease;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  opacity: 0.8;
+  transition: all 0.2s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
 }
 
-.footer-link:hover {
+.footer-link:hover,
+.footer-link:active {
   opacity: 1;
-  color: var(--accent-color);
+  background: var(--accent-color);
+  color: #ffffff;
+  border-color: var(--accent-color);
+  transform: translateY(-2px);
+}
+
+@media (max-width: 768px) {
+  .footer.reveal {
+    transform: none !important;
+  }
 }
 
 .map-wrapper {

@@ -12,7 +12,7 @@ const filesToRestore = [
 ];
 
 const sourceDir = 'C:\\Partage\\Projet\\Signaid V23';
-const targetDir = 'C:\\Partage\\Projet\\Signaid V24';
+const targetDir = 'C:\Partage\Projet\signaid-studio';
 
 console.log('Restoring files from V23 to V24...');
 

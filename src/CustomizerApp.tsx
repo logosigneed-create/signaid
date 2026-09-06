@@ -14,6 +14,8 @@ import { db } from './firebaseConfig';
 
 import { collection, addDoc, serverTimestamp, getDocs, query, where, orderBy, limit, deleteDoc, doc, updateDoc, increment, getDoc, setDoc } from 'firebase/firestore';
 
+import { sanitizeForFirestore } from './utils/firestoreSanitizer';
+
 import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 
 
@@ -2396,7 +2398,8 @@ function CustomizerApp() {
 
 
 
-            const watermarkedResult = await addWatermark(result);
+            const effectiveResult = result || params.preview;
+            const watermarkedResult = await addWatermark(effectiveResult);
 
             // --- OPTIMIZATION (LCP FIX): Use Blob URL for immediate rendering to avoid DOM bloat ---
             try {
@@ -2658,11 +2661,11 @@ function CustomizerApp() {
 
         try {
             const cleanedCustomization = cleanCartItem(customization);
-            await updateDoc(doc(db, 'posts', postId), {
+            await updateDoc(doc(db, 'posts', postId), sanitizeForFirestore({
                 customization: cleanedCustomization,
                 // Also update the tags to match the new product type
                 tags: [{ id: 't_' + Date.now(), position: { x: 50, y: 50 }, productType: customization.productType }]
-            });
+            }));
 
 
 
@@ -3112,27 +3115,17 @@ function CustomizerApp() {
 
                 try {
 
-                    await addDoc(collection(db, 'orders'), {
-
+                    await addDoc(collection(db, 'orders'), sanitizeForFirestore({
                         userId: user ? user.id : 'guest',
-
                         email: contactData.email,
-
                         contactInfo: contactData,
-
                         items: itemsForMollie,
-
                         totalAmount: 0,
-
                         status: 'paid', // Auto-paid
-
                         createdAt: serverTimestamp(),
-
                         paymentMethod: 'promo_free',
-
                         checkoutUrl: 'skipped'
-
-                    });
+                    }));
 
                 } catch (dbError) {
 
@@ -3232,25 +3225,16 @@ function CustomizerApp() {
 
                 try {
 
-                    await addDoc(collection(db, 'orders'), {
-
+                    await addDoc(collection(db, 'orders'), sanitizeForFirestore({
                         userId: user ? user.id : 'guest',
-
                         email: contactData.email, // Use confirmed email from form
-
                         contactInfo: contactData, // Save full contact info
-
                         items: itemsForMollie,
-
                         totalAmount: totals.total,
-
                         status: 'pending',
-
                         createdAt: serverTimestamp(),
-
                         checkoutUrl: data.checkoutUrl
-
-                    });
+                    }));
 
                 } catch (dbError) {
 
@@ -3815,19 +3799,13 @@ function CustomizerApp() {
 
 
 
-                await addDoc(collection(db, 'quotes'), {
-
+                await addDoc(collection(db, 'quotes'), sanitizeForFirestore({
                     userId: user ? user.id : 'guest',
-
                     formData: formData,
-
                     cart: safeCart, // Save CLEANED cart
-
                     status: 'new',
-
                     createdAt: serverTimestamp()
-
-                });
+                }));
 
             } catch (dbError) {
 
@@ -4014,23 +3992,15 @@ function CustomizerApp() {
 
             // Record transaction
 
-            await addDoc(collection(db, 'redemptions'), {
-
+            await addDoc(collection(db, 'redemptions'), sanitizeForFirestore({
                 userId: user.id,
-
                 email: user.email,
-
                 username: user.username,
-
                 rewardIds: selectedIds,
-
                 cost: cost,
-
                 timestamp: serverTimestamp(),
-
                 status: 'pending' // pending manual fulfillment
-
-            });
+            }));
 
 
 

@@ -7,43 +7,66 @@
     <link rel="shortcut icon" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
-    <!-- Auto-reload on stale script 404 error after new deployments -->
+    <!-- Auto-recovery on stale chunk 404 after new deployments -->
     <script>
-        window.addEventListener('error', function(e) {
-            if (e.target && e.target.tagName === 'SCRIPT') {
-                const refreshed = sessionStorage.getItem('script_404_refreshed');
-                if (!refreshed) {
-                    sessionStorage.setItem('script_404_refreshed', 'true');
+        (function() {
+            function handleChunkError() {
+                var now = Date.now();
+                var lastReload = parseInt(sessionStorage.getItem('last_chunk_reload') || '0', 10);
+                if (now - lastReload > 3000) {
+                    sessionStorage.setItem('last_chunk_reload', String(now));
+                    if ('caches' in window) {
+                        caches.keys().then(function(names) {
+                            names.forEach(function(name) { caches.delete(name); });
+                        });
+                    }
                     window.location.reload();
                 }
             }
-        }, true);
+            window.addEventListener('vite:preloadError', handleChunkError);
+            window.addEventListener('error', function(e) {
+                if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
+                    handleChunkError();
+                }
+            }, true);
+            window.addEventListener('unhandledrejection', function(event) {
+                var msg = String(event && event.reason && (event.reason.message || event.reason) || '');
+                if (msg.indexOf('dynamically imported module') !== -1 || 
+                    msg.indexOf('Loading chunk') !== -1 || 
+                    msg.indexOf('Failed to fetch') !== -1 ||
+                    msg.indexOf('Failed to load') !== -1 ||
+                    msg.indexOf('404') !== -1) {
+                    handleChunkError();
+                }
+            });
+        })();
     </script>
 
-    <title>Signaid | La machine à revenus passive pour DJs, clubs et collectifs (Zéro logistique)</title>
+    <title>Signaid — Infrastructure Textile & Merchandising en Marque Blanche</title>
     <meta name="description"
-        content="Boutique merchandising DJ, revenue passif musique électronique, logistique marque blanche. Déployez votre vitrine officielle et votre boutique textile automatisée sans stock ni gestion humaine.">
+        content="Votre marque sur textile premium, sans stock ni logistique. Vitrine officielle et boutique en ligne pour créateurs, indépendants, coachs, studios et marques. Expédition sous 48h.">
     <meta name="keywords"
-        content="Boutique merchandising DJ, revenue passif musique électronique, logistique marque blanche, impression textile à la demande, merch DJ, Signaid, e-commerce artiste">
+        content="Boutique textile, impression à la demande, merch créateur, vêtements personnalisés, vitrine marque, Signaid, e-commerce marque blanche, t-shirt personnalisé, hoodie sur mesure">
 
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
     <meta name="author" content="Signaid Inc." />
 
+    <!-- Facebook App ID -->
+    <meta property="fb:app_id" content="2220391788200892" />
+
     <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://signaid.eu/">
-    <meta property="og:title" content="Signaid | La machine à revenus passive pour DJs, clubs et collectifs (Zéro logistique)">
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Signaid — Infrastructure Textile & Merchandising en Marque Blanche" />
     <meta property="og:description"
-        content="Boutique merchandising DJ et musique électronique. Déployez votre boutique officielle en marque blanche sans stock ni gestion physique.">
-    <meta property="og:image" content="https://signaid.eu/logo.png">
+        content="Votre marque sur textile premium, sans stock ni logistique. Déploiement instantané d'une vitrine web et boutique textile officielle pour créateurs, indépendants et marques." />
+    <meta property="og:image" content="https://signaid.eu/logo.png" />
 
     <!-- Twitter -->
-    <meta property="twitter:card" content="summary_large_image">
-    <meta property="twitter:url" content="https://signaid.eu/">
-    <meta property="twitter:title" content="Signaid | La machine à revenus passive pour DJs, clubs et collectifs (Zéro logistique)">
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:title" content="Signaid — Infrastructure Textile & Merchandising en Marque Blanche" />
     <meta property="twitter:description"
-        content="Infrastructure automatisée de merchandising en marque blanche pour la musique électronique.">
-    <meta property="twitter:image" content="https://signaid.eu/logo.png">
+        content="Votre marque sur textile premium, sans stock ni logistique. Déploiement instantané d'une vitrine web et boutique textile officielle pour créateurs, indépendants et marques." />
+    <meta property="twitter:image" content="https://signaid.eu/logo.png" />
 
     <!-- JSON-LD Structured Data for AI & Search Engines -->
     <script type="application/ld+json">
@@ -54,11 +77,11 @@
           "@type": ["Organization", "LocalBusiness", "Service"],
           "@id": "https://signaid.eu/#organization",
           "name": "Signaid",
-          "alternateName": "Signaid Merch Infrastructure",
+          "alternateName": "Signaid Textile Infrastructure",
           "url": "https://signaid.eu/",
           "logo": "https://signaid.eu/logo.png",
           "image": "https://signaid.eu/logo.png",
-          "description": "Signaid est la première infrastructure automatisée de merchandising en marque blanche pour DJs, artistes, clubs et collectifs de musique électronique. Production textile à la demande et livraison sous 48h sans gestion de stock.",
+          "description": "Signaid est la première infrastructure automatisée de merchandising textile en marque blanche pour créateurs de contenu, indépendants, coachs, studios, artistes et marques émergentes. Production textile à la demande et livraison sous 48h sans gestion de stock.",
           "telephone": "+33189000000",
           "email": "contact@signeedclub.com",
           "contactPoint": {
@@ -85,16 +108,16 @@
           "aggregateRating": {
             "@type": "AggregateRating",
             "ratingValue": "4.9",
-            "reviewCount": "152",
+            "reviewCount": "250",
             "bestRating": "5"
           },
           "offers": {
             "@type": "Offer",
-            "name": "Boutique Merchandising DJ Zéro Stock",
+            "name": "Boutique Textile Personnalisée Zéro Stock",
             "price": "0.00",
             "priceCurrency": "EUR",
             "availability": "https://schema.org/InStock",
-            "description": "Déploiement immédiat d'une boutique officielle en marque blanche sans avance de frais ni stock."
+            "description": "Déploiement immédiat d'une boutique officielle en marque blanche sans avance de frais ni gestion de stock."
           }
         },
         {
@@ -106,23 +129,23 @@
               "name": "Qu'est-ce que Signaid ?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Une infrastructure automatisée qui déploie une boutique de vêtements et d'accessoires pour les acteurs de la musique électronique (DJs, clubs, festivals et collectifs)."
+                "text": "Une infrastructure automatisée qui déploie une vitrine web et une boutique de vêtements et d'accessoires personnalisés pour les créateurs, coachs, indépendants, studios, artistes et marques."
               }
             },
             {
               "@type": "Question",
-              "name": "Est-ce que l'artiste doit gérer la production ou la livraison ?",
+              "name": "Est-ce que je dois gérer la production ou la livraison ?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Non, tout est automatisé en marque blanche via API de production et logistique physique à la demande. L'artiste ne gère aucun stock."
+                "text": "Non, tout est 100% automatisé en marque blanche via API de production et logistique physique à la demande. Aucun stock ni avance de trésorerie requis."
               }
             },
             {
               "@type": "Question",
-              "name": "Comment créer son profil et sa boutique ?",
+              "name": "Et si je n'ai pas encore de logo vectoriel ?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "En quelques clics via notre interface de déploiement instantané, sans aucun stock à acheter à l'avance."
+                "text": "Notre équipe de design graphique peut vectoriser votre logo actuel ou créer une identité visuelle complète prête pour l'impression textile HD."
               }
             },
             {
@@ -130,7 +153,7 @@
               "name": "Quelles zones géographiques sont desservies par Signaid ?",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "Signaid assure la production et l'expédition en France, Belgique, Suisse, Luxembourg et dans toute l'Europe sous 48h."
+                "text": "Signaid assure la production et l'expédition avec suivi en France, Belgique, Suisse, Luxembourg et dans toute l'Europe sous 48h."
               }
             }
           ]
@@ -147,7 +170,7 @@
 
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Roboto:wght@400;700&family=Montserrat:wght@400;700&family=Playfair+Display:wght@400;700&family=Bebas+Neue&family=Graduate&family=Permanent+Marker&family=Lobster&family=Pacifico&family=Dancing+Script:wght@400;700&family=Oswald:wght@400;700&display=swap&text=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%E2%82%AC%C3%A9%C3%A8%C3%AA%C3%A0%C3%A2%C3%AE%C3%AF%C3%B4%C3%BB%C3%B9%C3%A7%C3%80%C3%88%C3%89%C3%8A%C3%8E%C3%AF%C3%94%C3%9B%C3%99%C3%87"
-        rel="stylesheet" media="print" onload="this.media='all'" />
+        rel="stylesheet" />
     <noscript>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet" />
     </noscript>
@@ -155,8 +178,11 @@
 
 
     <style>
-        body {
+        html, body {
             margin: 0;
+            padding: 0;
+            background-color: #09090b;
+            color: #f4f4f5;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
                 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
             -webkit-font-smoothing: antialiased;
@@ -170,32 +196,7 @@
         #root {
             width: 100%;
             min-height: 100vh;
-        }
-
-        /* Loading animation */
-        .pulse-animation {
-            animation: pulse 1.5s infinite ease-in-out;
-            width: 80px;
-            height: 80px;
-            -o-object-fit: contain;
-               object-fit: contain;
-        }
-
-        @keyframes pulse {
-            0% {
-                transform: scale(0.95);
-                opacity: 0.7;
-            }
-
-            50% {
-                transform: scale(1.1);
-                opacity: 1;
-            }
-
-            100% {
-                transform: scale(0.95);
-                opacity: 0.7;
-            }
+            background-color: #09090b;
         }
 
         /* Tailwind-like utility classes for animations */
@@ -207,7 +208,6 @@
             from {
                 opacity: 0;
             }
-
             to {
                 opacity: 1;
             }
@@ -257,21 +257,81 @@
     </script>
     <!-- End Deferred Facebook Pixel Code -->
 
-  <script type="module" crossorigin src="/assets/index-DfKUSthZ.js"></script>
-  <link rel="modulepreload" crossorigin href="/assets/vendor-react-BMdZHK_A.js">
-  <link rel="modulepreload" crossorigin href="/assets/vendor-firebase-BXkjib-c.js">
-  <link rel="modulepreload" crossorigin href="/assets/vendor-utils-BlOEjuHv.js">
-  <link rel="stylesheet" crossorigin href="/assets/index-TwkOJVOG.css">
+  <script type="module" crossorigin src="/assets/index-BRQnpeCI.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/vendor-react-3zGHaGES.js">
+  <link rel="modulepreload" crossorigin href="/assets/vendor-firebase-core-DksFN8ET.js">
+  <link rel="modulepreload" crossorigin href="/assets/vendor-firebase-auth-BsX2k1_i.js">
+  <link rel="modulepreload" crossorigin href="/assets/vendor-firebase-firestore-B68JTEEO.js">
+  <link rel="modulepreload" crossorigin href="/assets/vendor-firebase-storage-DKl2zaIB.js">
+  <link rel="modulepreload" crossorigin href="/assets/dtfMaster-Bq7hUZiB.js">
+  <link rel="modulepreload" crossorigin href="/assets/vendor-utils-BDTYWGYt.js">
+  <link rel="modulepreload" crossorigin href="/assets/customizer-CxdnNFIx.js">
+  <link rel="stylesheet" crossorigin href="/assets/customizer-D8Md-CES.css">
+  <link rel="stylesheet" crossorigin href="/assets/index-aIuWPr58.css">
 </head>
 
 <body>
     <div id="root">
-        <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;background-color:#ffffff;gap:20px;">
-            <img src="/logo.png" alt="Chargement..." class="pulse-animation" />
-            <a href="https://signaid.eu" style="color:#000000; text-decoration:none; font-weight:bold; font-size:0.8rem; opacity:0.5; letter-spacing:2px;">SIGNAID.EU</a>
+        <style>
+            .studio-loader-wrapper {
+                position: fixed;
+                inset: 0;
+                background-color: #09090b;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                z-index: 99999;
+                font-family: system-ui, -apple-system, sans-serif;
+                -webkit-user-select: none;
+                   -moz-user-select: none;
+                        user-select: none;
+            }
+            .studio-loader-logo {
+                width: 56px;
+                height: 31px;
+                animation: studioPulse 1.8s ease-in-out infinite;
+            }
+            .studio-loader-bar {
+                width: 120px;
+                height: 2px;
+                background: #27272a;
+                border-radius: 9999px;
+                margin-top: 24px;
+                overflow: hidden;
+                position: relative;
+            }
+            .studio-loader-bar::after {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                height: 100%;
+                width: 40%;
+                background: #dc2626;
+                border-radius: 9999px;
+                animation: studioShimmer 1.5s ease-in-out infinite;
+            }
+            @keyframes studioPulse {
+                0%, 100% { opacity: 0.35; transform: scale(0.96); }
+                50% { opacity: 1; transform: scale(1); }
+            }
+            @keyframes studioShimmer {
+                0% { left: -40%; }
+                100% { left: 100%; }
+            }
+        </style>
+        <div class="studio-loader-wrapper">
+            <svg class="studio-loader-logo" viewBox="0 0 1024 572" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <g fill="#f4f4f5">
+                    <path d="M 42,9 L 10,47 L 0,70 L 0,81 L 80,299 L 112,322 L 182,356 L 303,390 L 447,425 L 455,430 L 454,435 L 448,437 L 160,416 L 213,519 L 231,541 L 248,549 L 367,571 L 488,488 L 490,478 L 478,353 L 223,231 L 189,218 L 210,221 L 490,296 L 315,122 L 196,20 L 175,10 L 152,5 L 82,4 Z" />
+                    <path d="M 981,4 L 957,0 L 878,0 L 849,5 L 825,17 L 766,66 L 674,151 L 533,297 L 838,218 L 796,234 L 547,353 L 543,365 L 534,486 L 657,568 L 785,542 L 799,529 L 821,495 L 863,411 L 571,436 L 568,430 L 575,425 L 841,352 L 912,317 L 945,293 L 1023,78 L 1023,65 L 1013,42 Z" />
+                </g>
+            </svg>
+            <div class="studio-loader-bar"></div>
         </div>
     </div>
 
 </body>
 
-</html>
+</html>

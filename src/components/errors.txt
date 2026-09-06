@@ -1,8 +1,8 @@
 node_modules/react-router-dom/dist/index.d.ts(1,69): error TS2307: Cannot find module 'react-router/dom' or its corresponding type declarations.
-  There are types at 'C:/Partage/Projet/Signaid V24/node_modules/react-router/dist/development/dom-export.d.mts', but this result could not be resolved under your current 'moduleResolution' setting. Consider updating to 'node16', 'nodenext', or 'bundler'.
-node_modules/react-router/dist/development/index.d.ts(4,8): error TS1259: Module '"C:/Partage/Projet/Signaid V24/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+  There are types at 'C:/Partage/Projet/signaid-studio/node_modules/react-router/dist/development/dom-export.d.mts', but this result could not be resolved under your current 'moduleResolution' setting. Consider updating to 'node16', 'nodenext', or 'bundler'.
+node_modules/react-router/dist/development/index.d.ts(4,8): error TS1259: Module '"C:/Partage/Projet/signaid-studio/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
 node_modules/react-router/dist/development/instrumentation--6Pioq_G.d.ts(413,5): error TS18028: Private identifiers are only available when targeting ECMAScript 2015 and higher.
-src/components/CustomizerView.tsx(1,8): error TS1259: Module '"C:/Partage/Projet/Signaid V24/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/CustomizerView.tsx(1,8): error TS1259: Module '"C:/Partage/Projet/signaid-studio/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
 src/components/CustomizerView.tsx(177,83): error TS2345: Argument of type 'StyleCategory | "RÃ©aliste"' is not assignable to parameter of type 'StyleCategory | (() => StyleCategory)'.
   Type '"RÃ©aliste"' is not assignable to type 'StyleCategory | (() => StyleCategory)'. Did you mean '"Réaliste"'?
 src/components/CustomizerView.tsx(554,17): error TS2345: Argument of type 'string' is not assignable to parameter of type '"front" | "back"'.
@@ -14,7 +14,7 @@ src/components/CustomizerView.tsx(1048,127): error TS2367: This comparison appea
 src/components/CustomizerView.tsx(1050,79): error TS2367: This comparison appears to be unintentional because the types '"none"' and '"text"' have no overlap.
 src/components/CustomizerView.tsx(1058,127): error TS2367: This comparison appears to be unintentional because the types '"none"' and '"code"' have no overlap.
 src/components/CustomizerView.tsx(1060,82): error TS2367: This comparison appears to be unintentional because the types '"none"' and '"code"' have no overlap.
-src/components/DraggableElement.tsx(1,8): error TS1259: Module '"C:/Partage/Projet/Signaid V24/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
+src/components/DraggableElement.tsx(1,8): error TS1259: Module '"C:/Partage/Projet/signaid-studio/node_modules/@types/react/index"' can only be default-imported using the 'esModuleInterop' flag
 src/firebaseConfig.ts(10,13): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', or 'nodenext'.
 src/firebaseConfig.ts(10,25): error TS2339: Property 'env' does not exist on type 'ImportMeta'.
 src/firebaseConfig.ts(11,17): error TS1343: The 'import.meta' meta-property is only allowed when the '--module' option is 'es2020', 'es2022', 'esnext', 'system', 'node16', or 'nodenext'.

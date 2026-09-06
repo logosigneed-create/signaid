@@ -3,13 +3,12 @@ import { Upload, ShieldCheck, Zap, Layout, Loader2, Sparkles, LogIn, CheckSquare
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db, storage, auth } from './firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
-import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { ref, uploadString, getDownloadURL, UploadMetadata } from 'firebase/storage';
 import { SEO } from './components/SEO';
 import { geminiService } from './services/geminiService';
-import { getStoredConfig, saveStoredConfig, getCanonicalSlug } from './lib/store';
+import { getStoredConfig, saveStoredConfig } from './lib/store';
 import { removeBackground } from './utils/helpers';
 import { sanitizeForFirestore } from './utils/firestoreSanitizer';
-import { deleteStorageFileByUrl } from './utils/storageCleaner';
 
 type FlowState = 'LANDING' | 'CLEAN_CHECK' | 'SALES_AUDIT' | 'AUDIT' | 'RESULT' | 'ERROR';
 
@@ -49,7 +48,6 @@ interface BtpLogo {
     adaptedRemastered?: string | null;
     adaptedBlackRemastered?: string | null;
     mode: 'original' | 'adapted' | 'adaptedBlack' | 'remastered';
-    activeUrl?: string | null;
 }
 
 // ARCHITECTE : THE VAULT - MIGRATION DYNAMIQUE
@@ -128,7 +126,7 @@ const BtpLandingPage: React.FC = () => {
         hBack: 'A'
     });
 
-    const [logoScaleFront, setLogoScaleFront] = useState(0.20);
+    const [logoScaleFront, setLogoScaleFront] = useState(0.14);
     const [logoScaleBack, setLogoScaleBack] = useState(0.40);
     const [logoScaleCard, setLogoScaleCard] = useState(0.35);
     const [isBatConfirmed, setIsBatConfirmed] = useState(false);
@@ -137,6 +135,7 @@ const BtpLandingPage: React.FC = () => {
     const [enableStroke, setEnableStroke] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [showCropModal, setShowCropModal] = useState(false);
+    const [cropTargetSlot, setCropTargetSlot] = useState<'A' | 'B'>('B');
     const [logoAnalysis, setLogoAnalysis] = useState<any>(null);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [previewId, setPreviewId] = useState<string | null>(null);
@@ -145,24 +144,24 @@ const BtpLandingPage: React.FC = () => {
 
     const [mockups, setMockups] = useState<MockupItem[]>(() => [
         // CLASSIC BLACK
-        { id: 'tFront', title: 'T-shirt Noir FACE', base: "/assets/tshirt-black-JHK170.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
         { id: 'tBack', title: 'T-shirt Noir DOS', base: "/assets/tshirt-black-JHK170-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'tshirt' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
+        { id: 'tFront', title: 'T-shirt Noir FACE', base: "/assets/tshirt-black-JHK170.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
         
         // T-SHIRT BASIC (GREY)
-        { id: 'tbFront', title: 'T-shirt Basic FACE', base: "/assets/tshirt-grey-JHK170.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_basic' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
         { id: 'tbBack', title: 'T-shirt Basic DOS', base: "/assets/tshirt-grey-JHK170-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'tshirt_basic' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
+        { id: 'tbFront', title: 'T-shirt Basic FACE', base: "/assets/tshirt-grey-JHK170.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_basic' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
         
         // FLUO T-SHIRT
-        { id: 'vFront', title: 'T-shirt Fluo FACE', base: "/assets/tshirt-fluo-grey-front.jpg?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_bicolore' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
         { id: 'vBack', title: 'T-shirt Fluo DOS', base: "/assets/tshirt-fluo-grey-back.jpg?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'tshirt_bicolore' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
+        { id: 'vFront', title: 'T-shirt Fluo FACE', base: "/assets/tshirt-fluo-grey-front.jpg?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_bicolore' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
 
         // POLO
-        { id: 'pFront', title: 'Polo Noir FACE', base: "/assets/polo-black-JHK510.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
-        { id: 'pBack', title: 'Polo Noir DOS', base: "/assets/polo-black-JHK510-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
+        { id: 'pBack', title: 'Polo Noir DOS', base: "/assets/polo-black-JHK510-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'polo' as const, mechanical: null, model: "/assets/polo-black-JHK510-dos.png", selected: true },
+        { id: 'pFront', title: 'Polo Noir FACE', base: "/assets/polo-black-JHK510.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'polo' as const, mechanical: null, model: "/assets/polo-black-JHK510.png", selected: true },
 
         // HOODIE
-        { id: 'hFront', title: 'Hoodie Noir FACE', base: "/assets/hoodie-black-JHK421.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_front.png", selected: true },
         { id: 'hBack', title: 'Hoodie Noir DOS', base: "/assets/hoodie-black-JHK421-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_back.png", selected: true },
+        { id: 'hFront', title: 'Hoodie Noir FACE', base: "/assets/hoodie-black-JHK421.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_front.png", selected: true },
 
         // MARKETING ASSETS
         { id: 'cardFront', title: 'Carte Visite RECTO', base: "/assets/models/card_mockup_front_neutral.png", ai: null, isGenerating: false, view: 'front' as const, garment: 'business_card' as const, mechanical: null, model: "/assets/models/card_mockup_front_neutral.png", selected: true },
@@ -280,7 +279,7 @@ const BtpLandingPage: React.FC = () => {
                     const data = conf.data() as any;
                     // MERGE WITH DEFAULTS to avoid undefined garment types
                     PLACEMENTS = { ...DEFAULT_PLACEMENTS, ...data };
-                    if (data.tshirt?.front?.scale) setLogoScaleFront(data.tshirt.front.scale);
+                    if (data.tshirt?.front?.scale && data.tshirt.front.scale !== 0.20) setLogoScaleFront(data.tshirt.front.scale);
                     if (data.tshirt?.back?.scale) setLogoScaleBack(data.tshirt.back.scale);
                     console.log("Vault Architect: Placements synchronisés via Cloud.");
                 } else {
@@ -296,7 +295,7 @@ const BtpLandingPage: React.FC = () => {
     const saveRemoteConfig = async () => {
         try {
             const { doc, setDoc } = await import('firebase/firestore');
-            await setDoc(doc(db, 'portail-config', 'placements'), PLACEMENTS);
+            await setDoc(doc(db, 'portail-config', 'placements'), sanitizeForFirestore(PLACEMENTS));
             alert("Vault Architect: Configuration sauvegardée dans le Cloud avec succès.");
         } catch (e: any) {
             console.error("Cloud Sync Error:", e);
@@ -619,12 +618,16 @@ const BtpLandingPage: React.FC = () => {
     }, []);
 
     const saveSession = useCallback(async (lA: BtpLogo, lB: BtpLogo, placements: Record<string, 'A' | 'B'>, uData: UserData, currentMockups: MockupItem[]) => {
-        let sid = sessionId;
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlSid = urlParams.get('uid') || urlParams.get('audit') || urlParams.get('sid') || urlParams.get('key') || urlParams.get('slug');
+        let sid = sessionId || urlSid;
         if (!sid) {
             sid = `audit-${Math.random().toString(36).substring(2, 9)}`;
-            setSessionId(sid);
-            window.history.pushState({}, '', `?audit=${sid}`);
         }
+        setSessionId(sid);
+        localStorage.setItem('btp_active_session_id', sid);
+        const cleanPath = `/btp-audit/${sid}`;
+        window.history.pushState({}, '', cleanPath);
 
         try {
             // 1. HEAVY ASSETS & SESSION DATA TO INDEXED DB (UNLIMITED SPACE)
@@ -695,47 +698,50 @@ const BtpLandingPage: React.FC = () => {
                     } else if (mode === 'adaptedBlack' && l.remastered && l.adaptedBlackRemastered) {
                         base64 = l.adaptedBlackRemastered;
                     }
-                    if (base64 && typeof base64 === 'string' && base64.startsWith('http')) {
-                        return base64;
-                    }
-                    if (base64 && typeof base64 === 'string' && base64.startsWith('data:image')) {
-                        try {
-                            const lRef = ref(storage, `btp_mockups/${sid}/print/logo_${slot}_${Date.now()}.png`);
-                            await uploadString(lRef, base64, 'data_url');
-                            const downloadUrl = await getDownloadURL(lRef);
-
-                            // Purge old logo file from Firebase Storage if it exists and differs
-                            const prevUrl = l.activeUrl;
-                            if (prevUrl && prevUrl !== downloadUrl && prevUrl.includes('firebasestorage.googleapis.com')) {
-                                deleteStorageFileByUrl(prevUrl);
+                    if (base64 && typeof base64 === 'string') {
+                        if (base64.startsWith('http')) return base64;
+                        if (base64.startsWith('data:image') || base64.startsWith('data:')) {
+                            try {
+                                const timestamp = Date.now();
+                                const storageRef = ref(storage, `btp_mockups/${sid}/web/logo_${slot}_active_${timestamp}.png`);
+                                const match = base64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,/);
+                                const contentType = match ? match[1] : 'image/png';
+                                const metadata: UploadMetadata = {
+                                    contentType,
+                                    cacheControl: 'public, max-age=31536000, immutable'
+                                };
+                                await uploadString(storageRef, base64, 'data_url', metadata);
+                                return await getDownloadURL(storageRef);
+                            } catch (e) {
+                                console.warn(`Direct upload notice for active logo ${slot}:`, e);
                             }
-
-                            return downloadUrl;
-                        } catch (e) { return null; }
+                            return base64;
+                        }
                     }
                     return null;
                 };
 
-                const uploadIfBase64 = async (base64OrUrl: string | null, id: string, type: string, previousUrl?: string | null) => {
+                const uploadIfBase64 = async (base64OrUrl: string | null, id: string, type: string) => {
                     if (!base64OrUrl || typeof base64OrUrl !== 'string') return null;
                     if (base64OrUrl.startsWith('http')) return base64OrUrl;
                     if (base64OrUrl.startsWith('/assets/')) return base64OrUrl;
                     if (!base64OrUrl.startsWith('data:')) return null;
                     try {
-                        const assetRef = ref(storage, `btp_mockups/${sid}/web/${id}_${type}_${Date.now()}.png`);
-                        await uploadString(assetRef, base64OrUrl, 'data_url');
-                        const downloadUrl = await getDownloadURL(assetRef);
-
-                        // Purge previous orphan file from Firebase Storage after new file upload succeeds
-                        if (previousUrl && previousUrl !== downloadUrl && previousUrl.includes('firebasestorage.googleapis.com')) {
-                            deleteStorageFileByUrl(previousUrl);
-                        }
-
-                        return downloadUrl;
+                        const timestamp = Date.now();
+                        const folder = (type === 'mech' || type === 'print') ? 'print' : 'web';
+                        const storageRef = ref(storage, `btp_mockups/${sid}/${folder}/${id}_${type}_${timestamp}.png`);
+                        const match = base64OrUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,/);
+                        const contentType = match ? match[1] : 'image/png';
+                        const metadata: UploadMetadata = {
+                            contentType,
+                            cacheControl: 'public, max-age=31536000, immutable'
+                        };
+                        await uploadString(storageRef, base64OrUrl, 'data_url', metadata);
+                        return await getDownloadURL(storageRef);
                     } catch (e) {
-                        console.warn(`Failed to upload ${type} for ${id} during autosave:`, e);
-                        return null;
+                        console.warn(`Direct upload notice for ${type} for ${id}:`, e);
                     }
+                    return base64OrUrl;
                 };
 
                 const urlA = await getActiveLogoUrl(lA, 'A');
@@ -745,19 +751,12 @@ const BtpLandingPage: React.FC = () => {
                 const uploadedMockups = await Promise.all(currentMockups.map(async m => {
                     const slot = placements[m.id] || 'A';
                     const logo = slot === 'A' ? lA : lB;
-                    const isRemastered = logo.mode === 'remastered';
-                    const activeAi = isRemastered ? (m.aiRemastered || m.ai) : m.ai;
-
-                    const prevAiUrl = m.ai && typeof m.ai === 'string' && m.ai.startsWith('http') ? m.ai : null;
-                    const prevMechUrl = m.mechanical && typeof m.mechanical === 'string' && m.mechanical.startsWith('http') ? m.mechanical : null;
+                    const activeAi = m.aiRemastered || m.ai;
 
                     const [aiUrl, mechUrl] = await Promise.all([
-                        uploadIfBase64(activeAi, m.id, 'ai', prevAiUrl),
-                        uploadIfBase64(m.mechanical, m.id, 'mech', prevMechUrl)
+                        uploadIfBase64(activeAi, m.id, 'ai'),
+                        uploadIfBase64(m.mechanical, m.id, 'mech')
                     ]);
-
-                    const finalAi = (aiUrl && aiUrl.startsWith('http')) ? aiUrl : (activeAi && typeof activeAi === 'string' && activeAi.startsWith('http') ? activeAi : null);
-                    const finalMech = (mechUrl && mechUrl.startsWith('http')) ? mechUrl : (m.mechanical && typeof m.mechanical === 'string' && m.mechanical.startsWith('http') ? m.mechanical : null);
 
                     return {
                         id: m.id || "",
@@ -765,8 +764,9 @@ const BtpLandingPage: React.FC = () => {
                         garment: m.garment || "",
                         view: m.view || "",
                         selected: !!m.selected,
-                        ai: finalAi,
-                        mechanical: finalMech,
+                        ai: aiUrl || (activeAi && !activeAi.startsWith('data:') ? activeAi : null),
+                        aiRemastered: aiUrl || (activeAi && !activeAi.startsWith('data:') ? activeAi : null),
+                        mechanical: mechUrl || (m.mechanical && !m.mechanical.startsWith('data:') ? m.mechanical : null),
                         base: m.base || ""
                     };
                 }));
@@ -785,7 +785,7 @@ const BtpLandingPage: React.FC = () => {
                         website: uData.website || "",
                         tva: uData.tva || ""
                     },
-                    logoUrl: urlA || urlB || "", 
+                    logoUrl: urlA || urlB || "", // Provide for ProductPortal.tsx
                     logos: {
                         logoA: {
                             id: 'A' as const,
@@ -824,18 +824,29 @@ const BtpLandingPage: React.FC = () => {
                     previewId: pId,
                     companyName: uData.companyName || "",
                     logoUrl: urlA || urlB || "",
-                    logoOriginalUrl: null,
+                    logoOriginalUrl: lA.original || lB.original || "",
                     logoAdaptedUrl: urlA || urlB || "",
                     accentColor: placements?.accentColor || "#ea580c",
-                    items: uploadedMockups.map(m => ({
-                        id: m.id,
-                        title: m.title,
-                        price: m.id.includes('basic') ? 25 : 39,
-                        imageFront: m.ai || m.base || "",
-                        imageBack: m.mechanical || "",
-                        selected: !!m.selected,
-                        garment: m.garment || ""
-                    })),
+                    items: uploadedMockups.map((m: any) => {
+                        const isBack = m.view === 'back';
+                        const aiCandidate = m.aiRemastered || m.ai || null;
+                        const front = aiCandidate || m.frontImageUrl || m.base || "";
+                        const back = m.mechanical || m.backImageUrl || "";
+                        return {
+                            id: m.id,
+                            title: m.title,
+                            price: m.id.includes('basic') ? 25 : 39,
+                            imageFront: front,
+                            frontImageUrl: front,
+                            imageBack: back,
+                            backImageUrl: back,
+                            imageUrl: isBack ? back : front,
+                            ai: aiCandidate,
+                            aiRemastered: aiCandidate,
+                            selected: !!m.selected,
+                            garment: m.garment || ""
+                        };
+                    }),
                     status: 'pending',
                     userEmail: uData.email || null,
                     createdAt: new Date().toISOString(),
@@ -844,46 +855,28 @@ const BtpLandingPage: React.FC = () => {
 
                 await setDoc(doc(db, 'anonymous_previews', pId), sanitizeForFirestore(previewData), { merge: true });
 
-                // Centralized single-source SiteConfigs update using Canonical Slug
-                try {
-                    const canonicalId = getCanonicalSlug(sid);
-                    const tshirtAiUrl = uploadedMockups.find(m => m.id === 'tFront' || m.garment === 'tshirt')?.ai || uploadedMockups.find(m => m.id === 'tFront' || m.garment === 'tshirt')?.mechanical || null;
-                    const poloAiUrl = uploadedMockups.find(m => m.id === 'pFront' || m.garment === 'polo')?.ai || uploadedMockups.find(m => m.id === 'pFront' || m.garment === 'polo')?.mechanical || null;
-                    const hoodieAiUrl = uploadedMockups.find(m => m.id === 'hFront' || m.garment === 'sweat')?.ai || uploadedMockups.find(m => m.id === 'hFront' || m.garment === 'sweat')?.mechanical || null;
+                const tshirtMock = uploadedMockups.find(m => m.garment === 'tshirt' || m.id === 'tFront' || m.id?.includes('tshirt'));
+                const poloMock = uploadedMockups.find(m => m.garment === 'polo' || m.id === 'pFront' || m.id?.includes('polo'));
+                const hoodieMock = uploadedMockups.find(m => m.garment === 'sweat' || m.garment === 'hoodie' || m.id === 'hFront' || m.id?.includes('hoodie') || m.id?.includes('sweat'));
 
-                    const siteConfigsPayload = {
-                        canonicalSlug: canonicalId,
-                        projectId: sid,
-                        aliases: ["djdfazz", "fabrizio", "guest_ms3ijgnco2xnid", sid],
-                        products: {
-                            tshirt: { aiImageUrl: (tshirtAiUrl && typeof tshirtAiUrl === 'string' && tshirtAiUrl.startsWith('http')) ? tshirtAiUrl : "" },
-                            polo: { aiImageUrl: (poloAiUrl && typeof poloAiUrl === 'string' && poloAiUrl.startsWith('http')) ? poloAiUrl : "" },
-                            hoodie: { aiImageUrl: (hoodieAiUrl && typeof hoodieAiUrl === 'string' && hoodieAiUrl.startsWith('http')) ? hoodieAiUrl : "" }
-                        },
+                const productsSchema = {
+                    tshirt: { aiImageUrl: tshirtMock?.ai || null },
+                    polo: { aiImageUrl: poloMock?.ai || null },
+                    hoodie: { aiImageUrl: hoodieMock?.ai || null }
+                };
+
+                try {
+                    const siteConfigRef = doc(db, 'SiteConfigs', sid);
+                    await setDoc(siteConfigRef, sanitizeForFirestore({
+                        products: productsSchema,
                         mockups: uploadedMockups,
                         items: uploadedMockups,
                         logoUrl: urlA || urlB || "",
                         logoAdaptedUrl: urlA || urlB || "",
-                        lastUpdated: serverTimestamp(),
                         updatedAt: new Date().toISOString()
-                    };
-
-                    // Single write to canonical document
-                    const siteConfigRef = doc(db, 'SiteConfigs', canonicalId);
-                    await setDoc(siteConfigRef, sanitizeForFirestore(siteConfigsPayload), { merge: true });
-
-                    // If audit sid is different from canonicalId, create lightweight pointer
-                    if (sid && sid !== canonicalId) {
-                        const pointerRef = doc(db, 'SiteConfigs', sid);
-                        await setDoc(pointerRef, sanitizeForFirestore({
-                            canonicalSlug: canonicalId,
-                            aliasOf: canonicalId,
-                            projectId: sid,
-                            updatedAt: new Date().toISOString()
-                        }), { merge: true });
-                    }
+                    }), { merge: true });
                 } catch (scErr) {
-                    console.warn("SiteConfigs canonical sync error:", scErr);
+                    console.warn("SiteConfigs sync error in BtpLandingPage:", scErr);
                 }
 
                 setPreviewId(pId);
@@ -900,24 +893,24 @@ const BtpLandingPage: React.FC = () => {
     const initializeMockups = useCallback(() => {
         return [
             // CLASSIC BLACK
-            { id: 'tFront', title: 'T-shirt Noir FACE', base: "/assets/tshirt-black-JHK170.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
             { id: 'tBack', title: 'T-shirt Noir DOS', base: "/assets/tshirt-black-JHK170-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'tshirt' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
+            { id: 'tFront', title: 'T-shirt Noir FACE', base: "/assets/tshirt-black-JHK170.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
             
             // T-SHIRT BASIC (GREY)
-            { id: 'tbFront', title: 'T-shirt Basic FACE', base: "/assets/tshirt-grey-JHK170.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_basic' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
             { id: 'tbBack', title: 'T-shirt Basic DOS', base: "/assets/tshirt-grey-JHK170-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'tshirt_basic' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
+            { id: 'tbFront', title: 'T-shirt Basic FACE', base: "/assets/tshirt-grey-JHK170.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_basic' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
             
             // FLUO T-SHIRT (Replaces Safety Vest)
-            { id: 'vFront', title: 'T-shirt Fluo FACE', base: "/assets/tshirt-fluo-grey-front.jpg?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_bicolore' as const, mechanical: null, model: "/assets/models/tshirt_front.png", selected: true },
             { id: 'vBack', title: 'T-shirt Fluo DOS', base: "/assets/tshirt-fluo-grey-back.jpg?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'tshirt_bicolore' as const, mechanical: null, model: "/assets/models/tshirt_back.png", selected: true },
+            { id: 'vFront', title: 'T-shirt Fluo FACE', base: "/assets/tshirt-fluo-grey-front.jpg?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_bicolore' as const, mechanical: null, model: "/assets/models/tshirt_front.png", selected: true },
 
             // POLO
-            { id: 'pFront', title: 'Polo Noir FACE', base: "/assets/polo-black-JHK510.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
-            { id: 'pBack', title: 'Polo Noir DOS', base: "/assets/polo-black-JHK510-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
+            { id: 'pBack', title: 'Polo Noir DOS', base: "/assets/polo-black-JHK510-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'polo' as const, mechanical: null, model: "/assets/polo-black-JHK510-dos.png", selected: true },
+            { id: 'pFront', title: 'Polo Noir FACE', base: "/assets/polo-black-JHK510.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'polo' as const, mechanical: null, model: "/assets/polo-black-JHK510.png", selected: true },
 
             // HOODIE
-            { id: 'hFront', title: 'Hoodie Noir FACE', base: "/assets/hoodie-black-JHK421.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_front.png", selected: true },
             { id: 'hBack', title: 'Hoodie Noir DOS', base: "/assets/hoodie-black-JHK421-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_back.png", selected: true },
+            { id: 'hFront', title: 'Hoodie Noir FACE', base: "/assets/hoodie-black-JHK421.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_front.png", selected: true },
 
             // MARKETING ASSETS
             { id: 'cardFront', title: 'Carte Visite RECTO', base: "/assets/card-base.svg", ai: null, isGenerating: false, view: 'front' as const, garment: 'business_card' as const, mechanical: null, model: "/assets/models/card_mockup_front_neutral.png", selected: true },
@@ -1444,21 +1437,37 @@ const BtpLandingPage: React.FC = () => {
         });
     };
 
-    const fetchBase64 = async (url: string) => {
-        try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`HTTP ${response.status} sur ${url}`);
-            const blob = await response.blob();
-            return new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-            });
-        } catch (e) {
-            console.error("Fetch Error:", e);
-            throw e;
+    const fetchBase64 = async (url: string, retries = 2): Promise<string> => {
+        if (!url) throw new Error("URL vide");
+        if (url.startsWith('data:image') || url.startsWith('data:')) {
+            return url;
         }
+
+        let lastError: any = null;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 12000);
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) throw new Error(`HTTP ${response.status} sur ${url}`);
+                const blob = await response.blob();
+                return await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            } catch (e) {
+                lastError = e;
+                if (attempt < retries) {
+                    await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+                }
+            }
+        }
+        console.warn(`[fetchBase64] Échec après ${retries + 1} tentatives sur ${url}:`, lastError);
+        throw lastError;
     };
 
     const startSequentialPipeline = async (customUserData?: UserData, singleId?: string | string[], initialMockups?: MockupItem[]) => {
@@ -1524,7 +1533,7 @@ const BtpLandingPage: React.FC = () => {
                                 "",
                                 "1:1",
                                 'artistic',
-                                'gemini-1.5-pro',
+                                'gemini-3.6-flash',
                                 u.companyName
                             );
 
@@ -1585,10 +1594,27 @@ const BtpLandingPage: React.FC = () => {
                           Maintain original branding proportions but ensure maximum visibility on the provided garment.
                           STRICT GARMENT FIDELITY: The final garment MUST EXACTLY BE ${garmentLabel}. CRITICAL: YOU MUST EXACTLY MATCH THE GARMENT COLORS OF THE MECHANICAL GABARIT IN INPUT 2. DO NOT LEAVE THE GARMENT BLACK OR DARK GREY UNLESS THE GABARIT IS BLACK.`;
 
-                    if (u.companyName) {
-                        const compUpper = u.companyName.toUpperCase().trim();
+                    const isSlotB = (logoPlacements[it.id] === 'B') || (slot === 'B');
+                    const compUpper = (u.companyName || '').trim().toUpperCase();
+
+                    if (isSlotB) {
+                        contextPrompt += `\nSTRICT NO-TEXT INSTRUCTION: DO NOT render, invent, or add ANY text, typography, letters, or company name on this garment. Render ONLY the visual symbol/icon/graphic element provided in the reference image. The output must have ZERO text.`;
+                    } else if (compUpper) {
                         contextPrompt += `\nSTRICT LOGO TEXT & SPELLING INSTRUCTION: The company logo/branding text is exactly "${compUpper}". The text rendered on the garment MUST have this exact literal spelling character-by-character. Do NOT spell it as "${compUpper.replace(/AE/g, 'A')}" or miss any letters. Every single letter in "${compUpper}" must be rendered perfectly sharp, clear, and perfectly readable.`;
                     }
+
+                    const framingInstruction = `
+STRICT FRAMING & APPAREL VISIBILITY:
+- MEDIUM SHOT / WAIST-UP SHOT: The camera MUST capture the ENTIRE garment from collar/shoulders down to below the waist hemline.
+- COMPLETE GARMENT DISPLAY: The bottom edge, sleeves, and sides of the garment MUST be 100% visible inside the frame. ZERO tight close-up, ZERO extreme head zoom.
+- 1:1 SQUARE COMPOSITION: The subject and the garment must be perfectly centered within a square 1:1 frame with balanced margins around the torso.
+`;
+
+                    const poseDesc = it.view === 'back'
+                        ? `The model is standing completely facing AWAY from the camera (180-degree rear view). We see the back of the head and the back of the neck, with ZERO facial profile visible. CRITICAL: Maintain a medium shot so the full back of the ${garmentLabel} is completely visible from neck to waist.`
+                        : `The model is viewed straight from the front in a medium studio shot, showing the entire front of the ${garmentLabel}.`;
+
+                    contextPrompt += `\n${poseDesc}\n${framingInstruction}`;
 
                     const result = await geminiService.generateTryOnImage(
                         modelBase64,
@@ -1604,8 +1630,8 @@ const BtpLandingPage: React.FC = () => {
                         "",
                         "1:1",
                         'v-ton',
-                        'gemini-1.5-pro',
-                        u.companyName
+                        'gemini-3.6-flash',
+                        isSlotB ? "" : (u.companyName || "")
                     );
 
                     updateItem(it.id, result, false, mechanicalBase64);
@@ -1626,6 +1652,9 @@ const BtpLandingPage: React.FC = () => {
                     addLog(`[!] ERREUR ${it.id.toUpperCase()}: ${err.message || 'Inconnue'}`);
                     updateItem(it.id, null, false);
                 }
+
+                // Délai de 1,5 seconde entre chaque génération pour respecter les quotas RPM
+                await new Promise(r => setTimeout(r, 1500));
             }
             setIsRegenerating(false);
             setState('RESULT');
@@ -1706,9 +1735,9 @@ const BtpLandingPage: React.FC = () => {
         r.readAsDataURL(blob);
     });
 
-    const handleCropConfirm = async (croppedBase64: string) => {
+    const handleCropConfirm = async (croppedBase64: string, targetSlot: 'A' | 'B' = cropTargetSlot) => {
         setShowCropModal(false);
-        setStatusMessage("TRAITEMENT DU LOGO B (ROGNAGE)...");
+        setStatusMessage(`TRAITEMENT DU LOGO ${targetSlot} (ROGNAGE / RECADRAGE)...`);
         setIsAnalyzing(true);
         try {
             const [original, adapted, adaptedBlack] = await Promise.all([
@@ -1716,9 +1745,20 @@ const BtpLandingPage: React.FC = () => {
                 processLogoDeterministic(croppedBase64, true, false),
                 processLogoDeterministic(croppedBase64, true, true),
             ]);
-            const newLogoB: BtpLogo = { id: 'B', original, adapted, adaptedBlack, remastered: null, mode: logoA.mode };
-            setLogoB(newLogoB);
-            saveSession(logoA, newLogoB, logoPlacements, userData, mockups);
+            
+            if (targetSlot === 'A') {
+                const newLogoA: BtpLogo = { id: 'A', original, adapted, adaptedBlack, remastered: null, mode: logoA.mode || 'original' };
+                setLogoA(newLogoA);
+                const resetMockups = mockups.map(m => ({ ...m, aiRemastered: null }));
+                setMockups(resetMockups);
+                saveSession(newLogoA, logoB, logoPlacements, userData, resetMockups);
+            } else {
+                const newLogoB: BtpLogo = { id: 'B', original, adapted, adaptedBlack, remastered: null, mode: logoB.mode || logoA.mode || 'original' };
+                setLogoB(newLogoB);
+                const resetMockups = mockups.map(m => ({ ...m, aiRemastered: null }));
+                setMockups(resetMockups);
+                saveSession(logoA, newLogoB, logoPlacements, userData, resetMockups);
+            }
         } catch (err) {
             console.error("Crop error:", err);
         } finally {
@@ -2029,14 +2069,13 @@ const BtpLandingPage: React.FC = () => {
                                                             >
                                                                 NOIR
                                                             </button>
-                                                            {logo.id === 'B' && logoA.original && (
-                                                                <button
-                                                                    onClick={() => setShowCropModal(true)}
-                                                                    className={`px-3 py-1 font-black text-[9px] border border-orange-600 text-orange-600 hover:bg-orange-600 hover:text-black transition-all flex items-center gap-1`}
-                                                                >
-                                                                    <Crop size={10} /> ROGNER / GOMMER
-                                                                </button>
-                                                            )}
+                                                            <button
+                                                                onClick={() => { setCropTargetSlot(logo.id); setShowCropModal(true); }}
+                                                                className={`px-3 py-1 font-black text-[9px] border border-orange-600 text-orange-600 hover:bg-orange-600 hover:text-black transition-all flex items-center gap-1`}
+                                                                title={`Rogner / Gommer la source Logo ${logo.id}`}
+                                                            >
+                                                                <Crop size={10} /> ROGNER / GOMMER
+                                                            </button>
                                                         </div>
                                                     )}
                                                 </div>
@@ -2106,7 +2145,7 @@ const BtpLandingPage: React.FC = () => {
                                                         </button>
                                                         {logo.id === 'B' && logoA.original && (
                                                             <button
-                                                                onClick={() => setShowCropModal(true)}
+                                                                onClick={() => { setCropTargetSlot('B'); setShowCropModal(true); }}
                                                                 className="flex items-center gap-2 px-4 py-2 bg-orange-600/10 hover:bg-orange-600 text-orange-600 hover:text-black font-black text-[9px] uppercase italic tracking-tighter transition-all border border-orange-600/30"
                                                             >
                                                                 <Crop size={14} /> Rogner depuis Logo A
@@ -2345,18 +2384,16 @@ const BtpLandingPage: React.FC = () => {
 
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
                         <div className="lg:col-span-8 flex flex-col items-center">
-                            <div className={`relative aspect-square w-full max-w-[450px] border overflow-hidden shadow-2xl group cursor-default ${isLightMode ? 'bg-white border-gray-100' : 'bg-zinc-950/50 border-zinc-900'}`}>
+                            <div className={`relative aspect-square overflow-hidden bg-zinc-950 w-full max-w-[450px] border shadow-2xl group cursor-default ${isLightMode ? 'border-gray-100' : 'border-zinc-900'}`}>
                                  {(() => {
                                     const m = mockups[activeMockupIndex];
-                                    const slot = logoPlacements[m?.id] || 'A';
-                                    const logo = slot === 'A' ? logoA : logoB;
-                                    const displayAi = logo.mode === 'remastered' ? (m?.aiRemastered || m?.ai) : m?.ai;
+                                    const activePreview = m ? (m.aiRemastered || m.ai || (m as any).imageUrl || m.mechanical || m.base || '') : '';
 
                                     return (
                                         <>
                                             {m?.isGenerating ? (
                                                 <div className={`w-full h-full relative flex items-center justify-center bg-transparent`}>
-                                                    {m?.mechanical && <img src={m.mechanical} className="absolute inset-0 w-full h-full object-cover opacity-30 grayscale blur-[2px]" />}
+                                                    {m?.mechanical && <img src={m.mechanical} className="absolute inset-0 w-full h-full object-cover object-center opacity-30 grayscale blur-[2px]" />}
                                                     <div className="text-center space-y-6 z-10">
                                                         <Loader2 className="animate-spin text-orange-600 mx-auto" size={48} />
                                                         <div className={`${isLightMode ? 'bg-white border-gray-200 text-gray-500' : 'bg-black/80 border-white/5 text-zinc-600'} border p-4 w-80 font-mono text-[9px] text-left space-y-1`}>
@@ -2367,9 +2404,9 @@ const BtpLandingPage: React.FC = () => {
                                             ) : (
                                                 <img 
                                                     onContextMenu={e => { if (userData.email !== 'logosigneed@gmail.com') e.preventDefault(); }} 
-                                                    src={displayAi || m?.mechanical || m?.base || ''} 
-                                                    className={`w-full h-full ${m?.garment === 'business_card' || m?.garment === 'banner' ? 'object-contain p-12' : 'object-cover'} animate-reveal-image`} 
-                                                    style={m?.garment === 'tshirt_basic' && !(displayAi || m?.mechanical) ? { filter: 'brightness(0.35) contrast(1.2)' } : undefined}
+                                                    src={activePreview} 
+                                                    className="w-full h-full object-cover object-center animate-reveal-image" 
+                                                    alt={m?.title || 'Aperçu central'}
                                                 />
                                             )}
 
@@ -2385,7 +2422,9 @@ const BtpLandingPage: React.FC = () => {
 
                         <div className="lg:col-span-4 flex flex-col gap-8">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {mockups.filter(m => m.selected).map((m) => (
+                                {mockups.filter(m => m.selected).map((m) => {
+                                    const activePreview = m.aiRemastered || m.ai || (m as any).imageUrl || m.mechanical || m.base || '';
+                                    return (
                                     <div 
                                         key={m.id} 
                                         onClick={() => {
@@ -2393,28 +2432,17 @@ const BtpLandingPage: React.FC = () => {
                                             setActiveMockupIndex(realIndex);
                                         }} 
                                         className={`cursor-pointer flex flex-col gap-2 p-3 border transition-all relative group ${mockups[activeMockupIndex]?.id === m.id ? (isLightMode ? 'border-orange-600 bg-white shadow-xl' : 'border-orange-600 bg-zinc-950 shadow-[0_0_20px_rgba(234,88,12,0.15)]') : (isLightMode ? 'border-gray-100 opacity-60 hover:opacity-100 hover:border-gray-300' : 'border-zinc-900 opacity-60 hover:opacity-100 hover:border-zinc-700')}`}
-                                    >    <div className={`aspect-square w-full relative overflow-hidden ring-1 ${isLightMode ? 'ring-gray-100 bg-gray-50' : 'ring-white/10 bg-black'}`}>
+                                    >    <div className="aspect-square overflow-hidden bg-zinc-950 w-full relative ring-1 ring-white/10">
                                             <img
-                                                src={(() => {
-                                                    const slot = logoPlacements[m.id] || 'A';
-                                                    const logo = slot === 'A' ? logoA : logoB;
-                                                    const displayAi = logo.mode === 'remastered' ? (m.aiRemastered || m.ai) : m.ai;
-                                                    return displayAi || m.mechanical || m.base;
-                                                })()}
-                                                className={`w-full h-full ${m.garment === 'business_card' || m.garment === 'banner' ? 'object-contain p-4' : 'object-cover'} transition-transform group-hover:scale-105`}
-                                                style={(() => {
-                                                    const slot = logoPlacements[m.id] || 'A';
-                                                    const logo = slot === 'A' ? logoA : logoB;
-                                                    const displayAi = logo.mode === 'remastered' ? (m.aiRemastered || m.ai) : m.ai;
-                                                    return m.garment === 'tshirt_basic' && !(displayAi || m.mechanical) ? { filter: 'brightness(0.35) contrast(1.2)' } : undefined;
-                                                })()}
+                                                src={activePreview}
+                                                className="w-full h-full object-cover object-center transition-transform group-hover:scale-105"
                                                 alt={m.title}
                                             />
 
                                             {m.isGenerating && (
                                                 <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
-                                                    <div className="relative w-full h-full overflow-hidden flex items-center justify-center">
-                                                        <img src={m.mechanical || m.base} className="w-full h-full object-cover opacity-40 brightness-50" />
+                                                    <div className="aspect-square overflow-hidden bg-zinc-950 relative w-full h-full flex items-center justify-center">
+                                                        <img src={activePreview} className="w-full h-full object-cover object-center opacity-40 brightness-50" alt="" />
                                                     </div>
                                                     <div className="absolute inset-0 flex flex-col items-center justify-center">
                                                         <Loader2 className="text-orange-600 animate-spin mb-2" size={32} />
@@ -2469,7 +2497,8 @@ const BtpLandingPage: React.FC = () => {
                                             {m.ai && <div className="w-2 h-2 bg-orange-600 rounded-full shadow-[0_0_10px_orange]" />}
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -2537,7 +2566,7 @@ const BtpLandingPage: React.FC = () => {
                                         }
                                         const targetSid = uidParam || previewId;
                                         const targetShopUrl = targetSid ? `/portail-shop?audit=${targetSid}` : '/portail-shop';
-                                        window.open(targetShopUrl, '_blank');
+                                        window.location.href = targetShopUrl;
                                     };
                                     updateAndRedirect(); 
                                 }}
@@ -2641,7 +2670,7 @@ const BtpLandingPage: React.FC = () => {
                             <div className="h-full bg-orange-600 animate-[progress_16s_cubic-bezier(0.1,0.5,0.1,1)_forwards]"></div>
                         </div>
                         <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest font-mono">
-                            Optimisation certifiée pour DTF / Sérigraphie / Broderie
+                            Optimisation certifiée pour DTF / Sérigraphie Haute Définition
                         </p>
                     </div>
                 </div>
@@ -2671,13 +2700,17 @@ const BtpLandingPage: React.FC = () => {
                 body { background-color: ${isLightMode ? '#f9fafb' : '#020202'}; cursor: crosshair; }
             `}} />
 
-            {/* CROP MODAL */}
-            {showCropModal && logoA.original && (() => {
+            {/* CROP / RECADRAGE / GOMME MODAL (SUPPORT LOGO A & LOGO B) */}
+            {showCropModal && (logoA.original || logoB.original) && (() => {
                 const CropModal = () => {
                     const containerRef = useRef<HTMLDivElement>(null);
                     const imgRef = useRef<HTMLImageElement>(null);
                     const eraserCanvasRef = useRef<HTMLCanvasElement>(null);
-                    const [cropMethod, setCropMethod] = useState<'poly' | 'eraser'>('poly');
+                    const [cropMethod, setCropMethod] = useState<'rect' | 'poly' | 'eraser'>('rect');
+                    const [sourceSlot, setSourceSlot] = useState<'A' | 'B'>(() => {
+                        if (cropTargetSlot === 'A') return logoA.original ? 'A' : 'B';
+                        return logoB.original ? 'B' : (logoA.original ? 'A' : 'B');
+                    });
                     const [poly, setPoly] = useState<{x: number, y: number}[]>([]);
                     const [dragIdx, setDragIdx] = useState<number | null>(null);
 
@@ -2685,28 +2718,22 @@ const BtpLandingPage: React.FC = () => {
                     const [brushSize, setBrushSize] = useState(24);
                     const [isErasing, setIsErasing] = useState(false);
                     const [cursorPos, setCursorPos] = useState<{x: number, y: number} | null>(null);
-
-                    // New states for persistent edits and background options
-                    const [useLogoBAsBase, setUseLogoBAsBase] = useState(true);
                     
-                    const activeMode = logoB.original ? logoB.mode : logoA.mode;
-                    const defaultBg = (activeMode === 'adapted') ? 'black' : 'white';
+                    const activeLogo = sourceSlot === 'A' ? logoA : logoB;
+                    const activeMode = activeLogo.original ? activeLogo.mode : 'original';
+                    const defaultBg = (activeMode === 'adapted') ? 'black' : 'transparent';
                     const [cropBg, setCropBg] = useState<'transparent' | 'white' | 'black'>(defaultBg);
 
-                    const getLogoASrc = () => {
-                        if (useLogoBAsBase && logoB.original) {
-                            if (logoB.mode === 'remastered') return logoB.remastered || logoB.adapted!;
-                            if (logoB.mode === 'adaptedBlack') return (logoB.remastered && logoB.adaptedBlackRemastered) ? logoB.adaptedBlackRemastered : logoB.adaptedBlack!;
-                            if (logoB.mode === 'original') return logoB.original!;
-                            return (logoB.remastered && logoB.adaptedRemastered) ? logoB.adaptedRemastered : logoB.adapted!;
-                        }
-                        if (logoA.mode === 'remastered') return logoA.remastered || logoA.adapted!;
-                        if (logoA.mode === 'adaptedBlack') return (logoA.remastered && logoA.adaptedBlackRemastered) ? logoA.adaptedBlackRemastered : logoA.adaptedBlack!;
-                        if (logoA.mode === 'original') return logoA.original!;
-                        return (logoA.remastered && logoA.adaptedRemastered) ? logoA.adaptedRemastered : logoA.adapted!;
+                    const getActiveSourceSrc = () => {
+                        const targetLogo = sourceSlot === 'A' ? (logoA.original ? logoA : logoB) : (logoB.original ? logoB : logoA);
+                        if (!targetLogo.original) return '';
+                        if (targetLogo.mode === 'remastered') return targetLogo.remastered || targetLogo.adapted || targetLogo.original;
+                        if (targetLogo.mode === 'adaptedBlack') return (targetLogo.remastered && targetLogo.adaptedBlackRemastered) ? targetLogo.adaptedBlackRemastered : targetLogo.adaptedBlack || targetLogo.original;
+                        if (targetLogo.mode === 'adapted') return (targetLogo.remastered && targetLogo.adaptedRemastered) ? targetLogo.adaptedRemastered : targetLogo.adapted || targetLogo.original;
+                        return targetLogo.original;
                     };
 
-                    const initPoly = () => {
+                    const initBox = (type: 'rect' | 'square' | 'full' | 'inset') => {
                         if (!imgRef.current || !containerRef.current) return;
                         const rect = imgRef.current.getBoundingClientRect();
                         const contRect = containerRef.current.getBoundingClientRect();
@@ -2714,14 +2741,38 @@ const BtpLandingPage: React.FC = () => {
                         const offsetY = rect.top - contRect.top;
                         const w = rect.width;
                         const h = rect.height;
-                        const insetX = w * 0.1;
-                        const insetY = h * 0.1;
-                        setPoly([
-                            { x: offsetX + insetX, y: offsetY + insetY },
-                            { x: offsetX + w - insetX, y: offsetY + insetY },
-                            { x: offsetX + w - insetX, y: offsetY + h - insetY },
-                            { x: offsetX + insetX, y: offsetY + h - insetY }
-                        ]);
+
+                        if (type === 'full') {
+                            setPoly([
+                                { x: offsetX, y: offsetY },
+                                { x: offsetX + w, y: offsetY },
+                                { x: offsetX + w, y: offsetY + h },
+                                { x: offsetX, y: offsetY + h }
+                            ]);
+                        } else if (type === 'square') {
+                            const size = Math.min(w, h) * 0.8;
+                            const startX = offsetX + (w - size) / 2;
+                            const startY = offsetY + (h - size) / 2;
+                            setPoly([
+                                { x: startX, y: startY },
+                                { x: startX + size, y: startY },
+                                { x: startX + size, y: startY + size },
+                                { x: startX, y: startY + size }
+                            ]);
+                        } else {
+                            const insetX = w * (type === 'inset' ? 0.15 : 0.05);
+                            const insetY = h * (type === 'inset' ? 0.15 : 0.05);
+                            setPoly([
+                                { x: offsetX + insetX, y: offsetY + insetY },
+                                { x: offsetX + w - insetX, y: offsetY + insetY },
+                                { x: offsetX + w - insetX, y: offsetY + h - insetY },
+                                { x: offsetX + insetX, y: offsetY + h - insetY }
+                            ]);
+                        }
+                    };
+
+                    const initPoly = () => {
+                        initBox('rect');
                     };
 
                     const initEraserCanvas = () => {
@@ -2745,7 +2796,7 @@ const BtpLandingPage: React.FC = () => {
                         return { x: clientX - rect.left, y: clientY - rect.top };
                     };
 
-                    // Poly handlers
+                    // Poly & Rect drag handlers
                     const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
                         if (poly.length !== 4) return;
                         const pos = getPos(e);
@@ -2765,11 +2816,39 @@ const BtpLandingPage: React.FC = () => {
                         if (dragIdx === null) return;
                         e.preventDefault();
                         const pos = getPos(e);
-                        setPoly(prev => {
-                            const next = [...prev];
-                            next[dragIdx] = pos;
-                            return next;
-                        });
+                        
+                        if (cropMethod === 'rect') {
+                            // Mode Rectangle : synchroniser les axes X et Y pour garder une boîte droite
+                            setPoly(prev => {
+                                const next = [...prev];
+                                const current = pos;
+                                if (dragIdx === 0) { // Top-Left
+                                    next[0] = current;
+                                    next[1] = { x: next[1].x, y: current.y };
+                                    next[3] = { x: current.x, y: next[3].y };
+                                } else if (dragIdx === 1) { // Top-Right
+                                    next[1] = current;
+                                    next[0] = { x: next[0].x, y: current.y };
+                                    next[2] = { x: current.x, y: next[2].y };
+                                } else if (dragIdx === 2) { // Bottom-Right
+                                    next[2] = current;
+                                    next[3] = { x: next[3].x, y: current.y };
+                                    next[1] = { x: current.x, y: next[1].y };
+                                } else if (dragIdx === 3) { // Bottom-Left
+                                    next[3] = current;
+                                    next[2] = { x: next[2].x, y: current.y };
+                                    next[0] = { x: current.x, y: next[0].y };
+                                }
+                                return next;
+                            });
+                        } else {
+                            // Mode Découpe Libre
+                            setPoly(prev => {
+                                const next = [...prev];
+                                next[dragIdx] = pos;
+                                return next;
+                            });
+                        }
                     };
 
                     const handleEnd = () => setDragIdx(null);
@@ -2811,7 +2890,6 @@ const BtpLandingPage: React.FC = () => {
                         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
                         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
                         
-                        // Update cursor preview position
                         setCursorPos({
                             x: clientX - rect.left,
                             y: clientY - rect.top
@@ -2854,7 +2932,6 @@ const BtpLandingPage: React.FC = () => {
                         const data = imgData.data;
 
                         let minX = width, minY = height, maxX = 0, maxY = 0;
-
                         for (let y = 0; y < height; y++) {
                             for (let x = 0; x < width; x++) {
                                 const alpha = data[(y * width + x) * 4 + 3];
@@ -2866,10 +2943,7 @@ const BtpLandingPage: React.FC = () => {
                                 }
                             }
                         }
-
-                        if (maxX < minX || maxY < minY) {
-                            return c;
-                        }
+                        if (maxX < minX || maxY < minY) return c;
 
                         const trimmedWidth = maxX - minX + 1;
                         const trimmedHeight = maxY - minY + 1;
@@ -2878,7 +2952,6 @@ const BtpLandingPage: React.FC = () => {
                         trimmedCanvas.height = trimmedHeight;
                         const trimmedCtx = trimmedCanvas.getContext('2d')!;
                         trimmedCtx.drawImage(c, minX, minY, trimmedWidth, trimmedHeight, 0, 0, trimmedWidth, trimmedHeight);
-
                         return trimmedCanvas;
                     };
 
@@ -2906,8 +2979,8 @@ const BtpLandingPage: React.FC = () => {
                         const maxY = Math.min(img.naturalHeight, Math.max(...imgPoints.map(p => p.y)));
 
                         const canvas = document.createElement('canvas');
-                        canvas.width = maxX - minX;
-                        canvas.height = maxY - minY;
+                        canvas.width = Math.max(10, maxX - minX);
+                        canvas.height = Math.max(10, maxY - minY);
                         const ctx = canvas.getContext('2d')!;
 
                         ctx.beginPath();
@@ -2920,31 +2993,7 @@ const BtpLandingPage: React.FC = () => {
 
                         ctx.drawImage(img, -minX, -minY);
                         const croppedBase64 = canvas.toDataURL('image/png');
-                        handleCropConfirm(croppedBase64);
-                    };
-
-                    const resetToLogoA = () => {
-                        setUseLogoBAsBase(false);
-                        const logoASrc = logoA.mode === 'remastered' 
-                            ? (logoA.remastered || logoA.adapted!) 
-                            : (logoA.mode === 'original' ? logoA.original! : logoA.adapted!);
-                        
-                        if (cropMethod === 'eraser') {
-                            const canvas = eraserCanvasRef.current;
-                            if (!canvas) return;
-                            const tempImg = new Image();
-                            tempImg.crossOrigin = "anonymous";
-                            tempImg.src = logoASrc;
-                            tempImg.onload = () => {
-                                canvas.width = tempImg.naturalWidth;
-                                canvas.height = tempImg.naturalHeight;
-                                const ctx = canvas.getContext('2d');
-                                if (ctx) {
-                                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                                    ctx.drawImage(tempImg, 0, 0);
-                                }
-                            };
-                        }
+                        handleCropConfirm(croppedBase64, cropTargetSlot);
                     };
 
                     const confirmEraser = () => {
@@ -2952,17 +3001,83 @@ const BtpLandingPage: React.FC = () => {
                         if (!canvas) return;
                         const trimmedCanvas = trimCanvas(canvas);
                         const base64 = trimmedCanvas.toDataURL('image/png');
-                        handleCropConfirm(base64);
+                        handleCropConfirm(base64, cropTargetSlot);
                     };
 
                     return (
-                        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.92)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+                        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.94)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem', backdropFilter: 'blur(8px)' }}>
+                            {/* Header Badge */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap', justifyContent: 'center', zIndex: 10 }}>
+                                <div style={{ background: '#ea580c', color: '#000', padding: '0.35rem 0.9rem', borderRadius: '6px', fontWeight: 900, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    🎯 Destination : LOGO {cropTargetSlot} {cropTargetSlot === 'A' ? '(Dos / Grand Format)' : '(Cœur / Poitrine)'}
+                                </div>
+
+                                {logoA.original && logoB.original && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(255,255,255,0.06)', padding: '0.25rem 0.6rem', borderRadius: '6px' }}>
+                                        <span style={{ color: '#aaa', fontSize: '0.65rem', fontWeight: 700 }}>Source :</span>
+                                        <button
+                                            onClick={() => { setSourceSlot('A'); setTimeout(initPoly, 100); }}
+                                            style={{
+                                                padding: '0.2rem 0.6rem',
+                                                background: sourceSlot === 'A' ? '#ea580c' : 'rgba(255,255,255,0.1)',
+                                                color: sourceSlot === 'A' ? '#000' : '#fff',
+                                                border: 'none',
+                                                borderRadius: '3px',
+                                                fontSize: '0.65rem',
+                                                fontWeight: 800,
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Logo A
+                                        </button>
+                                        <button
+                                            onClick={() => { setSourceSlot('B'); setTimeout(initPoly, 100); }}
+                                            style={{
+                                                padding: '0.2rem 0.6rem',
+                                                background: sourceSlot === 'B' ? '#ea580c' : 'rgba(255,255,255,0.1)',
+                                                color: sourceSlot === 'B' ? '#000' : '#fff',
+                                                border: 'none',
+                                                borderRadius: '3px',
+                                                fontSize: '0.65rem',
+                                                fontWeight: 800,
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            Logo B
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Toggle method selector */}
-                            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.2rem', zIndex: 10 }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', zIndex: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
                                 <button
-                                    onClick={() => setCropMethod('poly')}
+                                    onClick={() => {
+                                        setCropMethod('rect');
+                                        setTimeout(() => initBox('rect'), 50);
+                                    }}
                                     style={{
-                                        padding: '0.6rem 1.8rem',
+                                        padding: '0.55rem 1.4rem',
+                                        background: cropMethod === 'rect' ? '#ea580c' : 'rgba(255,255,255,0.06)',
+                                        color: cropMethod === 'rect' ? '#000' : '#fff',
+                                        border: 'none',
+                                        fontWeight: 900,
+                                        fontSize: '0.7rem',
+                                        textTransform: 'uppercase',
+                                        cursor: 'pointer',
+                                        borderRadius: '4px',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    📐 Recadrage Simple
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setCropMethod('poly');
+                                        setTimeout(() => initBox('rect'), 50);
+                                    }}
+                                    style={{
+                                        padding: '0.55rem 1.4rem',
                                         background: cropMethod === 'poly' ? '#ea580c' : 'rgba(255,255,255,0.06)',
                                         color: cropMethod === 'poly' ? '#000' : '#fff',
                                         border: 'none',
@@ -2974,7 +3089,7 @@ const BtpLandingPage: React.FC = () => {
                                         transition: 'all 0.2s'
                                     }}
                                 >
-                                    Découpe libre (4 points)
+                                    ✂️ Découpe Libre (4 points)
                                 </button>
                                 <button
                                     onClick={() => {
@@ -2982,7 +3097,7 @@ const BtpLandingPage: React.FC = () => {
                                         setTimeout(initEraserCanvas, 100);
                                     }}
                                     style={{
-                                        padding: '0.6rem 1.8rem',
+                                        padding: '0.55rem 1.4rem',
                                         background: cropMethod === 'eraser' ? '#ea580c' : 'rgba(255,255,255,0.06)',
                                         color: cropMethod === 'eraser' ? '#000' : '#fff',
                                         border: 'none',
@@ -2994,93 +3109,33 @@ const BtpLandingPage: React.FC = () => {
                                         transition: 'all 0.2s'
                                     }}
                                 >
-                                    Gomme (Effacer des zones)
+                                    🧹 Gomme (Effacer des zones)
                                 </button>
                             </div>
 
-                            {/* Background and reset options */}
-                            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', justifyContent: 'center', zIndex: 10 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fff', fontSize: '0.75rem', background: 'rgba(255,255,255,0.04)', padding: '0.4rem 0.8rem', borderRadius: '6px' }}>
-                                    <span style={{ opacity: 0.8 }}>Fond :</span>
-                                    <button 
-                                        onClick={() => setCropBg('white')} 
-                                        style={{
-                                            padding: '0.2rem 0.6rem',
-                                            background: cropBg === 'white' ? '#ea580c' : 'rgba(255,255,255,0.1)',
-                                            color: cropBg === 'white' ? '#000' : '#fff',
-                                            border: 'none',
-                                            borderRadius: '3px',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 850,
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        Blanc
-                                    </button>
-                                    <button 
-                                        onClick={() => setCropBg('black')} 
-                                        style={{
-                                            padding: '0.2rem 0.6rem',
-                                            background: cropBg === 'black' ? '#ea580c' : 'rgba(255,255,255,0.1)',
-                                            color: cropBg === 'black' ? '#000' : '#fff',
-                                            border: 'none',
-                                            borderRadius: '3px',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 850,
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        Noir
-                                    </button>
-                                    <button 
-                                        onClick={() => setCropBg('transparent')} 
-                                        style={{
-                                            padding: '0.2rem 0.6rem',
-                                            background: cropBg === 'transparent' ? '#ea580c' : 'rgba(255,255,255,0.1)',
-                                            color: cropBg === 'transparent' ? '#000' : '#fff',
-                                            border: 'none',
-                                            borderRadius: '3px',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 850,
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        Damier
-                                    </button>
-                                </div>
-
-                                {logoB.original && useLogoBAsBase && (
-                                    <button
-                                        onClick={resetToLogoA}
-                                        style={{
-                                            padding: '0.4rem 0.8rem',
-                                            background: 'rgba(239, 68, 68, 0.1)',
-                                            border: '1px solid rgba(239, 68, 68, 0.2)',
-                                            color: '#ef4444',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 800,
-                                            textTransform: 'uppercase',
-                                            cursor: 'pointer',
-                                            borderRadius: '6px',
-                                            transition: 'all 0.2s'
-                                        }}
-                                        title="Recharger l'image originale du Logo A"
-                                    >
-                                        Recommencer depuis Logo A
-                                    </button>
+                            {/* Options & Presets Bar */}
+                            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', justifyContent: 'center', zIndex: 10 }}>
+                                {cropMethod === 'rect' && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(255,255,255,0.04)', padding: '0.35rem 0.75rem', borderRadius: '6px' }}>
+                                        <span style={{ color: '#aaa', fontSize: '0.65rem', fontWeight: 700 }}>Préréglages :</span>
+                                        <button onClick={() => initBox('square')} style={{ padding: '0.2rem 0.5rem', background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: '3px', fontSize: '0.65rem', fontWeight: 800, cursor: 'pointer' }}>Carré (1:1)</button>
+                                        <button onClick={() => initBox('inset')} style={{ padding: '0.2rem 0.5rem', background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: '3px', fontSize: '0.65rem', fontWeight: 800, cursor: 'pointer' }}>Centre (80%)</button>
+                                        <button onClick={() => initBox('full')} style={{ padding: '0.2rem 0.5rem', background: 'rgba(255,255,255,0.1)', color: '#fff', border: 'none', borderRadius: '3px', fontSize: '0.65rem', fontWeight: 800, cursor: 'pointer' }}>Plein écran</button>
+                                    </div>
                                 )}
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fff', fontSize: '0.75rem', background: 'rgba(255,255,255,0.04)', padding: '0.35rem 0.75rem', borderRadius: '6px' }}>
+                                    <span style={{ opacity: 0.8, fontSize: '0.65rem', fontWeight: 700 }}>Fond :</span>
+                                    <button onClick={() => setCropBg('white')} style={{ padding: '0.2rem 0.5rem', background: cropBg === 'white' ? '#ea580c' : 'rgba(255,255,255,0.1)', color: cropBg === 'white' ? '#000' : '#fff', border: 'none', borderRadius: '3px', fontSize: '0.65rem', fontWeight: 850, cursor: 'pointer' }}>Blanc</button>
+                                    <button onClick={() => setCropBg('black')} style={{ padding: '0.2rem 0.5rem', background: cropBg === 'black' ? '#ea580c' : 'rgba(255,255,255,0.1)', color: cropBg === 'black' ? '#000' : '#fff', border: 'none', borderRadius: '3px', fontSize: '0.65rem', fontWeight: 850, cursor: 'pointer' }}>Noir</button>
+                                    <button onClick={() => setCropBg('transparent')} style={{ padding: '0.2rem 0.5rem', background: cropBg === 'transparent' ? '#ea580c' : 'rgba(255,255,255,0.1)', color: cropBg === 'transparent' ? '#000' : '#fff', border: 'none', borderRadius: '3px', fontSize: '0.65rem', fontWeight: 850, cursor: 'pointer' }}>Damier</button>
+                                </div>
                             </div>
 
-                            <div style={{ color: '#fff', fontWeight: 900, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: '1rem', textAlign: 'center' }}>
-                                <Crop size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '8px', color: '#ea580c' }} />
-                                {cropMethod === 'poly' 
-                                    ? 'Déplacez les 4 points pour délimiter la zone à extraire' 
-                                    : 'Glissez pour effacer les éléments indésirables de l\'image'}
-                            </div>
-
+                            {/* Eraser controls */}
                             {cropMethod === 'eraser' && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: '#fff', fontSize: '0.75rem', marginBottom: '1.2rem', background: 'rgba(255,255,255,0.04)', padding: '0.5rem 1rem', borderRadius: '6px' }}>
-                                    <span>Taille de la gomme :</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: '#fff', fontSize: '0.75rem', marginBottom: '1rem', background: 'rgba(255,255,255,0.04)', padding: '0.4rem 1rem', borderRadius: '6px' }}>
+                                    <span>Taille de gomme :</span>
                                     <input
                                         type="range"
                                         min="5"
@@ -3094,7 +3149,7 @@ const BtpLandingPage: React.FC = () => {
                                         onClick={initEraserCanvas}
                                         style={{
                                             marginLeft: '1rem',
-                                            padding: '0.3rem 0.8rem',
+                                            padding: '0.25rem 0.7rem',
                                             background: 'rgba(255,255,255,0.1)',
                                             border: '1px solid rgba(255,255,255,0.15)',
                                             color: '#fff',
@@ -3110,27 +3165,28 @@ const BtpLandingPage: React.FC = () => {
                                 </div>
                             )}
 
+                            {/* Canvas / Image Interaction Area */}
                             <div
                                 ref={containerRef}
-                                style={{ position: 'relative', width: '90vw', height: '60vh', cursor: dragIdx !== null ? 'grabbing' : 'default', userSelect: 'none', touchAction: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                onMouseDown={cropMethod === 'poly' ? handleStart : undefined}
-                                onMouseMove={cropMethod === 'poly' ? handleMove : undefined}
-                                onMouseUp={cropMethod === 'poly' ? handleEnd : undefined}
-                                onMouseLeave={cropMethod === 'poly' ? handleEnd : undefined}
-                                onTouchStart={cropMethod === 'poly' ? handleStart : undefined}
-                                onTouchMove={cropMethod === 'poly' ? handleMove : undefined}
-                                onTouchEnd={cropMethod === 'poly' ? handleEnd : undefined}
+                                style={{ position: 'relative', width: '90vw', height: '56vh', cursor: dragIdx !== null ? 'grabbing' : 'default', userSelect: 'none', touchAction: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                onMouseDown={(cropMethod === 'poly' || cropMethod === 'rect') ? handleStart : undefined}
+                                onMouseMove={(cropMethod === 'poly' || cropMethod === 'rect') ? handleMove : undefined}
+                                onMouseUp={(cropMethod === 'poly' || cropMethod === 'rect') ? handleEnd : undefined}
+                                onMouseLeave={(cropMethod === 'poly' || cropMethod === 'rect') ? handleEnd : undefined}
+                                onTouchStart={(cropMethod === 'poly' || cropMethod === 'rect') ? handleStart : undefined}
+                                onTouchMove={(cropMethod === 'poly' || cropMethod === 'rect') ? handleMove : undefined}
+                                onTouchEnd={(cropMethod === 'poly' || cropMethod === 'rect') ? handleEnd : undefined}
                             >
                                 <img
                                     ref={imgRef}
                                     onLoad={initPoly}
-                                    src={getLogoASrc()}
+                                    src={getActiveSourceSrc()}
                                     crossOrigin="anonymous"
                                     style={{ 
                                         maxWidth: '100%', 
                                         maxHeight: '100%', 
                                         objectFit: 'contain', 
-                                        display: cropMethod === 'poly' ? 'block' : 'none', 
+                                        display: (cropMethod === 'poly' || cropMethod === 'rect') ? 'block' : 'none', 
                                         background: cropBg === 'transparent' 
                                             ? 'repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%) 50% / 20px 20px' 
                                             : cropBg 
@@ -3138,18 +3194,18 @@ const BtpLandingPage: React.FC = () => {
                                     draggable={false}
                                 />
                                 
-                                {cropMethod === 'poly' && (
+                                {(cropMethod === 'poly' || cropMethod === 'rect') && (
                                     <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}>
                                         <defs>
-                                            <mask id="poly-mask">
+                                            <mask id="poly-mask-btp">
                                                 <rect width="100%" height="100%" fill="white" />
                                                 {poly.length === 4 && <polygon points={poly.map(p => `${p.x},${p.y}`).join(' ')} fill="black" />}
                                             </mask>
                                         </defs>
-                                        <rect width="100%" height="100%" fill="rgba(0,0,0,0.8)" mask="url(#poly-mask)" />
+                                        <rect width="100%" height="100%" fill="rgba(0,0,0,0.75)" mask="url(#poly-mask-btp)" />
                                         {poly.length === 4 && (
                                             <>
-                                                <polygon points={poly.map(p => `${p.x},${p.y}`).join(' ')} fill="transparent" stroke="#ea580c" strokeWidth="2" strokeDasharray="4 4" />
+                                                <polygon points={poly.map(p => `${p.x},${p.y}`).join(' ')} fill="transparent" stroke="#ea580c" strokeWidth="2" strokeDasharray={cropMethod === 'rect' ? 'none' : '4 4'} />
                                                 {poly.map((p, i) => (
                                                     <circle key={i} cx={p.x} cy={p.y} r="12" fill="#ea580c" stroke="white" strokeWidth="3" style={{ pointerEvents: 'all', cursor: 'grab' }} />
                                                 ))}
@@ -3175,7 +3231,7 @@ const BtpLandingPage: React.FC = () => {
                                             onTouchEnd={handleEraserEnd}
                                             style={{
                                                 maxWidth: '90vw',
-                                                maxHeight: '60vh',
+                                                maxHeight: '56vh',
                                                 objectFit: 'contain',
                                                 display: 'block',
                                                 background: cropBg === 'transparent' 
@@ -3193,8 +3249,8 @@ const BtpLandingPage: React.FC = () => {
                                                 width: brushSize,
                                                 height: brushSize,
                                                 borderRadius: '50%',
-                                                border: '2px solid rgba(234, 88, 12, 0.8)',
-                                                backgroundColor: 'rgba(234, 88, 12, 0.2)',
+                                                border: '2px solid rgba(234, 88, 12, 0.9)',
+                                                backgroundColor: 'rgba(234, 88, 12, 0.25)',
                                                 pointerEvents: 'none',
                                                 zIndex: 20
                                             }} />
@@ -3203,14 +3259,15 @@ const BtpLandingPage: React.FC = () => {
                                 )}
                             </div>
 
-                            <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                            {/* Actions Bar */}
+                            <div style={{ display: 'flex', gap: '1rem', marginTop: '1.2rem' }}>
                                 <button
                                     onClick={() => setShowCropModal(false)}
-                                    style={{ padding: '0.7rem 2rem', background: 'transparent', border: '1px solid #555', color: '#aaa', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.1em' }}
+                                    style={{ padding: '0.7rem 1.8rem', background: 'transparent', border: '1px solid #555', color: '#aaa', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.1em', borderRadius: '6px' }}
                                 >
                                     Annuler
                                 </button>
-                                {cropMethod === 'poly' ? (
+                                {(cropMethod === 'poly' || cropMethod === 'rect') ? (
                                     <button
                                         onClick={confirmCrop}
                                         disabled={poly.length !== 4}
@@ -3223,10 +3280,12 @@ const BtpLandingPage: React.FC = () => {
                                             fontSize: '0.75rem',
                                             cursor: poly.length === 4 ? 'pointer' : 'not-allowed',
                                             textTransform: 'uppercase',
-                                            letterSpacing: '0.1em'
+                                            letterSpacing: '0.1em',
+                                            borderRadius: '6px',
+                                            boxShadow: '0 4px 15px rgba(234, 88, 12, 0.3)'
                                         }}
                                     >
-                                        ✓ Valider la découpe libre
+                                        ✓ Valider pour Logo {cropTargetSlot}
                                     </button>
                                 ) : (
                                     <button
@@ -3240,10 +3299,12 @@ const BtpLandingPage: React.FC = () => {
                                             fontSize: '0.75rem',
                                             cursor: 'pointer',
                                             textTransform: 'uppercase',
-                                            letterSpacing: '0.1em'
+                                            letterSpacing: '0.1em',
+                                            borderRadius: '6px',
+                                            boxShadow: '0 4px 15px rgba(234, 88, 12, 0.3)'
                                         }}
                                     >
-                                        ✓ Valider le gommage
+                                        ✓ Valider le gommage pour Logo {cropTargetSlot}
                                     </button>
                                 )}
                             </div>

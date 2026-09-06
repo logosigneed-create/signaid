@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { getStoredConfig, SiteConfig, generateMapsUrl, generateWhatsAppUrl, highlightKeywords, cleanText } from "@/src/lib/store";
 import { Link, useLocation } from "react-router-dom";
 import { auth, db } from "@/src/firebaseConfig";
-import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, getDoc } from "firebase/firestore";
+import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, getDoc, limit } from "firebase/firestore";
+import { sanitizeForFirestore } from "@/src/utils/firestoreSanitizer";
 import AdminQuickBar from "@/src/components/AdminQuickBar";
+import ShowcaseCarousel from "@/src/components/ShowcaseCarousel";
 import "./globals.css";
 
 function Accordion({ title, children, isOpen, onClick }: { title: string, children: React.ReactNode, isOpen: boolean, onClick: () => void }) {
@@ -20,15 +22,236 @@ function Accordion({ title, children, isOpen, onClick }: { title: string, childr
   );
 }
 
-const SocialIcon = ({ platform, color = "white" }: { platform: string, color?: string }) => {
-  const p = platform.toLowerCase();
-  if (p.includes("facebook")) return <svg width="24" height="24" fill={color} viewBox="0 0 24 24"><path d="M9 8h-3v4h3v12h5v-12h3.642l.358-4h-4v-1.667c0-.955.192-1.333 1.115-1.333h2.885v-5h-3.808c-3.596 0-5.192 1.583-5.192 4.615v3.385z"/></svg>;
-  if (p.includes("instagram")) return <svg width="24" height="24" fill={color} viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>;
-  if (p.includes("linkedin")) return <svg width="24" height="24" fill={color} viewBox="0 0 24 24"><path d="M4.98 3.5c0 1.381-1.11 2.5-2.48 2.5s-2.48-1.119-2.48-2.5c0-1.38 1.11-2.5 2.48-2.5s2.48 1.12 2.48 2.5zm.02 4.5h-5v16h5v-16zm7.982 0h-4.968v16h4.969v-8.399c0-4.67 6.029-5.052 6.029 0v8.399h4.989v-10.131c0-7.88-8.922-7.593-11.019-3.714v-2.155z"/></svg>;
-  if (p.includes("tiktok")) return <svg width="24" height="24" fill={color} viewBox="0 0 24 24"><path d="M12.525.02c1.31 0 2.591.21 3.795.602v4.54a7.08 7.08 0 0 1-2.31-.41V17.5a5.5 5.5 0 1 1-6.14-5.46v4.61a.9.9 0 1 0 .64 1.41V4.54A7.08 7.08 0 0 1 12.525.02z"/></svg>;
-  if (p.includes("whatsapp")) return <svg width="24" height="24" fill={color} viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.067 2.877 1.215 3.076.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>;
-  if (p.includes("email") || p.includes("gmail")) return <svg width="24" height="24" fill={color} viewBox="0 0 24 24"><path d="M24 4.5v15c0 .85-.65 1.5-1.5 1.5H21V7.387l-9 6.463-9-6.463V21H1.5C.65 21 0 20.35 0 19.5v-15c0-.425.162-.8.431-1.068C.7 3.16 1.075 3 1.5 3H3.9l8.1 5.812L20.1 3h2.4c.425 0 .8.162 1.069.432.269.268.431.643.431 1.068z"/></svg>;
-  return <svg width="24" height="24" fill={color} viewBox="0 0 24 24"><path d="M12 0c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm-1 18h-2v-6h-2v-2h4v8zm1-9.75c-.69 0-1.25-.56-1.25-1.25s.56-1.25 1.25-1.25 1.25.56 1.25 1.25-.56 1.25-1.25 1.25z"/></svg>;
+const SocialIcon = ({ platform, color, size = 22 }: { platform: string, color?: string, size?: number }) => {
+  const p = (platform || '').toLowerCase().trim();
+
+  // TikTok - Official Monochrome Glyph Image
+  if (p.includes('tiktok') || p.includes('tik')) {
+    const isLightColor = color && (color.toLowerCase() === '#ffffff' || color.toLowerCase() === 'white' || color.toLowerCase() === 'rgb(255, 255, 255)');
+    return (
+      <img
+        src="/assets/icons/tiktok-logo.png"
+        alt="TikTok"
+        className="object-contain"
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          objectFit: 'contain',
+          display: 'inline-block',
+          verticalAlign: 'middle',
+          filter: isLightColor ? 'brightness(0) invert(1)' : 'none'
+        }}
+      />
+    );
+  }
+
+  // SoundCloud - Official Image Picto
+  if (p.includes('soundcloud') || p.includes('sound')) {
+    const isLightColor = color && (color.toLowerCase() === '#ffffff' || color.toLowerCase() === 'white' || color.toLowerCase() === 'rgb(255, 255, 255)');
+    return (
+      <img
+        src="/assets/icons/soundcloud-logo.png"
+        alt="SoundCloud"
+        className="object-contain"
+        style={{
+          width: `${size}px`,
+          height: `${size}px`,
+          objectFit: 'contain',
+          display: 'inline-block',
+          verticalAlign: 'middle',
+          filter: isLightColor ? 'brightness(0) invert(1)' : 'none'
+        }}
+      />
+    );
+  }
+
+  // SoundCloud - Iconic Cloud with Soundwaves
+  if (p.includes('soundcloud') || p.includes('sound')) {
+    const fill = color || '#FF5500';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M1.5 12c-.28 0-.5.22-.5.5v3c0 .28.22.5.5.5s.5-.22.5-.5v-3c0-.28-.22-.5-.5-.5zm2-2c-.28 0-.5.22-.5.5v7c0 .28.22.5.5.5s.5-.22.5-.5v-7c0-.28-.22-.5-.5-.5zm2-2c-.28 0-.5.22-.5.5v11c0 .28.22.5.5.5s.5-.22.5-.5V8.5c0-.28-.22-.5-.5-.5zm2-1c-.28 0-.5.22-.5.5v13c0 .28.22.5.5.5s.5-.22.5-.5V7.5c0-.28-.22-.5-.5-.5zm2-1c-.28 0-.5.22-.5.5v15c0 .28.22.5.5.5s.5-.22.5-.5V6.5c0-.28-.22-.5-.5-.5zm10.75 3c-1.38 0-2.58.74-3.25 1.83-.34-.21-.73-.33-1.15-.33-.12 0-.24.01-.35.03v10.47h8.25c2.48 0 4.5-2.02 4.5-4.5s-2.02-4.5-4.5-4.5c-.32 0-.63.04-.93.1-.65-1.84-2.42-3.1-4.57-3.1z"/>
+      </svg>
+    );
+  }
+
+  // Instagram
+  if (p.includes('insta')) {
+    const fill = color || '#E1306C';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.441-1.44z"/>
+      </svg>
+    );
+  }
+
+  // YouTube
+  if (p.includes('youtube') || p.includes('yt')) {
+    const fill = color || '#FF0000';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+      </svg>
+    );
+  }
+
+  // Facebook
+  if (p.includes('facebook') || p.includes('fb')) {
+    const fill = color || '#1877F2';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+      </svg>
+    );
+  }
+
+  // WhatsApp
+  if (p.includes('whatsapp') || p.includes('whats') || p.includes('wa.me')) {
+    const fill = color || '#25D366';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z"/>
+      </svg>
+    );
+  }
+
+  // Apple Music
+  if (p.includes('apple') || p.includes('itunes') || p.includes('applemusic')) {
+    const fill = color || '#FC3C44';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.176 7.424l-6.353 1.27v7.502c-.52-.303-1.127-.478-1.777-.478-1.922 0-3.48 1.558-3.48 3.48s1.558 3.48 3.48 3.48 3.48-1.558 3.48-3.48V10.74l4.65-0.93v4.394c-.52-.303-1.127-.478-1.777-.478-1.922 0-3.48 1.558-3.48 3.48s1.558 3.48 3.48 3.48 3.48-1.558 3.48-3.48V7.424h-1.72z"/>
+      </svg>
+    );
+  }
+
+  // Beatport
+  if (p.includes('beatport')) {
+    const fill = color || '#00FF83';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M19.167 10.378c-.767-1.144-2.067-1.89-3.528-1.89h-3.306v6.027h3.306c1.461 0 2.761-.745 3.528-1.89.767-1.144.767-2.617 0-3.762zM7.667 6.486v11.028h2.333V6.486H7.667zm4.666-4.486v4.486h3.306c2.478 0 4.678 1.267 5.972 3.206 1.294 1.939 1.294 4.433 0 6.372-1.294 1.939-3.494 3.206-5.972 3.206h-5.639V2h2.333z"/>
+      </svg>
+    );
+  }
+
+  // Mixcloud
+  if (p.includes('mixcloud')) {
+    const fill = color || '#5000ff';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M2.28 15.65c-.75 0-1.37-.5-1.56-1.2l-.72-2.66c-.19-.7.22-1.42.92-1.61.7-.19 1.42.22 1.61.92l.72 2.66c.19.7-.22 1.42-.92 1.61-.15.04-.3.06-.45.06zm4.8 1.3c-.75 0-1.37-.5-1.56-1.2l-1.32-4.9c-.19-.7.22-1.42.92-1.61.7-.19 1.42.22 1.61.92l1.32 4.9c.19.7-.22 1.42-.92 1.61-.15.04-.3.06-.45.06zm4.8 1.3c-.75 0-1.37-.5-1.56-1.2l-1.92-7.14c-.19-.7.22-1.42.92-1.61.7-.19 1.42.22 1.61.92l1.92 7.14c.19.7-.22 1.42-.92 1.61-.15.04-.3.06-.45.06zm10.74-6.47c-.24-2.58-2.4-4.58-5.02-4.58-1.57 0-2.98.72-3.92 1.84l.64 2.37c.54-.7 1.37-1.15 2.31-1.15 1.62 0 2.94 1.32 2.94 2.94 0 .2-.02.4-.06.59l-.02.13.13.04c1.23.36 2.14 1.49 2.14 2.82 0 1.62-1.32 2.94-2.94 2.94h-2.12l.64 2.37h1.48c2.93 0 5.31-2.38 5.31-5.31 0-2.22-1.37-4.13-3.32-4.92l-.2-.08z"/>
+      </svg>
+    );
+  }
+
+  // Deezer
+  if (p.includes('deezer')) {
+    const fill = color || '#A238FF';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M18.8 6.4h3.6v2.4h-3.6V6.4zm0 3.6h3.6v2.4h-3.6v-2.4zm0 3.6h3.6V16h-3.6v-2.4zm0 3.6h3.6v2.4h-3.6v-2.4zM12.6 10h3.6v2.4h-3.6V10zm0 3.6h3.6V16h-3.6v-2.4zm0 3.6h3.6v2.4h-3.6v-2.4zM6.4 13.6H10V16H6.4v-2.4zm0 3.6H10v2.4H6.4v-2.4zM1.6 17.2h3.6v2.4H1.6v-2.4z"/>
+      </svg>
+    );
+  }
+
+  // Email / Booking
+  if (p.includes('mail') || p.includes('contact') || p.includes('book') || p.includes('gmail')) {
+    const fill = color || '#3B82F6';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+      </svg>
+    );
+  }
+
+  // X / Twitter
+  if (p.includes('twitter') || p.includes('x.com') || p === 'x') {
+    const fill = color || 'currentColor';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+      </svg>
+    );
+  }
+
+  // LinkedIn
+  if (p.includes('linkedin')) {
+    const fill = color || '#0A66C2';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+      </svg>
+    );
+  }
+
+  // Snapchat
+  if (p.includes('snap')) {
+    const fill = color || '#FFFC00';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M12.002 0c-4.227 0-7.393 2.825-7.393 6.786 0 .807.135 1.833.344 2.475.12.368.04.607-.156.763-.25.197-.73.35-1.282.502-.455.125-.87.24-.988.543-.13.335.12.72.63.99.822.433 1.83.67 2.296 1.488.163.284.09.684-.047 1.135-.183.606-.445 1.472-.11 2.052.287.498 1.05.748 2.046.748.435 0 .934-.048 1.486-.145.71-.124 1.42-.4 2.09-.4.636 0 1.25.228 1.94.39.57.133 1.18.232 1.85.232 1.01 0 1.77-.25 2.06-.75.33-.58.07-1.45-.11-2.05-.14-.45-.21-.85-.05-1.14.47-.82 1.48-1.06 2.3-1.49.51-.27.76-.66.63-1-.12-.3-.53-.42-.99-.54-.55-.15-1.03-.3-1.28-.5-.2-.16-.28-.4-.16-.76.21-.64.34-1.67.34-2.48C19.395 2.825 16.229 0 12.002 0z"/>
+      </svg>
+    );
+  }
+
+  // Discord
+  if (p.includes('disc')) {
+    const fill = color || '#5865F2';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.929 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.894.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+      </svg>
+    );
+  }
+
+  // Twitch
+  if (p.includes('twitch')) {
+    const fill = color || '#9146FF';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714Z"/>
+      </svg>
+    );
+  }
+
+  // Telegram
+  if (p.includes('tele') || p.includes('tg')) {
+    const fill = color || '#229ED9';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M12 0C5.37 0 0 5.37 0 12s5.37 12 12 12 12-5.37 12-12S18.63 0 12 0zm5.56 8.16l-1.97 9.28c-.15.65-.53.81-1.08.5l-3-2.21-1.45 1.4c-.16.16-.3.3-.61.3l.22-3.05 5.56-5.02c.24-.22-.05-.34-.38-.13l-6.87 4.33-2.96-.92c-.64-.2-.66-.64.13-.95l11.57-4.46c.54-.2 1 .12.84.93z"/>
+      </svg>
+    );
+  }
+
+  // Phone
+  if (p.includes('tel') || p.includes('phone') || p.includes('appel')) {
+    const fill = color || '#10B981';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/>
+      </svg>
+    );
+  }
+
+  // Shop / Merch
+  if (p.includes('shop') || p.includes('boutique') || p.includes('merch')) {
+    const fill = color || '#F59E0B';
+    return (
+      <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+        <path d="M19 6h-2c0-2.76-2.24-5-5-5S7 3.24 7 6H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-7-3c1.66 0 3 1.34 3 3H9c0-1.66 1.34-3 3-3zm7 17H5V8h14v12zm-7-8c-1.66 0-3-1.34-3-3H7c0 2.76 2.24 5 5 5s5-2.24 5-5h-2c0 1.66-1.34 3-3 3z"/>
+      </svg>
+    );
+  }
+
+  // Website / Globe
+  const fill = color || '#64748B';
+  return (
+    <svg width={size} height={size} fill={fill} viewBox="0 0 24 24">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+    </svg>
+  );
 };
 
 const ArrowRight = ({ size = 24, style = {} }: { size?: number, style?: React.CSSProperties }) => (
@@ -58,16 +281,18 @@ function PhotosCarousel({ urls }: { urls: string[] }) {
       borderRadius: '24px', 
       overflow: 'hidden', 
       border: '1px solid rgba(255,255,255,0.08)',
-      background: '#020617',
+      backgroundColor: '#020617',
       boxShadow: '0 20px 40px rgba(0,0,0,0.5), 0 0 30px rgba(var(--accent-rgb), 0.12)',
       marginBottom: '2.5rem'
     }}>
       <div style={{
         position: 'absolute',
         inset: 0,
+        backgroundColor: '#020617',
         backgroundImage: `url(${urls[currentIndex]})`,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
         filter: 'blur(30px) brightness(0.4)',
         transform: 'scale(1.2)',
         pointerEvents: 'none',
@@ -271,12 +496,14 @@ function MerchProductsCarousel({
   );
 }
 
+
 function ShowcaseLandingPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [needsLogoCreation, setNeedsLogoCreation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
@@ -356,19 +583,21 @@ function ShowcaseLandingPage() {
         finalLogo = finalLogo.substring(0, 500000);
       }
 
-      await addDoc(collection(db, "access_requests"), {
+      await addDoc(collection(db, "access_requests"), sanitizeForFirestore({
         artistName: name,
         email: email,
         logoBase64: finalLogo,
+        needsLogoCreation: needsLogoCreation,
         status: "pending",
         createdAt: serverTimestamp()
-      });
+      }));
 
       // Envoi direct de l'alerte e-mail à logosigneed@gmail.com
       const accessPayload = {
         artistName: name,
         email: email,
-        logoBase64: finalLogo
+        logoBase64: finalLogo,
+        needsLogoCreation: needsLogoCreation
       };
 
       const accessEndpoints = [
@@ -485,78 +714,109 @@ function ShowcaseLandingPage() {
 
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.6rem', border: theme.badgeBorder, padding: '0.4rem 1rem', marginBottom: '2.5rem', backgroundColor: theme.badgeBg }}>
             <span style={{ height: '6px', width: '6px', backgroundColor: '#ff3366', boxShadow: '0 0 8px #ff3366' }} />
-            <span style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.2em', color: theme.badgeText, textTransform: 'uppercase' }}>INFRASTRUCTURE MERCHANDISING CREATOR-FIRST</span>
+            <span style={{ fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.2em', color: theme.badgeText, textTransform: 'uppercase' }}>INFRASTRUCTURE TEXTILE & MERCHANDISING EN MARQUE BLANCHE</span>
           </div>
           
           <h1 style={{ fontSize: 'clamp(1.8rem, 4.5vw, 3rem)', fontWeight: 900, lineHeight: 1.15, color: theme.heading, marginBottom: '1.5rem', letterSpacing: '-0.03em', textAlign: 'center', textTransform: 'uppercase' }}>
-            La machine à revenus passive pour DJs, clubs et collectifs <br/><span style={{ color: '#ff3366' }}>(Zéro logistique)</span>
+            Votre marque sur textile premium, <br/><span style={{ color: '#ff3366' }}>sans stock ni logistique.</span>
           </h1>
           
-          <p style={{ fontSize: 'clamp(1rem, 2vw, 1.15rem)', color: theme.subtext, maxWidth: '720px', margin: '0 auto 1.5rem auto', lineHeight: 1.6, textAlign: 'center', fontWeight: 400 }}>
-            Créez instantanément votre vitrine et votre boutique de merchandising gérée par API en marque blanche. Tout est produit et expédié automatiquement à la demande, sans aucun stock ni gestion humaine pour l'artiste.
+          <p style={{ fontSize: 'clamp(1rem, 2vw, 1.15rem)', color: theme.subtext, maxWidth: '740px', margin: '0 auto 1.5rem auto', lineHeight: 1.6, textAlign: 'center', fontWeight: 400 }}>
+            Nous déployons votre boutique officielle et gérons l'impression à la demande ainsi que l'expédition en 48h. Concentrez-vous sur votre activité, on s'occupe de la matière.
           </p>
 
           {/* BLOC CLARTÉ DE L'OFFRE (POUR L'IA ET LES VISITEURS) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', width: '100%', maxWidth: '840px', margin: '1rem 0 2rem 0', textAlign: 'left' }}>
             <div style={{ padding: '1.2rem', backgroundColor: theme.cardBg, border: theme.cardBorder, borderRadius: '12px' }}>
-              <h3 style={{ fontSize: '0.82rem', fontWeight: 800, textTransform: 'uppercase', color: '#ff3366', margin: '0 0 0.4rem 0', letterSpacing: '0.05em' }}>🎯 Qui nous sommes</h3>
+              <h3 style={{ fontSize: '0.82rem', fontWeight: 800, textTransform: 'uppercase', color: '#ff3366', margin: '0 0 0.4rem 0', letterSpacing: '0.05em' }}>🎯 Pour qui ?</h3>
               <p style={{ fontSize: '0.85rem', color: theme.cardText, margin: 0, lineHeight: 1.5 }}>
-                La 1ère infrastructure SaaS e-commerce de Print-on-Demand dédiée aux DJs, clubs et collectifs de musique électronique.
+                Créateurs, coachs, freelances, studios, collectifs et marques émergentes qui souhaitent monétiser leur audience ou équiper leurs équipes avec du textile prêt-à-porter de haute qualité.
               </p>
             </div>
 
             <div style={{ padding: '1.2rem', backgroundColor: theme.cardBg, border: theme.cardBorder, borderRadius: '12px' }}>
               <h3 style={{ fontSize: '0.82rem', fontWeight: 800, textTransform: 'uppercase', color: '#10b981', margin: '0 0 0.4rem 0', letterSpacing: '0.05em' }}>🛍️ Ce que nous proposons</h3>
               <p style={{ fontSize: '0.85rem', color: theme.cardText, margin: 0, lineHeight: 1.5 }}>
-                Déploiement instantané d'une vitrine web & d'un shop textile officiel (T-Shirts, Hoodies, Polos HD) géré en marque blanche sans stock.
+                Déploiement instantané d'une vitrine web & d'une boutique textile premium (T-Shirts, Hoodies, Polos HD) gérée en marque blanche sans avance de stock.
               </p>
             </div>
 
             <div style={{ padding: '1.2rem', backgroundColor: theme.cardBg, border: theme.cardBorder, borderRadius: '12px' }}>
-              <h3 style={{ fontSize: '0.82rem', fontWeight: 800, textTransform: 'uppercase', color: '#38bdf8', margin: '0 0 0.4rem 0', letterSpacing: '0.05em' }}>📩 Comment nous joindre</h3>
+              <h3 style={{ fontSize: '0.82rem', fontWeight: 800, textTransform: 'uppercase', color: '#38bdf8', margin: '0 0 0.4rem 0', letterSpacing: '0.05em' }}>📩 Comment démarrer</h3>
               <p style={{ fontSize: '0.85rem', color: theme.cardText, margin: 0, lineHeight: 1.5 }}>
-                Accès direct via formulaire ci-dessous ou contact e-mail : <a href="mailto:logosigneed@gmail.com" style={{ color: '#ff3366', fontWeight: 'bold', textDecoration: 'none' }}>logosigneed@gmail.com</a>
+                Accès direct via le formulaire ci-dessous ou contact e-mail : <a href="mailto:logosigneed@gmail.com" style={{ color: '#ff3366', fontWeight: 'bold', textDecoration: 'none' }}>logosigneed@gmail.com</a>
               </p>
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button 
-              onClick={() => { setIsModalOpen(true); setIsSubmitted(false); }}
+            <a 
+              href="/creer-profil"
               style={{ 
                 backgroundColor: theme.buttonBg, 
                 color: theme.buttonText, 
-                fontWeight: 700, 
-                fontSize: '0.9rem', 
-                letterSpacing: '0.05em',
+                fontWeight: 800, 
+                fontSize: '0.92rem', 
+                letterSpacing: '0.05em', 
                 padding: '1.2rem 2.5rem', 
                 textDecoration: 'none', 
-                textTransform: 'uppercase',
-                border: theme.buttonBorder,
-                cursor: 'pointer',
-                transition: 'all 0.3s ease',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                boxShadow: isDayMode ? '0 10px 25px rgba(0,0,0,0.1)' : '0 10px 25px rgba(0,0,0,0.5)'
+                textTransform: 'uppercase', 
+                border: theme.buttonBorder, 
+                cursor: 'pointer', 
+                transition: 'all 0.3s ease', 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                gap: '0.6rem', 
+                boxShadow: isDayMode ? '0 10px 25px rgba(0,0,0,0.1)' : '0 10px 25px rgba(0,0,0,0.5)',
+                borderRadius: '8px'
               }}
             >
-              Réclamer mon infrastructure 
-              <span style={{ opacity: 0.6, fontSize: '0.8em', textTransform: 'none' }}>(Invitation Only)</span>
+              🚀 Créer mon profil & ma boutique
+              <span style={{ opacity: 0.6, fontSize: '0.8em', textTransform: 'none' }}>(Autonome • 2 min)</span>
+            </a>
+
+            <button 
+              onClick={() => { setIsModalOpen(true); setIsSubmitted(false); }}
+              style={{ 
+                backgroundColor: 'transparent', 
+                color: theme.heading, 
+                fontWeight: 700, 
+                fontSize: '0.88rem', 
+                letterSpacing: '0.05em', 
+                padding: '1.2rem 2rem', 
+                textDecoration: 'none', 
+                textTransform: 'uppercase', 
+                border: isDayMode ? '1px solid rgba(0,0,0,0.2)' : '1px solid rgba(255,255,255,0.2)', 
+                cursor: 'pointer', 
+                transition: 'all 0.3s ease', 
+                display: 'inline-flex', 
+                alignItems: 'center', 
+                gap: '0.5rem',
+                borderRadius: '8px'
+              }}
+            >
+              Demande rapide par email
             </button>
           </div>
         </header>
 
-        {/* SECTION PREUVES SOCIALES & AUTORITÉ */}
+        {/* SECTION PREUVES SOCIALES & PROFILS ARTISTES EN EXEMPLE */}
         <section id="preuves" className="reveal active" style={{ marginBottom: '4rem', borderTop: isDayMode ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.05)', paddingTop: '3rem' }}>
-          <h2 style={{ fontSize: '0.8rem', fontWeight: 700, color: theme.subtext, letterSpacing: '0.2em', textTransform: 'uppercase', textAlign: 'center', marginBottom: '2rem' }}>
-            Indicateurs d'Autorité & Avis Clients Certifiés
+          <h2 style={{ fontSize: '0.8rem', fontWeight: 700, color: theme.subtext, letterSpacing: '0.2em', textTransform: 'uppercase', textAlign: 'center', marginBottom: '1.25rem' }}>
+            Profils Créateurs, Indépendants & Marques
           </h2>
+          <div style={{ textAlign: 'center', maxWidth: '600px', margin: '0 auto 2.5rem auto', fontSize: '0.95rem', color: theme.text, lineHeight: 1.6 }}>
+            Découvrez comment nos créateurs et indépendants exploitent Signaid pour valoriser leur marque et monétiser leur audience sans aucun stock.
+          </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.25rem', textTransform: 'uppercase', textAlign: 'center', marginBottom: '2.5rem' }}>
+          {/* CAROUSEL COVER FLOW DES PROFILS ARTISTES & CRÉATEURS */}
+          <ShowcaseCarousel isLightMode={isDayMode} />
+
+          {/* CHIFFRES CLÉS & STATS */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.25rem', textTransform: 'uppercase', textAlign: 'center' }}>
             <div style={{ padding: '1.25rem', border: theme.cardBorder, backgroundColor: theme.cardBg, borderRadius: '12px' }}>
-              <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#ff3366' }}>+150</div>
-              <div style={{ fontSize: '0.75rem', color: theme.subtext, fontWeight: 700, marginTop: '0.25rem' }}>Artistes & DJs Équipés</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#ff3366' }}>+250</div>
+              <div style={{ fontSize: '0.75rem', color: theme.subtext, fontWeight: 700, marginTop: '0.25rem' }}>Créateurs & Marques Équipés</div>
             </div>
 
             <div style={{ padding: '1.25rem', border: theme.cardBorder, backgroundColor: theme.cardBg, borderRadius: '12px' }}>
@@ -574,50 +834,34 @@ function ShowcaseLandingPage() {
               <div style={{ fontSize: '0.75rem', color: theme.subtext, fontWeight: 700, marginTop: '0.25rem' }}>Avance & Zéro Stock</div>
             </div>
           </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
-            <blockquote style={{ margin: 0, padding: '1.25rem', borderLeft: '4px solid #ff3366', backgroundColor: theme.cardBg, borderRadius: '8px', fontSize: '0.88rem', color: theme.text, lineHeight: 1.5, fontStyle: 'italic' }}>
-              « Signaid nous a permis d'ouvrir une boutique officielle pour nos dates sans jamais toucher à un carton ni gérer d'envoi postal. La qualité est top. »
-              <cite style={{ display: 'block', marginTop: '0.5rem', fontSize: '0.78rem', fontWeight: 800, fontStyle: 'normal', color: theme.cardTitle }}>
-                — Fabrizio (DJ & Producteur - D-FAZZ)
-              </cite>
-            </blockquote>
-
-            <blockquote style={{ margin: 0, padding: '1.25rem', borderLeft: '4px solid #10b981', backgroundColor: theme.cardBg, borderRadius: '8px', fontSize: '0.88rem', color: theme.text, lineHeight: 1.5, fontStyle: 'italic' }}>
-              « L'intégration Stripe et l'impression à la demande nous évitent tout risque financier. Nos fans reçoivent leurs hoodies en 48h. »
-              <cite style={{ display: 'block', marginTop: '0.5rem', fontSize: '0.78rem', fontWeight: 800, fontStyle: 'normal', color: theme.cardTitle }}>
-                — Alex V. (Collectif Techno Lille & Bruxelles)
-              </cite>
-            </blockquote>
-          </div>
         </section>
 
         {/* ECOSYSTEM SECTION */}
         <section id="services" className="reveal active" style={{ marginBottom: '4rem', borderTop: isDayMode ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.05)', paddingTop: '4rem' }}>
           <h2 style={{ fontSize: '0.8rem', fontWeight: 600, color: theme.subtext, letterSpacing: '0.2em', textTransform: 'uppercase', textAlign: 'center', marginBottom: '3rem' }}>
-            Infrastructure & Monétisation Automatisée
+            Infrastructure Textile & Monétisation Automatisée
           </h2>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.5rem' }}>
             
             <div style={{ padding: '2rem', border: theme.cardBorder, backgroundColor: theme.cardBg, textAlign: 'left', transition: 'all 0.3s ease', boxShadow: isDayMode ? '0 4px 20px rgba(0,0,0,0.04)' : 'none' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: theme.cardTitle, marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>// DJs & Producteurs</h3>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: theme.cardTitle, marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>// Créateurs & Médias</h3>
               <p style={{ fontSize: '0.9rem', color: theme.cardText, lineHeight: 1.6, margin: 0 }}>
-                Monétisez votre communauté musicale avec une boutique officielle de textiles et d'accessoires personnalisés. Concentrez-vous sur vos sets, l'API gère la production.
+                Monétisation d'audience, drops & collections capsules. Offrez à votre communauté des pièces exclusives (t-shirts, hoodies, casquettes) produites et livrées à la commande.
               </p>
             </div>
 
             <div style={{ padding: '2rem', border: theme.cardBorder, backgroundColor: theme.cardBg, textAlign: 'left', transition: 'all 0.3s ease', boxShadow: isDayMode ? '0 4px 20px rgba(0,0,0,0.04)' : 'none' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: theme.cardTitle, marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>// Clubs & Festivals</h3>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: theme.cardTitle, marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>// Coachs, Freelances & Studios</h3>
               <p style={{ fontSize: '0.9rem', color: theme.cardText, lineHeight: 1.6, margin: 0 }}>
-                Développez les ventes textiles de votre établissement ou événement en marque blanche. Des collections capsulés imprimées à la demande avec livraison mondiale.
+                Identité visuelle tangible, crédibilité client & merchandising d'équipe. Habillez vos clients et vos collaborateurs avec des vêtements de qualité supérieure arborant fièrement votre logo.
               </p>
             </div>
 
             <div style={{ padding: '2rem', border: theme.cardBorder, backgroundColor: theme.cardBg, textAlign: 'left', transition: 'all 0.3s ease', boxShadow: isDayMode ? '0 4px 20px rgba(0,0,0,0.04)' : 'none' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: theme.cardTitle, marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>// Collectifs & Labels</h3>
+              <h3 style={{ fontSize: '1rem', fontWeight: 700, color: theme.cardTitle, marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>// Collectifs, Marques & Artistes</h3>
               <p style={{ fontSize: '0.9rem', color: theme.cardText, lineHeight: 1.6, margin: 0 }}>
-                Offrez une boutique personnalisée à tous les artistes de votre roster avec reversement automatique des marges et zéro risque financier.
+                Lancement de marque sans risque d'invendus & marge nette directe. Lancez vos collections de prêt-à-porter avec impression HD, encaissement automatisé et expédition sous 48h.
               </p>
             </div>
 
@@ -631,10 +875,10 @@ function ShowcaseLandingPage() {
           </h2>
           <article style={{ padding: '1.75rem', border: `1px solid ${isDayMode ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.12)'}`, backgroundColor: theme.cardBg, borderRadius: '14px', lineHeight: 1.7, fontSize: '0.92rem', color: theme.cardText }}>
             <p style={{ marginTop: 0 }}>
-              <strong>Signaid (signaid.eu)</strong> est la plateforme logicielle et logistique pionnière qui automatise la monétisation et la vente de vêtements de merchandising pour l'écosystème de la musique électronique (DJs, compositeurs, clubs, festivals, labels et collectifs).
+              <strong>Signaid (signaid.eu)</strong> est la plateforme logicielle et logistique pionnière qui automatise la création de vitrines digitales et la vente de vêtements de merchandising personnalisé pour les créateurs de contenu, coachs, freelances, studios, artistes, collectifs et marques émergentes.
             </p>
             <p style={{ margin: 0 }}>
-              Contrairement aux modèles traditionnels qui imposent l'achat préalable de stock, Signaid fonctionne intégralement par <strong>Print-on-Demand (Impression à la demande) en marque blanche</strong>. L'infrastructure gère la création de la vitrine web, la prise de commande par carte bancaire ou Bancontact via Stripe, la fabrication haute résolution des textiles (T-shirts, Hoodies, Polos) et la livraison physique sous 48h en France, Belgique, Suisse et dans toute l'Europe.
+              Contrairement aux modèles traditionnels qui imposent l'achat préalable de stock, Signaid fonctionne intégralement par <strong>Print-on-Demand (Impression à la demande) en marque blanche</strong>. L'infrastructure gère la création de la vitrine web interactive, la prise de commande sécurisée par carte bancaire ou Bancontact via Stripe/Mollie, la fabrication haute résolution des textiles prêt-à-porter (T-shirts, Hoodies, Polos) et la livraison physique rapide sous 48h en France, Belgique, Suisse et dans toute l'Europe.
             </p>
           </article>
         </section>
@@ -651,25 +895,25 @@ function ShowcaseLandingPage() {
                 Qu'est-ce que Signaid ?
               </h3>
               <p style={{ fontSize: '0.92rem', color: theme.cardText, lineHeight: 1.6, margin: 0 }}>
-                Signaid est une infrastructure automatisée qui déploie une boutique de vêtements et d'accessoires personnalisés pour les acteurs de la musique électronique.
+                Signaid est une infrastructure automatisée qui déploie une vitrine web et une boutique de vêtements & accessoires personnalisés haute définition pour valoriser votre marque.
               </p>
             </article>
 
             <article style={{ padding: '1.5rem', border: theme.cardBorder, backgroundColor: theme.cardBg, borderRadius: '12px' }}>
               <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: theme.cardTitle, marginBottom: '0.6rem' }}>
-                Est-ce que l'artiste doit gérer la production ou la livraison ?
+                Est-ce que je dois gérer la production, les stocks ou les colis ?
               </h3>
               <p style={{ fontSize: '0.92rem', color: theme.cardText, lineHeight: 1.6, margin: 0 }}>
-                Non, tout est automatisé en marque blanche via API de production et logistique physique. L'artiste perçoit ses marges sans jamais toucher aux colis.
+                Non, tout est 100% automatisé en impression à la demande (Print-on-Demand). Les articles sont fabriqués et expédiés directement à vos clients en marque blanche. Vous touchez vos marges sans aucune contrainte logistique.
               </p>
             </article>
 
             <article style={{ padding: '1.5rem', border: theme.cardBorder, backgroundColor: theme.cardBg, borderRadius: '12px' }}>
               <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: theme.cardTitle, marginBottom: '0.6rem' }}>
-                Comment créer son profil et sa boutique ?
+                Et si je n'ai pas encore de logo vectoriel ?
               </h3>
               <p style={{ fontSize: '0.92rem', color: theme.cardText, lineHeight: 1.6, margin: 0 }}>
-                En quelques clics via notre interface de déploiement instantané, sans aucun achat de stock à l'avance.
+                Aucun problème : cochez simplement l'option lors de votre demande. Notre studio de design peut vectoriser votre logo existant ou concevoir une identité visuelle complète prête pour l'impression textile HD.
               </p>
             </article>
 
@@ -678,25 +922,25 @@ function ShowcaseLandingPage() {
                 Quelles sont les zones géographiques livrées ?
               </h3>
               <p style={{ fontSize: '0.92rem', color: theme.cardText, lineHeight: 1.6, margin: 0 }}>
-                Signaid assure l'expédition directe avec numéro de suivi en France, en Belgique, en Suisse, au Luxembourg et dans toute l'Union Européenne sous 48h.
+                Signaid assure la fabrication et l'expédition directe avec numéro de suivi en France, en Belgique, en Suisse, au Luxembourg et dans toute l'Union Européenne sous 48h.
               </p>
             </article>
           </div>
         </section>
 
         {/* SECTION FOOTER & SEO LOCAL (BLOC D'ADRESSE ET COORDONNÉES) */}
-        <footer id="contact-local" style={{ marginTop: 'auto', borderTop: isDayMode ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.05)', paddingTop: '2.5rem', textAlign: 'center' }}>
+        <footer id="contact-local" style={{ marginTop: 'auto', borderTop: isDayMode ? '1px solid rgba(0,0,0,0.08)' : '1px solid rgba(255,255,255,0.05)', paddingTop: '2.5rem', paddingBottom: 'calc(4rem + env(safe-area-inset-bottom, 24px))', textAlign: 'center', position: 'relative', zIndex: 10 }}>
           
           <address style={{ fontStyle: 'normal', maxWidth: '650px', margin: '0 auto 1.5rem auto', fontSize: '0.82rem', color: theme.subtext, lineHeight: 1.6 }}>
             <strong style={{ color: theme.heading, display: 'block', fontSize: '0.9rem', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Signaid Europe — Infrastructure Logistique & Merchandising
+              Signaid Europe — Infrastructure Textile & Merchandising en Marque Blanche
             </strong>
             Zone d'intervention & livraison : France (Paris, Lyon, Marseille, Lille, Bordeaux), Belgique (Bruxelles, Liège), Suisse (Genève, Lausanne), Luxembourg et Union Européenne.<br/>
-            Contact support & partenariats : <a href="mailto:contact@signeedclub.com" style={{ color: '#ff3366', textDecoration: 'none', fontWeight: 'bold' }}>contact@signeedclub.com</a> | <a href="mailto:logosigneed@gmail.com" style={{ color: '#ff3366', textDecoration: 'none', fontWeight: 'bold' }}>logosigneed@gmail.com</a>
+            Contact support & partenariats : <a href="mailto:contact@signeedclub.com" style={{ color: '#ff3366', textDecoration: 'none', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', minHeight: '36px', padding: '0.2rem 0.5rem', touchAction: 'manipulation' }}>contact@signeedclub.com</a> | <a href="mailto:logosigneed@gmail.com" style={{ color: '#ff3366', textDecoration: 'none', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', minHeight: '36px', padding: '0.2rem 0.5rem', touchAction: 'manipulation' }}>logosigneed@gmail.com</a>
           </address>
 
           <span style={{ fontSize: '0.75rem', color: theme.footerText, letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block' }}>
-            © {new Date().getFullYear()} Signaid Inc. All rights reserved. Creator Monetization Infrastructure.
+            © {new Date().getFullYear()} Signaid Inc. All rights reserved. Creator & Independent Brand Infrastructure.
           </span>
         </footer>
 
@@ -748,23 +992,29 @@ function ShowcaseLandingPage() {
                 <div>
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', border: theme.badgeBorder, padding: '0.2rem 0.6rem', marginBottom: '0.8rem', backgroundColor: theme.badgeBg }}>
                     <span style={{ height: '5px', width: '5px', backgroundColor: '#ff3366' }} />
-                    <span style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.15em', color: theme.badgeText, textTransform: 'uppercase' }}>ACCÈS SUR INVITATION</span>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 600, letterSpacing: '0.15em', color: theme.badgeText, textTransform: 'uppercase' }}>CRÉATION INSTANTANÉE • ZÉRO STOCK</span>
                   </div>
-                  <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: theme.heading, textTransform: 'uppercase', letterSpacing: '-0.02em', margin: 0 }}>
-                    Réclamer mon infrastructure
+                  <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: theme.heading, textTransform: 'uppercase', letterSpacing: '-0.02em', margin: '0 0 0.5rem 0' }}>
+                    Lancer ma boutique textile
                   </h2>
+                  <div style={{ padding: '0.6rem 0.8rem', background: isDayMode ? 'rgba(56, 189, 248, 0.1)' : 'rgba(56, 189, 248, 0.08)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '8px', fontSize: '0.8rem', color: isDayMode ? '#0284c7' : '#7dd3fc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <span>✨ Configurez directement votre vitrine complète :</span>
+                    <a href="/creer-profil" style={{ color: '#ff3366', fontWeight: 800, textDecoration: 'none' }}>
+                      Créateur Autonome ➔
+                    </a>
+                  </div>
                 </div>
 
                 <div>
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: theme.modalLabel, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
-                    Nom d'Artiste / Créateur / Marque *
+                    Nom de Marque / Créateur / Activité *
                   </label>
                   <input 
                     type="text" 
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="ex: KNTXT / Studio 404 / Atelier Paris"
+                    placeholder="ex: Studio Design / Nomad Creative / Atelier Paris / Marque"
                     style={{
                       width: '100%',
                       backgroundColor: theme.inputBg,
@@ -787,7 +1037,7 @@ function ShowcaseLandingPage() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="contact@marque.com"
+                    placeholder="contact@votre-marque.com"
                     style={{
                       width: '100%',
                       backgroundColor: theme.inputBg,
@@ -803,42 +1053,79 @@ function ShowcaseLandingPage() {
 
                 <div>
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: theme.modalLabel, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem' }}>
-                    Logo ou Visuel HD (PNG / SVG / JPG)
+                    Logo ou Visuel HD (Optionnel)
                   </label>
-                  <div style={{
-                    border: isDayMode ? '1px dashed rgba(0, 0, 0, 0.2)' : '1px dashed rgba(255, 255, 255, 0.2)',
-                    backgroundColor: theme.inputBg,
-                    padding: '1.2rem',
-                    textAlign: 'center',
-                    position: 'relative',
-                    cursor: 'pointer'
+                  
+                  {!needsLogoCreation && (
+                    <div style={{
+                      border: isDayMode ? '1px dashed rgba(0, 0, 0, 0.2)' : '1px dashed rgba(255, 255, 255, 0.2)',
+                      backgroundColor: theme.inputBg,
+                      padding: '1.2rem',
+                      textAlign: 'center',
+                      position: 'relative',
+                      cursor: 'pointer',
+                      borderRadius: '8px',
+                      marginBottom: '0.6rem'
+                    }}>
+                      <input 
+                        type="file" 
+                        accept="image/*"
+                        onChange={handleFileChange}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '100%',
+                          opacity: 0,
+                          cursor: 'pointer'
+                        }}
+                      />
+                      {logoPreview ? (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
+                          <img src={logoPreview} alt="Aperçu" style={{ maxHeight: '50px', maxWidth: '100px', objectFit: 'contain' }} />
+                          <span style={{ fontSize: '0.8rem', color: '#ff3366', fontWeight: 600 }}>✓ Logo chargé</span>
+                        </div>
+                      ) : (
+                        <div>
+                          <span style={{ fontSize: '1.2rem', display: 'block', marginBottom: '0.3rem' }}>📁</span>
+                          <span style={{ fontSize: '0.8rem', color: theme.cardText }}>Télécharger mon logo (PNG / SVG / JPG)</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Passerelle création de logo */}
+                  <label style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.6rem',
+                    fontSize: '0.8rem',
+                    color: needsLogoCreation ? '#ff3366' : theme.modalLabel,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    padding: '0.3rem 0'
                   }}>
                     <input 
-                      type="file" 
-                      accept="image/*"
-                      onChange={handleFileChange}
+                      type="checkbox"
+                      checked={needsLogoCreation}
+                      onChange={(e) => {
+                        setNeedsLogoCreation(e.target.checked);
+                        if (e.target.checked) {
+                          setLogoFile(null);
+                          setLogoPreview(null);
+                        }
+                      }}
                       style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        width: '100%',
-                        height: '100%',
-                        opacity: 0,
+                        accentColor: '#ff3366',
+                        width: '16px',
+                        height: '16px',
                         cursor: 'pointer'
                       }}
                     />
-                    {logoPreview ? (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
-                        <img src={logoPreview} alt="Aperçu" style={{ maxHeight: '50px', maxWidth: '100px', objectFit: 'contain' }} />
-                        <span style={{ fontSize: '0.8rem', color: '#ff3366', fontWeight: 600 }}>✓ Logo chargé</span>
-                      </div>
-                    ) : (
-                      <div>
-                        <span style={{ fontSize: '1.2rem', display: 'block', marginBottom: '0.3rem' }}>📁</span>
-                        <span style={{ fontSize: '0.8rem', color: theme.cardText }}>Télécharger mon logo</span>
-                      </div>
-                    )}
-                  </div>
+                    <span>Je n'ai pas encore de logo vectoriel / J'ai besoin d'une création de logo</span>
+                  </label>
                 </div>
 
                 <button
@@ -858,7 +1145,7 @@ function ShowcaseLandingPage() {
                     transition: 'all 0.3s ease'
                   }}
                 >
-                  {isSubmitting ? "Transmission..." : "SOUMETTRE MA DEMANDE"}
+                  {isSubmitting ? "Transmission..." : "LANCER MA BOUTIQUE"}
                 </button>
               </form>
             ) : (
@@ -868,7 +1155,7 @@ function ShowcaseLandingPage() {
                   Demande Enregistrée
                 </h3>
                 <p style={{ color: theme.cardText, fontSize: '0.9rem', lineHeight: 1.6, marginBottom: '2rem' }}>
-                  Merci <strong style={{ color: theme.heading }}>{name}</strong>. Nos équipes analysent votre visuel et reviendront vers vous par email (<span style={{ color: '#ff3366' }}>{email}</span>) sous 24h avec vos accès studio personnalisés.
+                  Merci <strong style={{ color: theme.heading }}>{name}</strong>. {needsLogoCreation ? "Notre équipe de design va étudier votre projet d'identité visuelle et vous recontactera par email (" : "Nos équipes analysent votre visuel et reviendront vers vous par email ("}<span style={{ color: '#ff3366' }}>{email}</span>) sous 24h avec vos accès personnalisés.
                 </p>
                 <button 
                   onClick={() => setIsModalOpen(false)}
@@ -897,8 +1184,7 @@ function ShowcaseLandingPage() {
 export default function Home() {
   const location = useLocation();
   const urlParams = new URLSearchParams(location.search);
-  const isDemoPath = (location.pathname || "").toLowerCase().trim().replace(/\/$/, "") === '/demo-vitrine';
-  const isShowcase = urlParams.get('showcase') === 'true' || isDemoPath;
+  const isShowcase = urlParams.get('showcase') === 'true';
 
   const [config, setConfig] = useState<SiteConfig | null>(null);
   const [openSection, setOpenSection] = useState<string | null>("presentation");
@@ -1004,9 +1290,9 @@ export default function Home() {
         type: 'SHOP_ORDER'
       };
 
-      const docRef = await addDoc(collection(db, 'btp_dotations'), orderData);
+      const docRef = await addDoc(collection(db, 'btp_dotations'), sanitizeForFirestore(orderData));
 
-      const response = await fetch('https://us-central1-signaid-d2d08.cloudfunctions.net/createMolliePayment', {
+      const response = await fetch('https://us-central1-signaid-prod.cloudfunctions.net/createMolliePayment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1046,8 +1332,13 @@ export default function Home() {
   useEffect(() => {
     const loadData = async () => {
       let uid = urlParams.get('uid');
-      if (!uid && isDemoPath) {
-        uid = 'XisMrk9V9ubuJtSf6D9iXPCNWA12';
+      if (uid === 'audit-8f198p5' || uid === 'guest_ms3ijgnco2xnid' || uid === 'fabrizio' || uid === 'djdfazz') {
+        window.location.replace('/guest_ms3ijgnco2xnid');
+        return;
+      }
+      if (uid) {
+        window.location.replace(`/${uid}`);
+        return;
       }
       const data = await getStoredConfig(uid || undefined);
       setConfig(data);
@@ -1099,32 +1390,32 @@ export default function Home() {
             'audit-8f198p5'
           ])).filter(Boolean) as string[];
 
-          let foundMockups: any[] = [];
-          for (const k of keysToTry) {
-            let q = query(collection(db, 'btp_projects'), where('projectId', '==', k));
-            let snap = await getDocs(q);
-            if (snap.empty) {
-              q = query(collection(db, 'btp_projects'), where('previewId', '==', k));
-              snap = await getDocs(q);
-            }
-            if (!snap.empty) {
-              const pData = snap.docs[0].data();
-              foundMockups = pData.mockups || pData.items || [];
-              if (foundMockups.length > 0) break;
-            }
-            const prevRef = doc(db, 'anonymous_previews', k);
-            const prevSnap = await getDoc(prevRef);
-            if (prevSnap.exists()) {
-              foundMockups = prevSnap.data().items || [];
-              if (foundMockups.length > 0) break;
-            }
-          }
-          
+          const fetchMockupsFast = async () => {
+            const lookups = keysToTry.map(async (k) => {
+              try {
+                const [qProj, qPrev, docSnap] = await Promise.all([
+                  getDocs(query(collection(db, 'btp_projects'), where('projectId', '==', k), limit(1))).catch(() => null),
+                  getDocs(query(collection(db, 'btp_projects'), where('previewId', '==', k), limit(1))).catch(() => null),
+                  getDoc(doc(db, 'anonymous_previews', k)).catch(() => null)
+                ]);
+                if (qProj && !qProj.empty) return qProj.docs[0].data().mockups || qProj.docs[0].data().items || [];
+                if (qPrev && !qPrev.empty) return qPrev.docs[0].data().mockups || qPrev.docs[0].data().items || [];
+                if (docSnap && docSnap.exists()) return docSnap.data().items || [];
+              } catch {}
+              return [];
+            });
+            const results = await Promise.all(lookups);
+            return results.find(r => r && r.length > 0) || [];
+          };
+
+          const timeoutPromise = new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 1500));
+          let foundMockups = await Promise.race([fetchMockupsFast(), timeoutPromise]);
+
           // Limitation à 4 produits pour le plan gratuit
           if (!data.isPremium && foundMockups.length > 4) {
             foundMockups = foundMockups.slice(0, 4);
           }
-          
+
           setMockups(foundMockups);
         } catch (e) {
           console.warn("Failed to load mockups for vitrine:", e);
@@ -1132,7 +1423,8 @@ export default function Home() {
       }
     };
     loadData();
-  }, [isDemoPath, location.search]);
+
+  }, [location.search]);
 
   useEffect(() => {
     const observerOptions = {
@@ -1201,11 +1493,11 @@ export default function Home() {
         type: 'SHOP_ORDER'
       };
 
-      const docRef = await addDoc(collection(db, 'btp_dotations'), orderData);
+      const docRef = await addDoc(collection(db, 'btp_dotations'), sanitizeForFirestore(orderData));
       console.log("Order saved to Firestore: ", docRef.id);
 
       // Call Mollie payment cloud function
-      const response = await fetch('https://us-central1-signaid-d2d08.cloudfunctions.net/createMolliePayment', {
+      const response = await fetch('https://us-central1-signaid-prod.cloudfunctions.net/createMolliePayment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1238,7 +1530,7 @@ export default function Home() {
   if (!config) return <div className="loader" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', color: '#64748b' }}>CHARGEMENT...</div>;
 
   const hasUid = !!urlParams.get('uid');
-  const showLanding = (!hasUid && !isDemoPath) || (!hasUid && !config.companyName);
+  const showLanding = !hasUid || !config.companyName;
 
   if (showLanding) {
     return <ShowcaseLandingPage />;
@@ -1249,7 +1541,11 @@ export default function Home() {
       <div className="animated-bg"></div>
       <main className="container">
         <header className="logo-container reveal">
-          {config.logoUrl && <img src={config.logoUrl} alt={config.companyName || "Entreprise"} />}
+          {(() => {
+            const rawA = typeof config.logoA === 'string' ? config.logoA : ((config.logoA as any)?.adaptedRemastered || (config.logoA as any)?.adapted || (config.logoA as any)?.original);
+            const effLogo = config.logoUrl || config.auditLogoUrl || config.logoAdaptedUrl || rawA || '';
+            return effLogo ? <img src={effLogo} alt={config.companyName || "Entreprise"} /> : null;
+          })()}
           <h1 className="company-name">{cleanText(config.companyName || "Mon Entreprise")}</h1>
           {config.activitySector && <p className="activity-sector">{cleanText(config.activitySector)}</p>}
         </header>
@@ -1585,9 +1881,10 @@ export default function Home() {
 
         <footer className="footer reveal">
           <div className="footer-links">
-            <a href="https://signaid.eu" className="footer-link">SIGNAID.EU</a>
+            <a href="https://signaid.eu" target="_blank" rel="noopener noreferrer" className="footer-link">SIGNAID.EU</a>
+            <Link to="/vitrine-admin" className="footer-link">ADMINISTRATION</Link>
           </div>
-          <p>© {new Date().getFullYear()} {isShowcase ? "Votre Entreprise" : config.companyName}</p>
+          <p style={{ margin: 0, opacity: 0.5, fontSize: '0.75rem' }}>© {new Date().getFullYear()} {isShowcase ? "Votre Entreprise" : config.companyName}</p>
         </footer>
       </main>
 

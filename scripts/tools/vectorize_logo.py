@@ -36,7 +36,7 @@ svg_content = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" 
   </g>
 </svg>'''
 
-output_svg_path = r'c:\Partage\Projet\Signaid V24\logo.svg'
+output_svg_path = r'c:\Partage\Projet\signaid-studio\logo.svg'
 with open(output_svg_path, 'w', encoding='utf-8') as f:
     f.write(svg_content)
 

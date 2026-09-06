@@ -22,8 +22,22 @@ export class ErrorBoundary extends Component<Props, State> {
     }
 
     public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-        // console.error("Uncaught error:", error, errorInfo);
         this.setState({ errorInfo });
+        const errMsg = String(error?.message || error || '');
+        if (
+            errMsg.includes('dynamically imported module') ||
+            errMsg.includes('Loading chunk') ||
+            errMsg.includes('Failed to fetch') ||
+            errMsg.includes('Importing a module script failed') ||
+            errMsg.includes('CSS_CHUNK_LOAD_FAILED')
+        ) {
+            const lastReload = parseInt(sessionStorage.getItem('chunk_eb_reload') || '0', 10);
+            const now = Date.now();
+            if (now - lastReload > 8000) {
+                sessionStorage.setItem('chunk_eb_reload', String(now));
+                window.location.reload();
+            }
+        }
     }
 
     public render() {

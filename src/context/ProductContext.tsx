@@ -92,7 +92,10 @@ export const ProductProvider = ({ children }: { children: ReactNode }) => {
                 // Front Image
                 if (upload.front) {
                     const frontRef = ref(storage, `products/${slug}/${color}_front`);
-                    await uploadBytes(frontRef, upload.front);
+                    await uploadBytes(frontRef, upload.front, {
+                        contentType: 'image/png',
+                        cacheControl: 'public, max-age=86400'
+                    });
                     const frontUrl = await getDownloadURL(frontRef);
                     if (!processedProduct.images) processedProduct.images = {};
                     processedProduct.images[color] = frontUrl;
@@ -101,7 +104,10 @@ export const ProductProvider = ({ children }: { children: ReactNode }) => {
                 // Back Image
                 if (upload.back) {
                     const backRef = ref(storage, `products/${slug}/${color}_back`);
-                    await uploadBytes(backRef, upload.back);
+                    await uploadBytes(backRef, upload.back, {
+                        contentType: 'image/png',
+                        cacheControl: 'public, max-age=86400'
+                    });
                     const backUrl = await getDownloadURL(backRef);
                     if (!processedProduct.backImages) processedProduct.backImages = {};
                     processedProduct.backImages[color] = backUrl;

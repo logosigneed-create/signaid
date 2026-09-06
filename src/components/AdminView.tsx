@@ -5,6 +5,7 @@ import { collection, getDocs, query, orderBy, limit, doc, updateDoc, setDoc, get
 import { useProducts } from '../context/ProductContext';
 import { geminiService } from '../services/geminiService';
 import { removeBackground } from '../utils/helpers';
+import { sanitizeForFirestore } from '../utils/firestoreSanitizer';
 import { COLOR_NAMES } from '../constants';
 import FlyerEditor from './FlyerEditor';
 import { generateBusinessCardPDF } from '../utils/pdfGenerator';
@@ -206,7 +207,7 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
 
     const handleUpdateUserCredits = async (userId: string, newCredits: number) => {
         try {
-            await updateDoc(doc(db, "users", userId), { credits: newCredits });
+            await updateDoc(doc(db, "users", userId), sanitizeForFirestore({ credits: newCredits }));
             setUsersList(prev => prev.map(u => u.id === userId ? { ...u, credits: newCredits } : u));
             alert("Crédits mis à jour !");
         } catch (e) {
@@ -503,7 +504,7 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
 
                 const mergedRules = { ...existing, ...newRules };
 
-                await setDoc(docRef, { bundledData: JSON.stringify(mergedRules) });
+                await setDoc(docRef, sanitizeForFirestore({ bundledData: JSON.stringify(mergedRules) }));
                 alert(`Succès! ${Object.keys(newRules).length} règles de prix importées (Format Bundled).`);
 
             } catch (err: any) {
@@ -1211,7 +1212,7 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
                             <button
                                 onClick={async () => {
                                     try {
-                                        await setDoc(doc(db, 'settings', 'dimensions'), productDimensions);
+                                        await setDoc(doc(db, 'settings', 'dimensions'), sanitizeForFirestore(productDimensions));
                                         alert("Configurations sauvegardées !");
                                     } catch (e) {
                                         console.error("Error saving dimensions:", e);
@@ -1395,7 +1396,7 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
                                     onClick={async () => {
                                         try {
                                             setBannerSaveStatus('saving');
-                                            await setDoc(doc(db, 'settings', 'banner'), bannerSettings);
+                                            await setDoc(doc(db, 'settings', 'banner'), sanitizeForFirestore(bannerSettings));
                                             setBannerSaveStatus('success');
                                             setTimeout(() => setBannerSaveStatus(''), 2000);
                                         } catch (e) {
@@ -1487,7 +1488,7 @@ export function AdminView({ user, onBack, productDimensions, onUpdateDimensions,
                                     onClick={async () => {
                                         try {
                                             setGeneralSettingsSaveStatus('saving');
-                                            await setDoc(doc(db, 'settings', 'general'), { printMargin: printMargin });
+                                            await setDoc(doc(db, 'settings', 'general'), sanitizeForFirestore({ printMargin: printMargin }));
                                             if (onUpdatePrintMargin) onUpdatePrintMargin(printMargin);
                                             setGeneralSettingsSaveStatus('success');
                                             setTimeout(() => setGeneralSettingsSaveStatus(''), 2000);

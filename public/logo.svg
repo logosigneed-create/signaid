@@ -1,9 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 581 481" width="100%" height="100%">
-  <!-- Calque Vectoriel 100% Transparent (Sans Fond) - Analyse Individuelle par Segment -->
-  <g fill="#ffffff">
-    <!-- Forme Supérieure (Segment 7 en Courbe -22px) -->
-    <path d="M 449,30 L 386,70 L 385,194 L 209,243 L 209,46 L 147,86 L 146,301 C 243,260 343,228 449,205 Z" />
-    <!-- Forme Inférieure (Segment 9: Courbe -32px, Segment 10: Courbe Spécifique -46px) -->
-    <path d="M 569,201 C 376,223 182,287 23,396 C 42,338 88,325 145,353 L 147,435 L 209,397 L 210,325 L 385,254 L 385,425 L 449,382 L 449,232 Z" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 572" width="100%" height="100%">
+  <g fill="currentColor">
+    <path d="M 42,9 L 10,47 L 0,70 L 0,81 L 80,299 L 112,322 L 182,356 L 303,390 L 447,425 L 455,430 L 454,435 L 448,437 L 160,416 L 213,519 L 231,541 L 248,549 L 367,571 L 488,488 L 490,478 L 478,353 L 223,231 L 189,218 L 210,221 L 490,296 L 315,122 L 196,20 L 175,10 L 152,5 L 82,4 Z" />
+    <path d="M 981,4 L 957,0 L 878,0 L 849,5 L 825,17 L 766,66 L 674,151 L 533,297 L 838,218 L 796,234 L 547,353 L 543,365 L 534,486 L 657,568 L 785,542 L 799,529 L 821,495 L 863,411 L 571,436 L 568,430 L 575,425 L 841,352 L 912,317 L 945,293 L 1023,78 L 1023,65 L 1013,42 Z" />
   </g>
 </svg>

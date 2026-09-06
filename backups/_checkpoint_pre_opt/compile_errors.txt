@@ -1,1 +1,0 @@
-﻿src/CustomizerApp.tsx(83,10): error TS2305: Module '"./components/CustomizerView"' has no exported member 'CustomizerView'.

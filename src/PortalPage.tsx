@@ -138,7 +138,7 @@ const PortalPage: React.FC = () => {
                         MON PORTAIL <br />
                         <span className="text-orange-600">INTELLIGENT IA.</span>
                     </h1>
-                    <p className="text-zinc-500 font-bold text-xs tracking-[0.5em] uppercase italic">Écosystème de production • Signaid V24</p>
+                    <p className="text-zinc-500 font-bold text-xs tracking-[0.5em] uppercase italic">Écosystème de production • Signaid Studio</p>
                 </div>
 
                 {/* MAIN CARDS */}

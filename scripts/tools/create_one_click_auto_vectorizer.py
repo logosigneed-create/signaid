@@ -14,7 +14,7 @@ perfected_svg_code = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 581
 </svg>'''
 
 # 1. Update logo.svg in workspace with user's perfected SVG
-svg_workspace_path = r'c:\Partage\Projet\Signaid V24\logo.svg'
+svg_workspace_path = r'c:\Partage\Projet\signaid-studio\logo.svg'
 with open(svg_workspace_path, 'w', encoding='utf-8') as f:
     f.write(perfected_svg_code)
 
@@ -627,7 +627,7 @@ html_content = f'''<!DOCTYPE html>
 </html>
 '''
 
-output_path = r'c:\Partage\Projet\Signaid V24\vector_editor.html'
+output_path = r'c:\Partage\Projet\signaid-studio\vector_editor.html'
 with open(output_path, 'w', encoding='utf-8') as f:
     f.write(html_content)
 

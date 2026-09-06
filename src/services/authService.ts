@@ -12,6 +12,7 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, updateDoc, query, where, getDocs, limit, collection, increment } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { sanitizeForFirestore } from '../utils/firestoreSanitizer';
 
 class AuthService {
     private currentUser: User | null = null;
@@ -149,9 +150,9 @@ class AuthService {
 
                         // Give 5 credits to referrer
                         const referrerRef = doc(db, "users", referrerDoc.id);
-                        await updateDoc(referrerRef, {
+                        await updateDoc(referrerRef, sanitizeForFirestore({
                             credits: increment(5)
-                        });
+                        }));
                         console.log(`Referral successful! 5 credits added to ${referrerData.username}`);
                     }
                 } catch (err) {
@@ -161,7 +162,7 @@ class AuthService {
             }
 
             // Save user to Firestore
-            await setDoc(doc(db, "users", firebaseUser.uid), newUser);
+            await setDoc(doc(db, "users", firebaseUser.uid), sanitizeForFirestore(newUser));
 
             this.currentUser = newUser;
             this.notify();
@@ -181,7 +182,7 @@ class AuthService {
 
     async updateUser(userId: string, updates: Partial<User>): Promise<User> {
         if (this.currentUser && this.currentUser.id === userId) {
-            await updateDoc(doc(db, "users", userId), updates);
+            await updateDoc(doc(db, "users", userId), sanitizeForFirestore(updates));
             this.currentUser = { ...this.currentUser, ...updates };
             this.notify();
             return this.currentUser;
@@ -203,7 +204,7 @@ class AuthService {
             newFollowing = [...following, targetUserId];
         }
 
-        await updateDoc(doc(db, "users", currentUserId), { following: newFollowing });
+        await updateDoc(doc(db, "users", currentUserId), sanitizeForFirestore({ following: newFollowing }));
         this.currentUser = { ...this.currentUser, following: newFollowing };
         this.notify();
         return this.currentUser;
@@ -216,7 +217,7 @@ class AuthService {
         const liked = this.currentUser.likedProducts || [];
         if (!liked.includes(productId)) {
             const newLiked = [...liked, productId];
-            await updateDoc(doc(db, "users", userId), { likedProducts: newLiked });
+            await updateDoc(doc(db, "users", userId), sanitizeForFirestore({ likedProducts: newLiked }));
             this.currentUser = { ...this.currentUser, likedProducts: newLiked };
             this.notify();
         }
@@ -230,7 +231,7 @@ class AuthService {
         const disliked = this.currentUser.dislikedProducts || [];
         if (!disliked.includes(productId)) {
             const newDisliked = [...disliked, productId];
-            await updateDoc(doc(db, "users", userId), { dislikedProducts: newDisliked });
+            await updateDoc(doc(db, "users", userId), sanitizeForFirestore({ dislikedProducts: newDisliked }));
             this.currentUser = { ...this.currentUser, dislikedProducts: newDisliked };
             this.notify();
         }
@@ -258,7 +259,10 @@ class AuthService {
         const storageRef = ref(storage, `users/${userId}/avatars/${fileName}`);
 
         try {
-            const snapshot = await uploadString(storageRef, base64String, 'data_url');
+            const snapshot = await uploadString(storageRef, base64String, 'data_url', {
+                contentType: 'image/jpeg',
+                cacheControl: 'public, max-age=86400'
+            });
             console.log('Upload Base64 réussi !', snapshot.metadata.fullPath);
             const downloadURL = await getDownloadURL(snapshot.ref);
             return downloadURL;

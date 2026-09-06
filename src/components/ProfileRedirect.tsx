@@ -20,17 +20,20 @@ export default function ProfilPage() {
   const uid = new URLSearchParams(location.search).get("uid");
 
   useEffect(() => {
-    // Si l'ancienne URL avec l'UID de Fabrizio est consultée → redirection vers le slug propre /fabrizio
-    if (uid === "guest_ms3ijgnco2xnid") {
-      navigate("/fabrizio", { replace: true });
+    // Si une URL avec uid=audit-8f198p5 ou guest_ms3ijgnco2xnid ou fabrizio est consultée → redirection directe vers /guest_ms3ijgnco2xnid
+    if (uid === "guest_ms3ijgnco2xnid" || uid === "audit-8f198p5" || uid === "fabrizio" || uid === "djdfazz") {
+      navigate("/guest_ms3ijgnco2xnid", { replace: true });
       return;
     }
-    if (uid) return;
+    if (uid) {
+      navigate(`/${uid}`, { replace: true });
+      return;
+    }
 
-    // Pas d'uid → redirection vers /fabrizio si connecté ou vitrine par défaut
+    // Pas d'uid → redirection vers /guest_ms3ijgnco2xnid si connecté ou vitrine par défaut
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        navigate("/fabrizio", { replace: true });
+        navigate("/guest_ms3ijgnco2xnid", { replace: true });
       }
     });
 

@@ -6,6 +6,7 @@ import 'react-image-crop/dist/ReactCrop.css';
 
 import { getProxiedUrl, resizeImage, hexToRgb, tintImage, removeBackground, removeSpecificColor, getCroppedImg, urlToBase64, addWatermark, cleanCartItem, compressCartForStorage, isSameModel, calculateBaseUnitPrice, calculateMarkingFee, dataURLtoBlob, trimImage, intelligentUpscale } from '../utils/helpers';
 import { getOptimizedImageUrl } from '../utils/imageUtils';
+import { cleanAndProcessDtfMaster, downloadMasterDtfFile, downloadMasterPdfFile } from '../services/dtfMasterService';
 import CreationToolbar, { ToolItem } from '../components/CreationToolbar';
 import { LazyImage } from '../components/LazyImage';
 
@@ -2343,6 +2344,32 @@ export function CustomizerView({
         }
     };
 
+    const handleExportDtfMaster = async (format: 'png' | 'pdf' = 'png') => {
+        const currentLogo = item.processedLogoUrlFront || item.originalLogoUrlFront || item.predefinedLogoUrlFront || item.processedLogoUrlBack || item.originalLogoUrlBack || item.predefinedLogoUrlBack;
+        if (!currentLogo) {
+            alert("Aucun visuel ou logo détecté sur ce vêtement à exporter en Master DTF.");
+            return;
+        }
+        setIsCapturing(true);
+        try {
+            const master = await cleanAndProcessDtfMaster(currentLogo, {
+                targetDimension: 4000,
+                dpi: 300,
+                alphaThreshold: 40
+            });
+            if (format === 'pdf') {
+                await downloadMasterPdfFile(master.pdfUrl || master.pdfBase64 || master.masterUrl, `Master_DTF_Print_${Date.now()}.pdf`);
+            } else {
+                downloadMasterDtfFile(master.pngUrl || master.masterUrl, `Master_DTF_300DPI_${Date.now()}.png`);
+            }
+        } catch (e: any) {
+            console.error("DTF Master export failed", e);
+            alert("Erreur lors de la génération du Master DTF : " + (e?.message || e));
+        } finally {
+            setIsCapturing(false);
+        }
+    };
+
     const handlePublishAction = async () => {
         if (isCapturing) return;
         setIsCapturing(true);
@@ -2912,6 +2939,12 @@ export function CustomizerView({
             icon: 'fa-download',
             label: 'Export',
             action: () => handleExportAction('png')
+        },
+        {
+            id: 'dtf_master',
+            icon: 'fa-file-image',
+            label: 'Master DTF 300 DPI',
+            action: handleExportDtfMaster
         }
     ];
 

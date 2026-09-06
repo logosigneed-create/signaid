@@ -73,11 +73,10 @@ let currentPage = 1;
 let currentGenreId = 89;
 let currentGenreSlug = "afro-house";
 
-// Base URL pour l'API. Bascule automatiquement sur Vercel si on est sur signaid.eu
-const isLocal = window.location.hostname === 'localhost' || 
-                window.location.hostname === '127.0.0.1' || 
-                window.location.hostname.startsWith('192.168.');
-const API_BASE = isLocal ? '' : 'https://beatport-backend-vercel.vercel.app';// --- DOM ELEMENTS ---
+// Base URL pour l'API Beatport (Vercel Backend)
+const API_BASE = 'https://beatport-backend-vercel.vercel.app';
+
+// --- DOM ELEMENTS ---
 const genreSelect = document.getElementById('genre-select');
 const genreBadge = document.getElementById('genre-badge');
 const startDateInput = document.getElementById('start-date');
@@ -134,6 +133,8 @@ const btnMute = document.getElementById('btn-mute');
 const volumeIcon = document.getElementById('volume-icon');
 const muteIcon = document.getElementById('mute-icon');
 const volumeSlider = document.getElementById('volume-slider');
+const btnPipPlayer = document.getElementById('btn-pip-player');
+let pipWindow = null;
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -215,10 +216,12 @@ function initWaveSurfer() {
         });
         updatePlayerUI(true);
         updateMediaSessionPositionState();
+        updatePipUI(true);
     });
 
     wavesurfer.on('timeupdate', (currentTime) => {
         playerTimeCurrent.innerText = formatTime(currentTime);
+        updatePipTime(currentTime, wavesurfer.getDuration());
         // Evite de surcharger les connexions Bluetooth en limitant l'envoi
         if (Math.round(currentTime * 4) % 2 === 0) {
             updateMediaSessionPositionState();
@@ -226,15 +229,20 @@ function initWaveSurfer() {
     });
 
     wavesurfer.on('seeking', () => {
+        updatePipTime(wavesurfer.getCurrentTime(), wavesurfer.getDuration());
         updateMediaSessionPositionState();
     });
 
     wavesurfer.on('play', () => {
+        updatePlayerUI(true);
         updateMediaSessionPositionState();
+        updatePipUI(true);
     });
 
     wavesurfer.on('pause', () => {
+        updatePlayerUI(false);
         updateMediaSessionPositionState();
+        updatePipUI(false);
     });
 
     wavesurfer.on('finish', () => {
@@ -280,32 +288,47 @@ function formatDateString(date) {
 const CACHE_KEY_PREFIX = 'bp_tracks_cache_';
 const CACHE_META_KEY = 'bp_tracks_cache_meta';
 
-function getCacheKey(genreId, genreSlug, start, end) {
-    return `${CACHE_KEY_PREFIX}${genreId}_${genreSlug}_${start}_${end}`;
+function getCacheKey(genreId, genreSlug, start, end, sortVal = (sortSelect ? sortSelect.value : 'newest')) {
+    return `${CACHE_KEY_PREFIX}${genreId}_${genreSlug}_${start}_${end}_${sortVal}`;
 }
 
-function saveToCache(genreId, genreSlug, start, end, tracks) {
-    const key = getCacheKey(genreId, genreSlug, start, end);
+function saveToCache(genreId, genreSlug, start, end, tracks, sortVal = (sortSelect ? sortSelect.value : 'newest')) {
+    const key = getCacheKey(genreId, genreSlug, start, end, sortVal);
     const entry = {
         tracks,
         savedAt: new Date().toISOString(),
         genreName: BEATPORT_GENRES.find(g => g.id === parseInt(genreId))?.name || genreSlug,
         dateRange: `${start} → ${end}`
     };
+    const serialized = JSON.stringify(entry);
     try {
-        localStorage.setItem(key, JSON.stringify(entry));
+        localStorage.setItem(key, serialized);
         // Store meta info so we can display it
         localStorage.setItem(CACHE_META_KEY, JSON.stringify({
             key, savedAt: entry.savedAt, genreName: entry.genreName, dateRange: entry.dateRange, count: tracks.length
         }));
-        console.log(`[Cache] Saved ${tracks.length} tracks for ${genreSlug} (${start}→${end})`);
+        console.log(`[Cache] Saved ${tracks.length} tracks for ${genreSlug} (${start}→${end}) [sort: ${sortVal}]`);
     } catch(e) {
-        console.warn('[Cache] Could not save to localStorage:', e);
+        // En cas de quota dépassé (localStorage plein), purger les anciens caches Beatport et réessayer
+        try {
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.startsWith(CACHE_KEY_PREFIX)) {
+                    keysToRemove.push(k);
+                }
+            }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+            localStorage.setItem(key, serialized);
+            console.log(`[Cache] Cache nettoyé et ${tracks.length} tracks sauvegardés.`);
+        } catch (retryErr) {
+            console.warn('[Cache] Could not save to localStorage after pruning:', retryErr.message);
+        }
     }
 }
 
-function loadFromCache(genreId, genreSlug, start, end) {
-    const key = getCacheKey(genreId, genreSlug, start, end);
+function loadFromCache(genreId, genreSlug, start, end, sortVal = (sortSelect ? sortSelect.value : 'newest')) {
+    const key = getCacheKey(genreId, genreSlug, start, end, sortVal);
     try {
         const raw = localStorage.getItem(key);
         if (raw) return JSON.parse(raw);
@@ -358,8 +381,8 @@ function hideCacheBanner() {
 }
 
 // --- DIRECT BROWSER FETCH via CORS proxy (bypass datacenter IP block) ---
-async function fetchViaCorsProxy(genreId, genreSlug, start, end, page) {
-    const beatportUrl = `https://www.beatport.com/fr/genre/${genreSlug}/${genreId}/tracks?publish_date=${start}%3A${end}&page=${page}&per_page=150`;
+async function fetchViaCorsProxy(genreId, genreSlug, start, end, page, orderBy = '-publish_date') {
+    const beatportUrl = `https://www.beatport.com/fr/genre/${genreSlug}/${genreId}/tracks?publish_date=${start}%3A${end}&order_by=${orderBy}&page=${page}&per_page=150`;
     
     // Try multiple CORS proxies in order
     const proxies = [
@@ -417,21 +440,61 @@ async function fetchViaCorsProxy(genreId, genreSlug, start, end, page) {
 async function fetchTracks() {
     showState('loading');
     
-    const start = startDateInput.value;
-    const end = endDateInput.value;
+    const rawStart = startDateInput.value;
+    const rawEnd = endDateInput.value;
+    const sortVal = sortSelect ? sortSelect.value : 'newest';
+    const orderBy = (sortVal === 'oldest') ? 'publish_date' : '-publish_date';
     
     // Block future dates
     const today = new Date();
     today.setHours(23, 59, 59, 999);
-    const endDate = new Date(end);
+    const endDate = new Date(rawEnd);
     if (endDate > today) {
         endDateInput.value = formatDateString(new Date());
         return fetchTracks(); // Re-run with corrected date
     }
-    const startDate = new Date(start);
+    const startDate = new Date(rawStart);
     if (startDate > today) {
         startDateInput.value = formatDateString(new Date());
         return fetchTracks();
+    }
+    
+    let queryStart = rawStart;
+    let queryEnd = rawEnd;
+    let queryPage = currentPage;
+    let isLastOldestPage = false;
+    
+    // Si l'utilisateur choisit 'Le plus ancien' et que la plage dépasse 3 jours :
+    // Comme l'API Beatport ne renvoie que par date décroissante (depuis queryEnd vers le bas),
+    // on avance progressivement dans la plage de dates depuis startDate vers endDate
+    if (sortVal === 'oldest') {
+        const dStart = new Date(rawStart);
+        const dEnd = new Date(rawEnd);
+        const diffDays = Math.round((dEnd - dStart) / (1000 * 60 * 60 * 24));
+        
+        if (diffDays > 3) {
+            const sliceDays = 3; // Tranche de 3-4 jours par page
+            const currStart = new Date(dStart);
+            currStart.setDate(currStart.getDate() + (currentPage - 1) * (sliceDays + 1));
+            
+            if (currStart > dEnd) {
+                allTracks = [];
+                applyFiltersAndRender();
+                showState('empty');
+                btnNextPage.disabled = true;
+                btnNextPageBottom.disabled = true;
+                return;
+            }
+            
+            const currEnd = new Date(currStart);
+            currEnd.setDate(currEnd.getDate() + sliceDays);
+            const finalEnd = currEnd > dEnd ? new Date(dEnd) : currEnd;
+            
+            queryStart = formatDateString(currStart);
+            queryEnd = formatDateString(finalEnd);
+            queryPage = 1;
+            isLastOldestPage = finalEnd >= dEnd;
+        }
     }
     
     currentPageNum.innerText = currentPage;
@@ -468,7 +531,7 @@ async function fetchTracks() {
             }
         }
 
-        const apiUrl = `${API_BASE}/api/tracks?start_date=${start}&end_date=${end}&genre_id=${currentGenreId}&genre_slug=${currentGenreSlug}&page=${currentPage}${apiParams}`;
+        const apiUrl = `${API_BASE}/api/tracks?start_date=${queryStart}&end_date=${queryEnd}&genre_id=${currentGenreId}&genre_slug=${currentGenreSlug}&page=${queryPage}&order_by=${orderBy}${apiParams}`;
         console.log(`[Fetch] Fetching tracks from ${apiUrl.split('&client_secret=')[0].split('&access_token=')[0]} (credentials hidden)`);
         const response = await fetch(apiUrl, { signal: AbortSignal.timeout(25000) }); // Increased timeout for OAuth handshake
         const data = await response.json();
@@ -496,7 +559,7 @@ async function fetchTracks() {
     // --- STEP 2: CORS proxy fetch from user's browser ---
     if (tracks.length === 0) {
         try {
-            const proxyTracks = await fetchViaCorsProxy(currentGenreId, currentGenreSlug, start, end, currentPage);
+            const proxyTracks = await fetchViaCorsProxy(currentGenreId, currentGenreSlug, queryStart, queryEnd, queryPage, orderBy);
             if (proxyTracks.length > 0) {
                 tracks = proxyTracks;
                 fetchedFresh = true;
@@ -510,7 +573,7 @@ async function fetchTracks() {
     // --- STEP 3: Cache fallback ---
     if (tracks.length === 0) {
         console.warn('[Fetch] All live sources failed — trying localStorage cache...');
-        let cached = loadFromCache(currentGenreId, currentGenreSlug, start, end);
+        let cached = loadFromCache(currentGenreId, currentGenreSlug, queryStart, queryEnd, sortVal);
         if (!cached) cached = loadBestAvailableCache(currentGenreId, currentGenreSlug);
         if (cached && cached.tracks.length > 0) {
             tracks = cached.tracks;
@@ -522,7 +585,7 @@ async function fetchTracks() {
     } else {
         hideCacheBanner();
         if (fetchedFresh) {
-            saveToCache(currentGenreId, currentGenreSlug, start, end, tracks);
+            saveToCache(currentGenreId, currentGenreSlug, queryStart, queryEnd, tracks, sortVal);
         }
     }
     
@@ -534,7 +597,19 @@ async function fetchTracks() {
     
     totalImportedSpan.innerText = allTracks.length;
     
-    const hasNext = allTracks.length === 150;
+    let hasNext = false;
+    if (sortVal === 'oldest') {
+        const dStart = new Date(rawStart);
+        const dEnd = new Date(rawEnd);
+        const diffDays = Math.round((dEnd - dStart) / (1000 * 60 * 60 * 24));
+        if (diffDays > 3) {
+            hasNext = !isLastOldestPage && allTracks.length > 0;
+        } else {
+            hasNext = allTracks.length === 150;
+        }
+    } else {
+        hasNext = allTracks.length === 150;
+    }
     btnNextPage.disabled = !hasNext;
     btnNextPageBottom.disabled = !hasNext;
     
@@ -613,20 +688,30 @@ function applyFiltersAndRender() {
     }
     
     const sortVal = sortSelect.value;
-    filteredTracks.sort((a, b) => {
-        if (sortVal === 'newest') {
-            return new Date(b.new_release_date || b.publish_date) - new Date(a.new_release_date || a.publish_date);
-        } else if (sortVal === 'oldest') {
-            return new Date(a.new_release_date || a.publish_date) - new Date(b.new_release_date || b.publish_date);
-        } else if (sortVal === 'bpm-asc') {
-            return (a.bpm || 0) - (b.bpm || 0);
-        } else if (sortVal === 'bpm-desc') {
-            return (b.bpm || 0) - (a.bpm || 0);
-        } else if (sortVal === 'name-asc') {
-            return (a.name || '').localeCompare(b.name || '');
-        }
-        return 0;
-    });
+    if (sortVal !== 'playlist-order') {
+        filteredTracks.sort((a, b) => {
+            if (sortVal === 'newest') {
+                const dateA = a.publish_date || a.new_release_date || '';
+                const dateB = b.publish_date || b.new_release_date || '';
+                const diff = new Date(dateB).getTime() - new Date(dateA).getTime();
+                if (!isNaN(diff) && diff !== 0) return diff;
+                return (b.id || 0) - (a.id || 0);
+            } else if (sortVal === 'oldest') {
+                const dateA = a.publish_date || a.new_release_date || '';
+                const dateB = b.publish_date || b.new_release_date || '';
+                const diff = new Date(dateA).getTime() - new Date(dateB).getTime();
+                if (!isNaN(diff) && diff !== 0) return diff;
+                return (a.id || 0) - (b.id || 0);
+            } else if (sortVal === 'bpm-asc') {
+                return (a.bpm || 0) - (b.bpm || 0);
+            } else if (sortVal === 'bpm-desc') {
+                return (b.bpm || 0) - (a.bpm || 0);
+            } else if (sortVal === 'name-asc') {
+                return (a.name || '').localeCompare(b.name || '');
+            }
+            return 0;
+        });
+    }
     
     totalFilteredSpan.innerText = filteredTracks.length;
     
@@ -795,6 +880,19 @@ function clearQuickFilter() {
     fetchTracks();
 }
 
+function set30DaysForCurrentGenre() {
+    const today = new Date();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    
+    startDateInput.value = formatDateString(thirtyDaysAgo);
+    endDateInput.value = formatDateString(today);
+    
+    currentPage = 1;
+    fetchTracks();
+    updateActiveQuickFilterBanner();
+}
+
 // --- RENDER GRID ---
 function renderTracksGrid() {
     tracksGrid.innerHTML = '';
@@ -825,10 +923,19 @@ function renderTracksGrid() {
         
         const isCollab = track.artists && track.artists.length >= 2;
         const collabBadgeHTML = isCollab ? `<div class="collab-tag">${track.artists.length} Artistes</div>` : '';
-        
-        const beatportUrl = track.url && track.url.includes('www.beatport.com') && !track.url.includes('api.beatport.com')
-            ? track.url 
-            : `https://www.beatport.com/track/${track.slug}/${track.id}`;
+        let beatportUrl = '#';
+        if (track.url && track.url.includes('www.beatport.com') && !track.url.includes('api.beatport.com')) {
+            beatportUrl = track.url;
+        } else if (track.id) {
+            if (track.slug) {
+                beatportUrl = `https://www.beatport.com/fr/track/${track.slug}/${track.id}`;
+            } else if (track.track_count !== undefined || (!track.sample_url && !track.bpm)) {
+                beatportUrl = `https://www.beatport.com/fr/playlists/share/${track.id}`;
+            } else {
+                const safeSlug = (track.name || 'track').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+                beatportUrl = `https://www.beatport.com/fr/track/${safeSlug}/${track.id}`;
+            }
+        }
             
         const mixName = track.mix_name || "Original Mix";
         
@@ -1002,9 +1109,19 @@ function updatePlayerUI(isPlaying) {
             playerCover.src = currentPlayingTrack.image.uri;
         }
         
-        const beatportUrl = currentPlayingTrack.url && currentPlayingTrack.url.includes('www.beatport.com') && !currentPlayingTrack.url.includes('api.beatport.com')
-            ? currentPlayingTrack.url 
-            : `https://www.beatport.com/track/${currentPlayingTrack.slug}/${currentPlayingTrack.id}`;
+        let beatportUrl = '#';
+        if (currentPlayingTrack.url && currentPlayingTrack.url.includes('www.beatport.com') && !currentPlayingTrack.url.includes('api.beatport.com')) {
+            beatportUrl = currentPlayingTrack.url;
+        } else if (currentPlayingTrack.id) {
+            if (currentPlayingTrack.slug) {
+                beatportUrl = `https://www.beatport.com/fr/track/${currentPlayingTrack.slug}/${currentPlayingTrack.id}`;
+            } else if (currentPlayingTrack.track_count !== undefined || (!currentPlayingTrack.sample_url && !currentPlayingTrack.bpm)) {
+                beatportUrl = `https://www.beatport.com/fr/playlists/share/${currentPlayingTrack.id}`;
+            } else {
+                const safeSlug = (currentPlayingTrack.name || 'track').toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+                beatportUrl = `https://www.beatport.com/fr/track/${safeSlug}/${currentPlayingTrack.id}`;
+            }
+        }
         playerBeatportLink.href = beatportUrl;
         if (playerMetadataLink) {
             playerMetadataLink.href = beatportUrl;
@@ -1039,6 +1156,7 @@ function updatePlayerUI(isPlaying) {
 
     // Update real-time AI assistant state indicator
     updateAILiveStatus(isPlaying);
+    updatePipUI(isPlaying);
 }
 
 function playNextTrack() {
@@ -1116,6 +1234,10 @@ function setupEventListeners() {
         currentPage = 1;
         fetchTracks();
     });
+    const preset30DaysBtn = document.getElementById('preset-30days-btn');
+    if (preset30DaysBtn) {
+        preset30DaysBtn.addEventListener('click', set30DaysForCurrentGenre);
+    }
     retryBtn.addEventListener('click', fetchTracks);
     
     // Pagination controls (Top)
@@ -1153,8 +1275,20 @@ function setupEventListeners() {
     artAllRadio.addEventListener('change', handleFilterChange);
     artCollabRadio.addEventListener('change', handleFilterChange);
     artFavRadio.addEventListener('change', handleFilterChange);
-    artUnplayedRadio.addEventListener('change', handleFilterChange);
-    sortSelect.addEventListener('change', applyFiltersAndRender);
+    let previousSort = sortSelect ? sortSelect.value : 'newest';
+    sortSelect.addEventListener('change', () => {
+        const currentSort = sortSelect.value;
+        const switchedDateSort = (currentSort === 'oldest' && previousSort !== 'oldest') || 
+                                 (currentSort === 'newest' && previousSort === 'oldest');
+        previousSort = currentSort;
+        
+        if (switchedDateSort) {
+            currentPage = 1;
+            fetchTracks();
+        } else {
+            handleFilterChange();
+        }
+    });
     
     startDateInput.addEventListener('change', updateActiveQuickFilterBanner);
     endDateInput.addEventListener('change', updateActiveQuickFilterBanner);
@@ -1198,6 +1332,10 @@ function setupEventListeners() {
     btnNext.addEventListener('click', playNextTrack);
     btnPrev.addEventListener('click', playPrevTrack);
     
+    if (btnPipPlayer) {
+        btnPipPlayer.addEventListener('click', togglePictureInPicturePlayer);
+    }
+
     if (playerBtnFav) {
         playerBtnFav.addEventListener('click', (e) => {
             if (currentPlayingTrack) {
@@ -1229,60 +1367,8 @@ function setupEventListeners() {
         updateVolumeIcon();
     });
 
-    document.addEventListener('keydown', (e) => {
-        if (document.activeElement === searchInput) return;
-        
-        if (e.code === 'Space') {
-            e.preventDefault();
-            btnPlayPause.click();
-        } else if (e.code === 'ArrowUp') {
-            e.preventDefault();
-            btnPrev.click();
-        } else if (e.code === 'ArrowDown') {
-            e.preventDefault();
-            btnNext.click();
-        } else if (e.code === 'ArrowRight' && e.ctrlKey) {
-            e.preventDefault();
-            btnNext.click();
-        } else if (e.code === 'ArrowLeft' && e.ctrlKey) {
-            e.preventDefault();
-            btnPrev.click();
-        } else if (e.code === 'ArrowRight' && !e.ctrlKey) {
-            e.preventDefault();
-            if (wavesurfer) {
-                const duration = wavesurfer.getDuration();
-                if (duration > 0) {
-                    const currentTime = wavesurfer.getCurrentTime();
-                    // Si on est à moins d'1.5 seconde de la fin, passer à la piste suivante
-                    if (currentTime >= duration - 1.5) {
-                        playNextTrack();
-                    } else {
-                        // Sinon avancer de 2 secondes
-                        const newTime = Math.min(currentTime + 2, duration);
-                        wavesurfer.seekTo(newTime / duration);
-                        updateMediaSessionPositionState();
-                    }
-                }
-            }
-        } else if (e.code === 'ArrowLeft' && !e.ctrlKey) {
-            e.preventDefault();
-            if (wavesurfer) {
-                const duration = wavesurfer.getDuration();
-                if (duration > 0) {
-                    const currentTime = wavesurfer.getCurrentTime();
-                    // Si on est à moins d'1.5 seconde du début, passer à la piste précédente
-                    if (currentTime <= 1.5) {
-                        playPrevTrack();
-                    } else {
-                        // Sinon reculer de 2 secondes
-                        const newTime = Math.max(currentTime - 2, 0);
-                        wavesurfer.seekTo(newTime / duration);
-                        updateMediaSessionPositionState();
-                    }
-                }
-            }
-        }
-    });
+    document.addEventListener('keydown', handleGlobalPlaybackKeys);
+    window.addEventListener('keydown', handleGlobalPlaybackKeys);
     
     if ('mediaSession' in navigator) {
         navigator.mediaSession.setActionHandler('play', () => {
@@ -1349,13 +1435,17 @@ function setupEventListeners() {
     const bookmarkletClose = document.getElementById('bookmarklet-modal-close');
     const bookmarkletOpenBp = document.getElementById('bookmarklet-open-bp');
     const bookmarkletLink = document.getElementById('bookmarklet-link');
+    const modalBookmarkletLink = document.getElementById('modal-bookmarklet-link');
     const bookmarkletWaiting = document.getElementById('bookmarklet-waiting');
+
+    const bookmarkletCode = `javascript:(function(){const match=document.documentElement.innerHTML.match(/<script id="__NEXT_DATA__" type="application\\/json">([\\s\\S]*?)<\\/script>/);if(!match){alert("NEXT_DATA introuvable. Veuillez exécuter ce favori sur une page de morceaux ou playlist Beatport.");return;}const data=JSON.parse(match[1]);const queries=data?.props?.pageProps?.dehydratedState?.queries||[];let tracks=[];for(const q of queries){const qd=q?.state?.data;if(qd&&Array.isArray(qd.results)&&qd.results.length>0){const raw=qd.results.map(item=>item.track||item);if(raw.length>tracks.length)tracks=raw;}}if(tracks.length===0){alert("Aucun morceau trouvé dans les données de la page.");return;}const plTitle=document.querySelector('h1')?.innerText?.trim()||document.title.replace(/\\|\\s*Beatport/i,'').trim()||'Playlist Beatport';const payload={type:"BP_IMPORT",tracks:tracks,playlistName:plTitle};const payloadStr=JSON.stringify(payload);if(window.opener){try{window.opener.postMessage(payload,"*");}catch(e){}}try{if(typeof copy==='function'){copy(payloadStr);}else{const ta=document.createElement('textarea');ta.value=payloadStr;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);}}catch(e){}if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(payloadStr).catch(function(){});}alert("✓ "+tracks.length+" morceaux de \\""+plTitle+"\\" envoyés vers DJ Tool !");})();`;
+
+    if (bookmarkletLink) bookmarkletLink.href = bookmarkletCode;
+    if (modalBookmarkletLink) modalBookmarkletLink.href = bookmarkletCode;
 
     if (importBeatportBtn && bookmarkletModal) {
         importBeatportBtn.addEventListener('click', () => {
-            const currentOrigin = window.location.origin;
-            const code = `javascript:(function(){const match=document.documentElement.innerHTML.match(/<script id="__NEXT_DATA__" type="application\\/json">([\\s\\S]*?)<\\/script>/);if(!match){alert("NEXT_DATA introuvable. Veuillez exécuter ce favori sur une page de morceaux Beatport.");return;}const data=JSON.parse(match[1]);const queries=data?.props?.pageProps?.dehydratedState?.queries||[];let tracks=[];for(const q of queries){const qd=q?.state?.data;if(qd&&Array.isArray(qd.results)&&qd.results.length>0){const qk=q?.queryKey||[];if(qk.some(k=>typeof k==="string"&&k.startsWith("tracks"))||tracks.length===0){tracks=qd.results;}}}if(tracks.length===0){alert("Aucun morceau trouvé dans les données de la page.");return;}window.opener.postMessage({type:"BP_IMPORT",tracks:tracks},"${currentOrigin}");alert("Importation réussie! "+tracks.length+" morceaux envoyés vers DJ Tool.");})();`;
-            bookmarkletLink.href = code;
+            if (bookmarkletLink) bookmarkletLink.href = bookmarkletCode;
             bookmarkletModal.classList.remove('hidden');
         });
     }
@@ -1412,38 +1502,72 @@ function setupEventListeners() {
         bookmarkletOpenBp.addEventListener('click', () => {
             const start = startDateInput.value;
             const end = endDateInput.value;
-            const bpUrl = `https://www.beatport.com/fr/genre/${currentGenreSlug}/${currentGenreId}/tracks?publish_date=${start}%3A${end}&page=${currentPage}&per_page=150`;
+            const bpUrl = `https://www.beatport.com/fr/library/playlists`;
             window.open(bpUrl, '_blank');
             bookmarkletWaiting.classList.remove('hidden');
         });
     }
 
-    // Listen to message from bookmarklet popup
+    // Listen to message from bookmarklet popup (safe cross-origin)
     window.addEventListener('message', (event) => {
-        if (event.origin !== window.location.origin) return;
         if (event.data && event.data.type === 'BP_IMPORT' && Array.isArray(event.data.tracks)) {
-            const tracks = event.data.tracks;
-            console.log(`[Import] Received ${tracks.length} tracks from bookmarklet.`);
-            const start = startDateInput.value;
-            const end = endDateInput.value;
-            saveToCache(currentGenreId, currentGenreSlug, start, end, tracks);
+            const rawItems = event.data.tracks;
+            const playlistTitle = event.data.playlistName || 'Playlist Beatport';
             
-            allTracks = tracks;
-            const collabCount = allTracks.filter(t => t.artists && t.artists.length >= 2).length;
-            collabBadge.innerText = collabCount;
-            totalImportedSpan.innerText = allTracks.length;
+            // Détecter si les éléments reçus sont des playlists ou des morceaux audio
+            const isListOfPlaylists = rawItems.length > 0 && rawItems.some(item => (item.track_count !== undefined || item.tracks_count !== undefined || (!item.sample_url && !item.bpm && !item.key && item.name)));
+
+            if (isListOfPlaylists) {
+                // Ce sont des playlists (SUMMER, Aout 2026, etc.) : on les enregistre dans les playlists sauvegardées
+                const playlists = getSavedPlaylists();
+                rawItems.forEach(plItem => {
+                    const plName = plItem.name || 'Playlist';
+                    const plId = plItem.id || Date.now();
+                    const existing = playlists.find(p => p.name === plName || p.id === plId);
+                    if (!existing) {
+                        playlists.push({
+                            id: plId,
+                            name: plName,
+                            tracks: [],
+                            trackCount: plItem.track_count || plItem.tracks_count || 0,
+                            date: new Date().toLocaleDateString()
+                        });
+                    }
+                });
+                savePlaylistsToStorage(playlists);
+                renderSavedPlaylistsUI();
+                if (playlistsModal) playlistsModal.classList.remove('hidden');
+                alert(`✓ ${rawItems.length} playlists Beatport détectées et ajoutées à votre liste "📁 Mes Playlists" !\n\nPour charger les morceaux d'une playlist : ouvrez-la sur Beatport (ex: cliquez sur "Aout 2026") puis réexécutez le bouton.`);
+                return;
+            }
+
+            const tracks = rawItems;
+            console.log(`[Import] Received ${tracks.length} audio tracks from playlist "${playlistTitle}" via bookmarklet.`);
             
-            const hasNext = allTracks.length === 150;
-            btnNextPage.disabled = !hasNext;
-            btnNextPageBottom.disabled = !hasNext;
+            // Sauvegarder automatiquement la playlist avec ses vrais morceaux
+            const playlists = getSavedPlaylists();
+            const existingIndex = playlists.findIndex(p => p.name === playlistTitle);
+            const plObj = {
+                id: Date.now(),
+                name: playlistTitle,
+                tracks: tracks,
+                date: new Date().toLocaleDateString()
+            };
+            if (existingIndex !== -1) {
+                playlists[existingIndex] = plObj;
+            } else {
+                playlists.unshift(plObj);
+            }
+            savePlaylistsToStorage(playlists);
+            renderSavedPlaylistsUI();
             
-            applyFiltersAndRender();
-            hideCacheBanner();
+            // Basculer directement en Mode Playlist avec lecture audio
+            enterPlaylistMode(playlistTitle, tracks);
             
-            bookmarkletModal.classList.add('hidden');
-            bookmarkletWaiting.classList.add('hidden');
+            if (bookmarkletModal) bookmarkletModal.classList.add('hidden');
+            if (bookmarkletWaiting) bookmarkletWaiting.classList.add('hidden');
             
-            alert(`✓ ${tracks.length} morceaux importés avec succès depuis Beatport !`);
+            alert(`✓ ${tracks.length} morceaux de votre playlist "${playlistTitle}" importés avec succès !`);
         }
     });
 
@@ -1477,6 +1601,425 @@ function setupEventListeners() {
             settingsModal.classList.add('hidden');
             currentPage = 1;
             fetchTracks();
+        });
+    }
+
+    // --- PLAYLISTS MANAGEMENT MODAL & HANDLERS ---
+    const myPlaylistsBtn = document.getElementById('my-playlists-btn');
+    const playlistsModal = document.getElementById('playlists-modal');
+    const playlistsModalClose = document.getElementById('playlists-modal-close');
+    const saveCurrentPlaylistBtn = document.getElementById('save-current-playlist-btn');
+    const newPlaylistNameInput = document.getElementById('new-playlist-name');
+    const savedPlaylistsList = document.getElementById('saved-playlists-list');
+
+    const getSavedPlaylists = () => {
+        try {
+            return JSON.parse(localStorage.getItem('dj_saved_playlists')) || [];
+        } catch (e) {
+            return [];
+        }
+    };
+
+    const savePlaylistsToStorage = (playlists) => {
+        try {
+            localStorage.setItem('dj_saved_playlists', JSON.stringify(playlists));
+        } catch (e) {
+            console.warn('Could not save playlists to localStorage:', e);
+        }
+    };
+
+    const renderSavedPlaylistsUI = () => {
+        if (!savedPlaylistsList) return;
+        const playlists = getSavedPlaylists();
+        if (playlists.length === 0) {
+            savedPlaylistsList.innerHTML = '<p style="font-size:0.75rem; color:var(--text-muted); font-style:italic; padding:0.5rem 0;">Aucune playlist sauvegardée pour le moment.</p>';
+            return;
+        }
+
+        savedPlaylistsList.innerHTML = playlists.map(pl => `
+            <div class="saved-playlist-item" data-id="${pl.id}">
+                <div class="playlist-item-meta">
+                    <span class="playlist-item-title">${pl.name}</span>
+                    <span class="playlist-item-count">${pl.tracks?.length || 0} morceau(x) • ${pl.date || ''}</span>
+                </div>
+                <div class="playlist-item-actions">
+                    <button class="btn-playlist-action btn-playlist-load" onclick="window.loadSavedPlaylist(${pl.id})" title="Charger cette playlist dans le lecteur">
+                        ▶️ Charger
+                    </button>
+                    <button class="btn-playlist-action" onclick="window.exportPlaylistM3U(${pl.id})" title="Exporter en format .M3U (Rekordbox / DJ)">
+                        📥 M3U
+                    </button>
+                    <button class="btn-playlist-action" onclick="window.deleteSavedPlaylist(${pl.id})" title="Supprimer cette playlist" style="color:#ef4444;">
+                        🗑️
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    };
+
+    window.loadSavedPlaylist = (id) => {
+        const playlists = getSavedPlaylists();
+        const pl = playlists.find(p => p.id === id);
+        if (!pl || !Array.isArray(pl.tracks) || pl.tracks.length === 0) {
+            alert('Playlist introuvable ou vide.');
+            return;
+        }
+
+        allTracks = pl.tracks;
+        const collabCount = allTracks.filter(t => t.artists && t.artists.length >= 2).length;
+        collabBadge.innerText = collabCount;
+        totalImportedSpan.innerText = allTracks.length;
+        btnNextPage.disabled = true;
+        btnNextPageBottom.disabled = true;
+
+        applyFiltersAndRender();
+        if (playlistsModal) playlistsModal.classList.add('hidden');
+        alert(`✓ Playlist "${pl.name}" chargée (${pl.tracks.length} morceaux) !`);
+    };
+
+    window.deleteSavedPlaylist = (id) => {
+        if (!confirm('Voulez-vous vraiment supprimer cette playlist ?')) return;
+        let playlists = getSavedPlaylists();
+        playlists = playlists.filter(p => p.id !== id);
+        savePlaylistsToStorage(playlists);
+        renderSavedPlaylistsUI();
+    };
+
+    window.exportPlaylistM3U = (id, directPlaylist = null) => {
+        let pl = directPlaylist;
+        if (!pl) {
+            const playlists = getSavedPlaylists();
+            pl = playlists.find(p => p.id === id);
+        }
+        if (!pl) return;
+
+        let m3uContent = '#EXTM3U\n';
+        (pl.tracks || []).forEach(track => {
+            const artists = (track.artists || []).map(a => a.name).join(', ');
+            const lengthSec = Math.round((track.length_ms || 120000) / 1000);
+            m3uContent += `#EXTINF:${lengthSec},${artists} - ${track.name}\n`;
+            m3uContent += `${track.sample_url || track.url || 'https://www.beatport.com/track/' + track.slug + '/' + track.id}\n`;
+        });
+
+        const blob = new Blob([m3uContent], { type: 'audio/x-mpegurl' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${pl.name.replace(/[^a-z0-9_-]/gi, '_')}.m3u`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    // Mode Playlist actif
+    const activePlaylistBanner = document.getElementById('active-playlist-banner');
+    const activePlaylistTitle = document.getElementById('active-playlist-title');
+    const activePlaylistCount = document.getElementById('active-playlist-count');
+    const btnExportCurrentM3u = document.getElementById('btn-export-current-m3u');
+    const btnClosePlaylistMode = document.getElementById('btn-close-playlist-mode');
+
+    let isPlaylistMode = false;
+
+    function enterPlaylistMode(title, tracks) {
+        isPlaylistMode = true;
+        allTracks = tracks;
+        
+        // 1. Activer le mode visuel playlist (masque la barre de date et genre)
+        document.body.classList.add('playlist-mode-active');
+        
+        // 2. Réinitialiser et désactiver tous les filtres secondaires
+        if (artAllRadio) artAllRadio.checked = true;
+        if (searchInput) {
+            searchInput.value = '';
+            if (clearSearchBtn) clearSearchBtn.classList.add('hidden');
+        }
+        activeQuickFilter = null;
+        const qfBanner = document.getElementById('quick-filter-banner');
+        if (qfBanner) qfBanner.classList.add('hidden');
+        
+        // 3. Définir le tri sur l'ordre original de la playlist
+        const optPlaylistOrder = document.getElementById('opt-playlist-order');
+        if (optPlaylistOrder) {
+            optPlaylistOrder.classList.remove('hidden');
+            sortSelect.value = 'playlist-order';
+        }
+        
+        // 4. Afficher le bandeau visuel Mode Playlist
+        if (activePlaylistBanner && activePlaylistTitle && activePlaylistCount) {
+            activePlaylistTitle.innerText = title;
+            activePlaylistCount.innerText = `${tracks.length} morceau(x) chargé(s)`;
+            activePlaylistBanner.classList.remove('hidden');
+        }
+        
+        // 5. Mettre à jour les compteurs
+        const collabCount = allTracks.filter(t => t.artists && t.artists.length >= 2).length;
+        collabBadge.innerText = collabCount;
+        totalImportedSpan.innerText = allTracks.length;
+        btnNextPage.disabled = true;
+        btnNextPageBottom.disabled = true;
+        btnPrevPage.disabled = true;
+        btnPrevPageBottom.disabled = true;
+        
+        // 6. Rendu immédiat et défilement fluide vers le haut
+        applyFiltersAndRender();
+        showState('success');
+        if (playlistsModal) playlistsModal.classList.add('hidden');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function exitPlaylistMode() {
+        isPlaylistMode = false;
+        document.body.classList.remove('playlist-mode-active');
+        if (activePlaylistBanner) activePlaylistBanner.classList.add('hidden');
+        
+        const optPlaylistOrder = document.getElementById('opt-playlist-order');
+        if (optPlaylistOrder) {
+            optPlaylistOrder.classList.add('hidden');
+            sortSelect.value = 'newest';
+        }
+        
+        if (artCollabRadio) artCollabRadio.checked = true;
+        currentPage = 1;
+        fetchTracks();
+    }
+
+    if (btnClosePlaylistMode) {
+        btnClosePlaylistMode.addEventListener('click', exitPlaylistMode);
+    }
+
+    if (btnExportCurrentM3u) {
+        btnExportCurrentM3u.addEventListener('click', () => {
+            const title = (activePlaylistTitle ? activePlaylistTitle.innerText : 'playlist_beatport');
+            const pl = { name: title, tracks: allTracks };
+            window.exportPlaylistM3U(null, pl);
+        });
+    }
+
+    window.loadSavedPlaylist = (id) => {
+        const playlists = getSavedPlaylists();
+        const pl = playlists.find(p => p.id === id);
+        if (!pl || !Array.isArray(pl.tracks) || pl.tracks.length === 0) {
+            alert('Playlist introuvable ou vide.');
+            return;
+        }
+
+        enterPlaylistMode(pl.name, pl.tracks);
+        alert(`✓ Playlist "${pl.name}" chargée (${pl.tracks.length} morceaux) !`);
+    };
+
+    // Account Login & Sync
+    const bpLoginUsername = document.getElementById('bp-login-username');
+    const bpLoginPassword = document.getElementById('bp-login-password');
+    const bpLoginSaveBtn = document.getElementById('bp-login-save-btn');
+    const bpLoginStatusBadge = document.getElementById('bp-login-status-badge');
+
+    const updateBpAccountUI = () => {
+        const user = localStorage.getItem('bp_api_username') || 'logosigneed@gmail.com';
+        if (bpLoginUsername) bpLoginUsername.value = user;
+        if (bpLoginPassword && localStorage.getItem('bp_api_password')) {
+            bpLoginPassword.value = localStorage.getItem('bp_api_password');
+        }
+        if (bpLoginStatusBadge) {
+            bpLoginStatusBadge.innerText = `● Synchronisé : ${user}`;
+        }
+    };
+    updateBpAccountUI();
+
+    if (bpLoginSaveBtn) {
+        bpLoginSaveBtn.addEventListener('click', () => {
+            const u = (bpLoginUsername ? bpLoginUsername.value : '').trim();
+            const p = (bpLoginPassword ? bpLoginPassword.value : '').trim();
+            if (!u || !p) {
+                alert('Veuillez saisir votre email/identifiant et votre mot de passe Beatport.');
+                return;
+            }
+            localStorage.setItem('bp_api_username', u);
+            localStorage.setItem('bp_api_password', p);
+            localStorage.setItem('bp_api_grant_type', 'password');
+            updateBpAccountUI();
+            alert(`✓ Compte Beatport enregistré et synchronisé (${u}) !`);
+        });
+    }
+
+    // Import Playlist by URL or ID
+    const importPlaylistUrlInput = document.getElementById('import-playlist-url');
+    const btnImportUrlPlaylist = document.getElementById('btn-import-url-playlist');
+
+    function extractPlaylistId(input) {
+        if (!input) return null;
+        const cleaned = input.trim();
+        const m = cleaned.match(/playlists\/[^\/]+\/(\d+)/i) || 
+                  cleaned.match(/playlists\/(\d+)/i) || 
+                  cleaned.match(/\/(\d{5,10})(?:[?\/]|$)/) ||
+                  cleaned.match(/^(\d{5,10})$/);
+        return m ? m[1] : null;
+    }
+
+    async function fetchPlaylistTracksFromUrl(urlOrId) {
+        const input = urlOrId.trim();
+        const playlistId = extractPlaylistId(input);
+        
+        // --- STEP 1: Interroger directement le Backend Vercel avec le playlist_id ---
+        if (playlistId) {
+            try {
+                const apiUrl = `${API_BASE}/api/tracks?playlist_id=${playlistId}`;
+                console.log(`[Playlist Import] Fetching playlist ${playlistId} via backend:`, apiUrl);
+                const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(15000) });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.success && Array.isArray(data.tracks) && data.tracks.length > 0) {
+                        console.log(`[Playlist Import] Got ${data.tracks.length} tracks from backend!`);
+                        return data.tracks;
+                    }
+                }
+            } catch (err) {
+                console.warn('[Playlist Import] Backend fetch failed:', err.message);
+            }
+        }
+
+        // --- STEP 2: Fallback direct via Proxies CORS ---
+        let playlistUrl = input;
+        if (!playlistUrl.startsWith('http')) {
+            playlistUrl = `https://www.beatport.com/fr/library/playlists/${playlistId || input}`;
+        }
+        
+        const proxies = [
+            `https://corsproxy.io/?${encodeURIComponent(playlistUrl)}`,
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(playlistUrl)}`,
+            `https://thingproxy.freeboard.io/fetch/${playlistUrl}`
+        ];
+
+        for (const proxy of proxies) {
+            try {
+                const res = await fetch(proxy, { signal: AbortSignal.timeout(12000) });
+                if (!res.ok) continue;
+                const html = await res.text();
+                const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+                if (!match) continue;
+                const data = JSON.parse(match[1]);
+                const queries = data?.props?.pageProps?.dehydratedState?.queries || [];
+                for (const q of queries) {
+                    const rawResults = q?.state?.data?.results || q?.state?.data?.tracks;
+                    if (Array.isArray(rawResults) && rawResults.length > 0) {
+                        return rawResults.map(item => item.track || item);
+                    }
+                }
+            } catch(e) {
+                console.warn('[Playlist Import] Proxy failed:', e.message);
+            }
+        }
+        return [];
+    }
+
+    if (btnImportUrlPlaylist) {
+        btnImportUrlPlaylist.addEventListener('click', async () => {
+            const input = (importPlaylistUrlInput ? importPlaylistUrlInput.value : '').trim();
+            if (!input) {
+                alert('Veuillez coller le lien ou l\'ID d\'une playlist Beatport.');
+                return;
+            }
+
+            btnImportUrlPlaylist.disabled = true;
+            btnImportUrlPlaylist.innerHTML = '<span>⏳ Chargement...</span>';
+
+            try {
+                const tracks = await fetchPlaylistTracksFromUrl(input);
+                if (tracks.length > 0) {
+                    const playlistId = extractPlaylistId(input) || 'Importée';
+                    enterPlaylistMode(`Playlist Beatport (${playlistId})`, tracks);
+                    alert(`✓ ${tracks.length} morceaux importés avec succès depuis votre playlist Beatport !`);
+                } else {
+                    alert("Impossible d'extraire les morceaux de cette playlist via l'API publique. Veuillez ouvrir votre playlist sur Beatport et cliquer sur '📤 Envoyer vers DJ Tool' dans vos favoris !");
+                }
+            } catch(e) {
+                alert('Erreur lors de l\'importation : ' + e.message);
+            } finally {
+                btnImportUrlPlaylist.disabled = false;
+                btnImportUrlPlaylist.innerHTML = '<span>📥 Charger</span>';
+            }
+        });
+    }
+
+    const btnPastePlaylistClipboard = document.getElementById('btn-paste-playlist-clipboard');
+    if (btnPastePlaylistClipboard) {
+        btnPastePlaylistClipboard.addEventListener('click', async () => {
+            try {
+                const text = await navigator.clipboard.readText();
+                if (!text || text.trim() === '') {
+                    alert('Le presse-papiers est vide. Cliquez d\'abord sur "📤 Envoyer vers DJ Tool" sur votre page Beatport.');
+                    return;
+                }
+
+                let parsed = null;
+                try {
+                    parsed = JSON.parse(text);
+                } catch(e) {}
+
+                if (parsed && Array.isArray(parsed.tracks) && parsed.tracks.length > 0) {
+                    const title = parsed.playlistName || 'Playlist Beatport';
+                    enterPlaylistMode(title, parsed.tracks);
+                    alert(`✓ ${parsed.tracks.length} morceaux de votre playlist "${title}" importés avec succès !`);
+                    return;
+                }
+
+                if (text.startsWith('http') || text.includes('beatport.com')) {
+                    if (importPlaylistUrlInput) importPlaylistUrlInput.value = text.trim();
+                    btnImportUrlPlaylist.click();
+                    return;
+                }
+
+                alert('Données non reconnues. Veuillez utiliser le bouton "📤 Envoyer vers DJ Tool" sur votre page de playlist Beatport.');
+            } catch (err) {
+                alert('Impossible de lire le presse-papiers : ' + err.message);
+            }
+        });
+    }
+
+    if (myPlaylistsBtn && playlistsModal) {
+        myPlaylistsBtn.addEventListener('click', () => {
+            updateBpAccountUI();
+            renderSavedPlaylistsUI();
+            playlistsModal.classList.remove('hidden');
+        });
+    }
+
+    if (playlistsModalClose && playlistsModal) {
+        playlistsModalClose.addEventListener('click', () => {
+            playlistsModal.classList.add('hidden');
+        });
+    }
+
+    if (playlistsModal) {
+        playlistsModal.addEventListener('click', (e) => {
+            if (e.target === playlistsModal) playlistsModal.classList.add('hidden');
+        });
+    }
+
+    if (saveCurrentPlaylistBtn) {
+        saveCurrentPlaylistBtn.addEventListener('click', () => {
+            const name = (newPlaylistNameInput ? newPlaylistNameInput.value : '').trim();
+            if (!name) {
+                alert('Veuillez saisir un nom pour votre playlist.');
+                return;
+            }
+            if (!allTracks || allTracks.length === 0) {
+                alert('Aucun morceau chargé dans la session actuelle.');
+                return;
+            }
+
+            const playlists = getSavedPlaylists();
+            const newPl = {
+                id: Date.now(),
+                name: name,
+                tracks: allTracks,
+                date: new Date().toLocaleDateString()
+            };
+            playlists.unshift(newPl);
+            savePlaylistsToStorage(playlists);
+            if (newPlaylistNameInput) newPlaylistNameInput.value = '';
+            renderSavedPlaylistsUI();
+            alert(`✓ Playlist "${name}" sauvegardée (${allTracks.length} morceaux) !`);
         });
     }
 
@@ -1536,6 +2079,356 @@ function updateMediaSessionPositionState() {
         } catch (e) {
         }
     }
+}
+
+// --- GLOBAL HEADPHONES & KEYBOARD CONTROLS (+ / - / MEDIA KEYS) ---
+function handleGlobalPlaybackKeys(e) {
+    // Ne pas intercepter si l'utilisateur est en train de taper dans un champ de recherche ou chat
+    const target = e.target || document.activeElement;
+    const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+    if (isTyping && target.id === 'search-input' && (e.key === '+' || e.key === '-')) {
+        return;
+    }
+    if (isTyping && target.id === 'ai-chat-input') {
+        return;
+    }
+
+    // Touche "+" (NumpadAdd, "+", "=", ou touche écouteurs Next) -> Morceau suivant
+    if (e.key === '+' || e.code === 'NumpadAdd' || e.key === '=' || e.code === 'Equal' || e.key === 'MediaTrackNext' || e.code === 'MediaTrackNext') {
+        e.preventDefault();
+        playNextTrack();
+        return;
+    }
+
+    // Touche "-" (NumpadSubtract, "-", ou touche écouteurs Prev) -> Morceau précédent
+    if (e.key === '-' || e.code === 'NumpadSubtract' || e.code === 'Minus' || e.key === 'MediaTrackPrevious' || e.code === 'MediaTrackPrevious') {
+        e.preventDefault();
+        playPrevTrack();
+        return;
+    }
+
+    // Espace ou MediaPlayPause -> Lecture / Pause
+    if (e.code === 'Space' || e.key === ' ' || e.key === 'MediaPlayPause' || e.code === 'MediaPlayPause') {
+        if (!isTyping) {
+            e.preventDefault();
+            btnPlayPause.click();
+        }
+        return;
+    }
+
+    if (!isTyping) {
+        // Flèche Haut -> Morceau précédent
+        if (e.code === 'ArrowUp') {
+            e.preventDefault();
+            btnPrev.click();
+            return;
+        }
+
+        // Flèche Bas -> Morceau suivant
+        if (e.code === 'ArrowDown') {
+            e.preventDefault();
+            btnNext.click();
+            return;
+        }
+
+        // Ctrl + Flèche Droite -> Morceau suivant
+        if (e.code === 'ArrowRight' && e.ctrlKey) {
+            e.preventDefault();
+            btnNext.click();
+            return;
+        }
+
+        // Ctrl + Flèche Gauche -> Morceau précédent
+        if (e.code === 'ArrowLeft' && e.ctrlKey) {
+            e.preventDefault();
+            btnPrev.click();
+            return;
+        }
+
+        // Flèche Droite (seule) -> Avancer de 2s ou morceau suivant si fin
+        if (e.code === 'ArrowRight' && !e.ctrlKey) {
+            e.preventDefault();
+            if (wavesurfer) {
+                const duration = wavesurfer.getDuration();
+                if (duration > 0) {
+                    const currentTime = wavesurfer.getCurrentTime();
+                    if (currentTime >= duration - 1.5) {
+                        playNextTrack();
+                    } else {
+                        const newTime = Math.min(currentTime + 2, duration);
+                        wavesurfer.seekTo(newTime / duration);
+                        updateMediaSessionPositionState();
+                    }
+                }
+            }
+            return;
+        }
+
+        // Flèche Gauche (seule) -> Reculer de 2s ou morceau précédent si début
+        if (e.code === 'ArrowLeft' && !e.ctrlKey) {
+            e.preventDefault();
+            if (wavesurfer) {
+                const duration = wavesurfer.getDuration();
+                if (duration > 0) {
+                    const currentTime = wavesurfer.getCurrentTime();
+                    if (currentTime <= 1.5) {
+                        playPrevTrack();
+                    } else {
+                        const newTime = Math.max(currentTime - 2, 0);
+                        wavesurfer.seekTo(newTime / duration);
+                        updateMediaSessionPositionState();
+                    }
+                }
+            }
+            return;
+        }
+
+        // Touche "f" ou "F" -> Favori
+        if (e.key === 'f' || e.key === 'F') {
+            if (currentPlayingTrack) {
+                e.preventDefault();
+                toggleFavorite(currentPlayingTrack, e);
+            }
+            return;
+        }
+
+        // Touche "m" ou "M" -> Muet
+        if (e.key === 'm' || e.key === 'M') {
+            e.preventDefault();
+            btnMute.click();
+            return;
+        }
+    }
+}
+
+// --- DOCUMENT PICTURE-IN-PICTURE & POP-OUT MINI PLAYER ---
+async function togglePictureInPicturePlayer() {
+    if (pipWindow) {
+        try {
+            pipWindow.close();
+        } catch (e) {}
+        pipWindow = null;
+        if (btnPipPlayer) btnPipPlayer.classList.remove('active');
+        return;
+    }
+
+    try {
+        if ('documentPictureInPicture' in window) {
+            pipWindow = await window.documentPictureInPicture.requestWindow({
+                width: 380,
+                height: 200
+            });
+        } else {
+            // Fallback popup window
+            const left = Math.max(0, window.screen.width - 400);
+            const top = Math.max(0, window.screen.height - 260);
+            pipWindow = window.open('', 'DJToolMiniPlayer', `width=390,height=210,top=${top},left=${left},status=no,menubar=no,toolbar=no,location=no,resizable=yes`);
+        }
+
+        if (!pipWindow) {
+            alert("Impossible d'ouvrir le lecteur externe. Veuillez autoriser les fenêtres pop-up.");
+            return;
+        }
+
+        if (btnPipPlayer) btnPipPlayer.classList.add('active');
+
+        // Copy styles into PiP document
+        [...document.styleSheets].forEach(styleSheet => {
+            try {
+                if (styleSheet.href) {
+                    const link = document.createElement('link');
+                    link.rel = 'stylesheet';
+                    link.type = styleSheet.type || 'text/css';
+                    link.media = styleSheet.media || 'all';
+                    link.href = styleSheet.href;
+                    pipWindow.document.head.appendChild(link);
+                } else if (styleSheet.cssRules) {
+                    const style = document.createElement('style');
+                    [...styleSheet.cssRules].forEach(rule => {
+                        style.appendChild(document.createTextNode(rule.cssText));
+                    });
+                    pipWindow.document.head.appendChild(style);
+                }
+            } catch (e) {
+                if (styleSheet.href) {
+                    const link = document.createElement('link');
+                    link.rel = 'stylesheet';
+                    link.href = styleSheet.href;
+                    pipWindow.document.head.appendChild(link);
+                }
+            }
+        });
+
+        pipWindow.document.title = "Mini Lecteur DJ Tool (+/- écouteurs)";
+        pipWindow.document.body.className = document.body.classList.contains('light-mode') ? 'pip-mode light-mode' : 'pip-mode';
+
+        // Render HTML content inside PiP window
+        pipWindow.document.body.innerHTML = `
+            <div class="pip-player">
+                <div class="pip-glow"></div>
+                <div class="pip-top-row">
+                    <div class="pip-cover-wrapper">
+                        <img id="pip-cover" class="pip-cover" src="${playerCover.src}" alt="Cover">
+                    </div>
+                    <div class="pip-meta">
+                        <div id="pip-title" class="pip-title">${playerTitle.innerText || 'Aucune lecture'}</div>
+                        <div id="pip-artists" class="pip-artists">${playerArtists.innerText || '-'}</div>
+                        <div class="pip-badges">
+                            <span id="pip-badge-bpm" class="pip-badge pip-badge-bpm">${currentPlayingTrack && currentPlayingTrack.bpm ? currentPlayingTrack.bpm + ' BPM' : 'BPM --'}</span>
+                            <span id="pip-badge-key" class="pip-badge pip-badge-key">${currentPlayingTrack && currentPlayingTrack.key ? (currentPlayingTrack.key.camelot_number ? currentPlayingTrack.key.camelot_number + currentPlayingTrack.key.camelot_letter : currentPlayingTrack.key.name) : 'Harmonique'}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="pip-progress-row">
+                    <span id="pip-time-current" class="pip-time">${playerTimeCurrent.innerText || '0:00'}</span>
+                    <div id="pip-progress-track" class="pip-progress-track" title="Cliquer pour naviguer dans le morceau">
+                        <div id="pip-progress-fill" class="pip-progress-fill" style="width: 0%"></div>
+                    </div>
+                    <span id="pip-time-total" class="pip-time">${playerTimeTotal.innerText || '0:00'}</span>
+                </div>
+
+                <div class="pip-controls">
+                    <div class="pip-buttons-group">
+                        <button id="pip-btn-prev" class="pip-btn" title="Morceau précédent [-]">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2"></line></svg>
+                        </button>
+                        <button id="pip-btn-play" class="pip-btn pip-btn-play" title="Lecture / Pause [Espace]">
+                            <svg id="pip-play-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="${wavesurfer && wavesurfer.isPlaying() ? 'hidden' : ''}"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                            <svg id="pip-pause-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" class="${wavesurfer && wavesurfer.isPlaying() ? '' : 'hidden'}"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                        </button>
+                        <button id="pip-btn-next" class="pip-btn" title="Morceau suivant [+]">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="19" x2="19" y2="5" stroke="currentColor" stroke-width="2"></line></svg>
+                        </button>
+                        <button id="pip-btn-fav" class="pip-btn pip-btn-fav ${currentPlayingTrack && favorites.some(t => t.id === currentPlayingTrack.id) ? 'active' : ''}" title="Favori [F]">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="${currentPlayingTrack && favorites.some(t => t.id === currentPlayingTrack.id) ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                        </button>
+                    </div>
+
+                    <div class="pip-shortcuts-hint" title="Touches écouteurs & clavier">
+                        <span class="pip-key">-</span> Préc. &nbsp;|&nbsp; <span class="pip-key">+</span> Suiv.
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Event listeners inside PiP
+        const pipBtnPrev = pipWindow.document.getElementById('pip-btn-prev');
+        const pipBtnPlay = pipWindow.document.getElementById('pip-btn-play');
+        const pipBtnNext = pipWindow.document.getElementById('pip-btn-next');
+        const pipBtnFav = pipWindow.document.getElementById('pip-btn-fav');
+        const pipProgressTrack = pipWindow.document.getElementById('pip-progress-track');
+
+        if (pipBtnPrev) pipBtnPrev.addEventListener('click', () => playPrevTrack());
+        if (pipBtnPlay) pipBtnPlay.addEventListener('click', () => btnPlayPause.click());
+        if (pipBtnNext) pipBtnNext.addEventListener('click', () => playNextTrack());
+        if (pipBtnFav) pipBtnFav.addEventListener('click', (e) => {
+            if (currentPlayingTrack) toggleFavorite(currentPlayingTrack, e);
+        });
+
+        if (pipProgressTrack) {
+            pipProgressTrack.addEventListener('click', (e) => {
+                if (wavesurfer) {
+                    const rect = pipProgressTrack.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const percent = Math.max(0, Math.min(1, clickX / rect.width));
+                    wavesurfer.seekTo(percent);
+                }
+            });
+        }
+
+        // Global key events in the PiP window (including + and -)
+        pipWindow.addEventListener('keydown', (e) => {
+            handleGlobalPlaybackKeys(e);
+        });
+
+        // Cleanup on close
+        const cleanupPip = () => {
+            pipWindow = null;
+            if (btnPipPlayer) btnPipPlayer.classList.remove('active');
+        };
+        pipWindow.addEventListener('pagehide', cleanupPip);
+        pipWindow.addEventListener('beforeunload', cleanupPip);
+
+        updatePipUI();
+        if (wavesurfer) {
+            updatePipTime(wavesurfer.getCurrentTime(), wavesurfer.getDuration());
+        }
+    } catch (err) {
+        console.error("Erreur ouverture Picture-in-Picture:", err);
+    }
+}
+
+function updatePipUI(isPlaying) {
+    if (!pipWindow || !pipWindow.document) return;
+
+    try {
+        const pipCover = pipWindow.document.getElementById('pip-cover');
+        const pipTitle = pipWindow.document.getElementById('pip-title');
+        const pipArtists = pipWindow.document.getElementById('pip-artists');
+        const pipBadgeBpm = pipWindow.document.getElementById('pip-badge-bpm');
+        const pipBadgeKey = pipWindow.document.getElementById('pip-badge-key');
+        const pipPlayIcon = pipWindow.document.getElementById('pip-play-icon');
+        const pipPauseIcon = pipWindow.document.getElementById('pip-pause-icon');
+        const pipBtnFav = pipWindow.document.getElementById('pip-btn-fav');
+        const pipTimeTotal = pipWindow.document.getElementById('pip-time-total');
+
+        if (currentPlayingTrack) {
+            if (pipCover && currentPlayingTrack.image && currentPlayingTrack.image.uri) {
+                pipCover.src = currentPlayingTrack.image.uri;
+            }
+            if (pipTitle) pipTitle.innerText = currentPlayingTrack.name || 'Aucune lecture';
+            if (pipArtists) pipArtists.innerText = (currentPlayingTrack.artists || []).map(a => a.name).join(', ') || '-';
+            
+            if (pipBadgeBpm) {
+                pipBadgeBpm.innerText = currentPlayingTrack.bpm ? `${currentPlayingTrack.bpm} BPM` : 'BPM --';
+            }
+            if (pipBadgeKey) {
+                const keyStr = currentPlayingTrack.key 
+                    ? (currentPlayingTrack.key.camelot_number ? `${currentPlayingTrack.key.camelot_number}${currentPlayingTrack.key.camelot_letter}` : currentPlayingTrack.key.name)
+                    : 'Harmonique';
+                pipBadgeKey.innerText = keyStr;
+            }
+
+            if (pipBtnFav) {
+                const isFav = favorites.some(t => t.id === currentPlayingTrack.id);
+                pipBtnFav.classList.toggle('active', isFav);
+                const favSvg = pipBtnFav.querySelector('svg');
+                if (favSvg) favSvg.setAttribute('fill', isFav ? 'currentColor' : 'none');
+            }
+        }
+
+        const activePlaying = isPlaying !== undefined ? isPlaying : (wavesurfer && wavesurfer.isPlaying());
+        if (pipPlayIcon && pipPauseIcon) {
+            if (activePlaying) {
+                pipPlayIcon.classList.add('hidden');
+                pipPauseIcon.classList.remove('hidden');
+            } else {
+                pipPlayIcon.classList.remove('hidden');
+                pipPauseIcon.classList.add('hidden');
+            }
+        }
+
+        if (pipTimeTotal && wavesurfer) {
+            const dur = wavesurfer.getDuration();
+            if (dur && isFinite(dur)) pipTimeTotal.innerText = formatTime(dur);
+        }
+    } catch (e) {
+        console.warn('PiP update error:', e);
+    }
+}
+
+function updatePipTime(currentTime, duration) {
+    if (!pipWindow || !pipWindow.document) return;
+    try {
+        const pipTimeCurrent = pipWindow.document.getElementById('pip-time-current');
+        const pipProgressFill = pipWindow.document.getElementById('pip-progress-fill');
+        if (pipTimeCurrent) pipTimeCurrent.innerText = formatTime(currentTime);
+        if (pipProgressFill && duration > 0) {
+            const pct = Math.min(100, Math.max(0, (currentTime / duration) * 100));
+            pipProgressFill.style.width = `${pct}%`;
+        }
+    } catch (e) {}
 }
 
 // --- AI ASSISTANT SYSTEM (Gemini 1.5 Flash Integration) ---
@@ -1983,6 +2876,7 @@ window.toggleFavorite = function(track, event) {
             }
         }
     }
+    updatePipUI();
 };
 
 function saveFavorites() {

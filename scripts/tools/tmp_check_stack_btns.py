@@ -1,5 +1,5 @@
 import re
-p = 'c:\\Partage\\Projet\\Signaid V24\\src\\components\\CustomizerView.Simple.tsx'
+p = 'c:\Partage\Projet\signaid-studio\\src\\components\\CustomizerView.Simple.tsx'
 content = open(p, 'r', encoding='utf-8').read()
 
 stack = []

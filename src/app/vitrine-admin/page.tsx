@@ -7,7 +7,16 @@ export default function LoginPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    navigate("/vitrine-admin/dashboard" + window.location.search, { replace: true });
+    const params = new URLSearchParams(window.location.search);
+    const hasVisionQuery = (window.location.search || '').toLowerCase().includes('vision');
+    if (hasVisionQuery && !params.get('tab') && !params.get('uid')) {
+      params.set('tab', 'prospects');
+      if (!params.get('search')) {
+        params.set('search', 'vision');
+      }
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+    navigate(`/vitrine-admin/dashboard${query}`, { replace: true });
   }, [navigate]);
 
   return (

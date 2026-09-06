@@ -1,4 +1,4 @@
-$path = 'c:\Partage\Projet\Signaid V24\src\components\CustomizerView.tsx'
+$path = 'c:\Partage\Projet\signaid-studio\src\components\CustomizerView.tsx'
 $content = Get-Content -Raw $path
 $lines = $content -split "`r`n"
 

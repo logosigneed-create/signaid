@@ -1,0 +1,14 @@
+# RÈGLES DE DÉVELOPPEMENT ET DÉPLOIEMENT DU PROJET
+
+## 1. DÉVELOPPEMENT LOCAL ÉTANCHE OBLIGATOIRE
+- INTERDICTION ABSOLUE de déployer en production (`firebase deploy`, `npm run ship`, `npm run deploy`) lors des phases de debug, d'ajustement UI ou de tests.
+- Tout le travail d'itération, de debug, de modification de style/composants et de tests doit se faire et se valider exclusivement sur le serveur local (`npm run dev` accessible sur le réseau local via `--host`).
+- La production ne doit être mise à jour qu'après validation explicite et confirmation écrite de l'utilisateur.
+
+## 2. CANAUX DE TEST / PREVIEW
+- En cas de besoin de tester en environnement hébergé isolé, utiliser exclusivement le canal staging isolé :
+  `npm run preview:deploy` (`firebase hosting:channel:deploy staging`).
+- Ne jamais toucher au canal de production par défaut sans ordre direct.
+
+## 3. CONFIGURATION RÉSEAU
+- Le serveur de développement doit toujours être exposé sur l'IP du réseau local (`--host` ou `0.0.0.0`) afin de permettre les tests en temps réel sur les appareils mobiles (ex: Safari iOS sur le même réseau Wi-Fi).

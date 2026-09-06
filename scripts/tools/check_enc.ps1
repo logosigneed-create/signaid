@@ -1,4 +1,4 @@
-$path = 'c:\Partage\Projet\Signaid V24\src\components\CustomizerView.tsx'
+$path = 'c:\Partage\Projet\signaid-studio\src\components\CustomizerView.tsx'
 # Read with correct encoding (UTF-16 LE / Unicode)
 $content = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::Unicode)
 $lines = $content -split "`r`n"

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { logAnalyticsEvent } from '../services/analyticsService';
 import { db } from '../firebaseConfig';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { sanitizeForFirestore } from '../utils/firestoreSanitizer';
 
 import emailjs from '@emailjs/browser';
 
@@ -39,13 +40,13 @@ export const ContactView: React.FC = () => {
             // STEP 1: FIRESTORE
             console.log("Step 1: Save to Firestore...");
             try {
-                await addDoc(collection(db, 'contact_messages'), {
+                await addDoc(collection(db, 'contact_messages'), sanitizeForFirestore({
                     name,
                     email,
                     message,
                     timestamp: serverTimestamp(),
                     status: 'new'
-                });
+                }));
                 console.log("Firestore Save Success");
             } catch (fsErr: any) {
                 console.error("Firestore Error:", fsErr);

@@ -267,5 +267,5 @@ Génère une présentation marketing courte et percutante (1 phrase max par cham
 });
 `;
 
-fs.appendFileSync('c:/Partage/Projet/Signaid V24/functions/index.js', webhookCode);
+fs.appendFileSync('c:/Partage/Projet/signaid-studio/functions/index.js', webhookCode);
 console.log('Webhook code appended successfully.');

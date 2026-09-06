@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+**/node_modules/
 .pnpm-store/
 
 # Production build outputs
@@ -7,6 +8,7 @@ dist/
 build/
 out/
 .next/
+.vite/
 
 # IDE and System files
 .vscode/
@@ -32,4 +34,9 @@ yarn-error.log*
 .eslintcache
 *.tsbuildinfo
 scratch/
+scratch_*
+test_shop_screen.png
+tmp/
+backups/
 .tempmediaStorage/
+

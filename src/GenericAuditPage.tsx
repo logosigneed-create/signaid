@@ -1,55 +1,219 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Upload, ShieldCheck, Zap, Layout, Loader2, Sparkles, LogIn, CheckSquare, Shield, Layers, CheckCircle2, RefreshCcw, Trash2, RefreshCw, Play, Check, Terminal, Wind, Sun, Moon, Info, ArrowLeft, ShieldAlert, Clock, TrendingUp, ArrowRight, ExternalLink, Download, Wand2, Shirt, Crop } from 'lucide-react';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { db, storage, auth } from './firebaseConfig';
-import { ref, uploadString, getDownloadURL } from 'firebase/storage';
+import { ref, uploadString, getDownloadURL, deleteObject, UploadMetadata } from 'firebase/storage';
 import { SEO } from './components/SEO';
 import { geminiService } from './services/geminiService';
-import { getStoredConfig, saveStoredConfig, getCanonicalSlug } from './lib/store';
+import { getStoredConfig, saveStoredConfig } from './lib/store';
 import { sanitizeForFirestore } from './utils/firestoreSanitizer';
-import { deleteStorageFileByUrl } from './utils/storageCleaner';
+import { 
+    openDB, 
+    dbSet, 
+    dbGet, 
+    saveSessionLocal, 
+    syncSessionToCloud as syncSessionToCloudService, 
+    handleDirectCloudSync, 
+    getCleanSlug,
+    toKebabCaseSlug,
+    extractRootSlug,
+    extractGarmentMockupMap,
+    isBackId,
+    SaveSessionParams,
+    isSafeStorageUrl,
+    sanitizeMockupForLocalStorage,
+    sanitizeGarmentMockupMap,
+    pruneBulkyLocalStorageKeys,
+    safeLocalStorageSetItem
+} from './services/auditPersistenceService';
+
+const getCanonicalSlug = (slug: string) => slug || '';
+const deleteStorageFileByUrl = async (url: string) => {
+    try {
+        if (!url || !url.includes('firebasestorage.googleapis.com')) return;
+        const fileRef = ref(storage, url);
+        await deleteObject(fileRef);
+    } catch (e) {
+        console.warn("Storage cleanup notice:", e);
+    }
+};
 import QRCode from 'qrcode';
 import AdminQuickBar from './components/AdminQuickBar';
 
-type FlowState = 'LANDING' | 'CLEAN_CHECK' | 'SALES_AUDIT' | 'AUDIT' | 'RESULT' | 'ERROR' | 'INBOUND_WAITING';
+import { FlowState, UserData, MockupItem, BtpLogo, LogoColorMode } from './types/audit';
+import GabaritCard from './components/audit/GabaritCard';
 
-interface UserData {
-    companyName: string;
-    email: string;
-    activity: string;
-    phone: string;
-    website: string;
-    tva: string;
-    showActivity: boolean;
-    showPhone: boolean;
-    showWebsite: boolean;
-    showVat: boolean;
-}
+const getBaseMockups = (): MockupItem[] => [
+    // 1 & 2: CLASSIC BLACK T-SHIRT (JHK170)
+    { 
+        id: 'tFront', 
+        title: 'T-shirt Noir FACE', 
+        base: "/assets/tshirt-black-JHK170.png?v=V24", 
+        ai: null, 
+        aiRemastered: null, 
+        isGenerating: false, 
+        view: 'front', 
+        garment: 'tshirt', 
+        mechanical: null, 
+        model: "/assets/models/male_tshirt_front.png", 
+        selected: true 
+    },
+    { 
+        id: 'tBack', 
+        title: 'T-shirt Noir DOS', 
+        base: "/assets/tshirt-black-JHK170-dos.png?v=V24", 
+        ai: null, 
+        aiRemastered: null, 
+        isGenerating: false, 
+        view: 'back', 
+        garment: 'tshirt', 
+        mechanical: null, 
+        model: "/assets/models/male_tshirt_back.png", 
+        selected: true 
+    },
+    
+    // 3 & 4: POLO PREMIUM (JHK510)
+    { 
+        id: 'pFront', 
+        title: 'Polo Premium FACE', 
+        base: "/assets/polo-black-JHK510.png?v=V24", 
+        ai: null, 
+        aiRemastered: null, 
+        isGenerating: false, 
+        view: 'front', 
+        garment: 'polo', 
+        mechanical: null, 
+        model: "/assets/models/male_tshirt_front.png", 
+        selected: true 
+    },
+    { 
+        id: 'pBack', 
+        title: 'Polo Premium DOS', 
+        base: "/assets/polo-black-JHK510-dos.png?v=V24", 
+        ai: null, 
+        aiRemastered: null, 
+        isGenerating: false, 
+        view: 'back', 
+        garment: 'polo', 
+        mechanical: null, 
+        model: "/assets/models/male_tshirt_back.png", 
+        selected: true 
+    },
 
-interface MockupItem {
-    id: string;
-    title: string;
-    base: string;
-    ai: string | null;
-    aiRemastered: string | null;
-    isGenerating: boolean;
-    view: 'front' | 'back';
-    garment: 'tshirt' | 'tshirt_basic' | 'polo' | 'sweat' | 'tshirt_bicolore' | 'veste' | 'business_card' | 'banner';
-    mechanical?: string | null;
-    model?: string;
-    selected: boolean;
-}
+    // 5 & 6: HOODIE (JHK421)
+    { 
+        id: 'hFront', 
+        title: 'Hoodie FACE', 
+        base: "/assets/hoodie-black-JHK421.png?v=V24", 
+        ai: null, 
+        aiRemastered: null, 
+        isGenerating: false, 
+        view: 'front', 
+        garment: 'sweat', 
+        mechanical: null, 
+        model: "/assets/models/male_hoodie_front.png", 
+        selected: true 
+    },
+    { 
+        id: 'hBack', 
+        title: 'Hoodie DOS', 
+        base: "/assets/hoodie-black-JHK421-dos.png?v=V24", 
+        ai: null, 
+        aiRemastered: null, 
+        isGenerating: false, 
+        view: 'back', 
+        garment: 'sweat', 
+        mechanical: null, 
+        model: "/assets/models/male_hoodie_back.png", 
+        selected: true 
+    },
 
-interface BtpLogo {
-    id: 'A' | 'B';
-    original: string | null;
-    adapted: string | null;
-    remastered: string | null;
-    activeUrl?: string | null;
-    mode?: 'original' | 'adapted' | 'adaptedBlack' | 'remastered';
-}
+    // 7 & 8: DÉBARDEUR NOIR (BYBB011)
+    {
+        id: 'tankFront',
+        title: 'Débardeur Noir FACE',
+        base: "/merch/visionroom/tank-front.png",
+        ai: null,
+        aiRemastered: null,
+        isGenerating: false,
+        view: 'front',
+        garment: 'tank_top',
+        mechanical: null,
+        model: "/assets/models/male_tshirt_front.png",
+        selected: true
+    },
+    {
+        id: 'tankBack',
+        title: 'Débardeur Noir DOS',
+        base: "/merch/visionroom/tank-back.png",
+        ai: null,
+        aiRemastered: null,
+        isGenerating: false,
+        view: 'back',
+        garment: 'tank_top',
+        mechanical: null,
+        model: "/assets/models/male_tshirt_back.png",
+        selected: true
+    },
+
+    // 9 & 10: DÉBARDEUR BLANC (BYBB011)
+    {
+        id: 'tankWhiteFront',
+        title: 'Débardeur Blanc FACE',
+        base: "/merch/visionroom/tank-white-front.png",
+        ai: null,
+        aiRemastered: null,
+        isGenerating: false,
+        view: 'front',
+        garment: 'tank_top',
+        mechanical: null,
+        model: "/assets/models/male_tshirt_front.png",
+        selected: true
+    },
+    {
+        id: 'tankWhiteBack',
+        title: 'Débardeur Blanc DOS',
+        base: "/merch/visionroom/tank-white-back.png",
+        ai: null,
+        aiRemastered: null,
+        isGenerating: false,
+        view: 'back',
+        garment: 'tank_top',
+        mechanical: null,
+        model: "/assets/models/male_tshirt_back.png",
+        selected: true
+    },
+
+    // 11 & 12: HEAVYWEIGHT OVERSIZE (NX7200)
+    {
+        id: 'heavyFront',
+        title: 'Heavyweight Oversize FACE',
+        base: "/merch/visionroom/oversize-front.png",
+        ai: null,
+        aiRemastered: null,
+        isGenerating: false,
+        view: 'front',
+        garment: 'tshirt_oversize',
+        mechanical: null,
+        model: "/assets/models/male_tshirt_front.png",
+        selected: true
+    },
+    {
+        id: 'heavyBack',
+        title: 'Heavyweight Oversize DOS',
+        base: "/merch/visionroom/oversize-back.png",
+        ai: null,
+        aiRemastered: null,
+        isGenerating: false,
+        view: 'back',
+        garment: 'tshirt_oversize',
+        mechanical: null,
+        model: "/assets/models/male_tshirt_back.png",
+        selected: true
+    }
+];
 
 const compressBase64Image = (base64Str: string, maxWidth = 800, quality = 0.82): Promise<string> => {
     return new Promise((resolve) => {
@@ -116,38 +280,334 @@ const DEFAULT_PLACEMENTS = {
 };
 let PLACEMENTS = DEFAULT_PLACEMENTS;
 
-// INDEXED DB STORAGE FOR HEAVY ASSETS
-const STORAGE_CONFIG = { db: 'BtpAuditDB', store: 'heavy_assets' };
-const openDB = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
-    const r = indexedDB.open(STORAGE_CONFIG.db, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore(STORAGE_CONFIG.store);
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-});
-const dbSet = async (key: string, val: string) => {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORAGE_CONFIG.store, 'readwrite');
-        tx.objectStore(STORAGE_CONFIG.store).put(val, key);
-        tx.oncomplete = () => resolve(true);
-        tx.onerror = () => reject(tx.error);
-    });
+const isRealImage = (url: any): boolean => {
+    if (!url || typeof url !== 'string') return false;
+    const trimmed = url.trim();
+    if (!trimmed) return false;
+    if (trimmed.startsWith('data:image/')) return true;
+    if (trimmed.startsWith('blob:')) return true;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return true;
+    if (trimmed.startsWith('/merch/') || trimmed.startsWith('/assets/')) return false;
+    return trimmed.length > 100;
 };
-const dbGet = async (key: string): Promise<string | null> => {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORAGE_CONFIG.store, 'readonly');
-        const r = tx.objectStore(STORAGE_CONFIG.store).get(key);
-        r.onsuccess = () => resolve(r.result);
-        r.onerror = () => reject(r.error);
+
+const getResolvedMockupImage = (m: any): string | null => {
+    if (!m) return null;
+    const candidates = [
+        m.aiRemastered,
+        m.ai,
+        m.imageUrl,
+        m.frontImageUrl,
+        m.backImageUrl,
+        m.imageFront,
+        m.imageBack,
+        m.realAiSnapshotUrl,
+        m.generatedUrl,
+        m.url
+    ];
+    for (const cand of candidates) {
+        if (cand && isRealImage(cand)) {
+            return cand;
+        }
+    }
+    return null;
+};
+
+const getResolvedMechImage = (m: any): string | null => {
+    if (!m) return null;
+    const candidates = [
+        m.mechanical,
+        m.imageBat
+    ];
+    for (const cand of candidates) {
+        if (cand && isRealImage(cand)) {
+            return cand;
+        }
+    }
+    return null;
+};
+
+export const getActivePreview = (item: any): string => {
+    if (!item) return '';
+    return item.aiRemastered || item.ai || item.imageUrl || item.mechanical || item.base || '';
+};
+
+const extractAllCandidateKeys = (
+    uidParam?: string | null,
+    slugParam?: string | null,
+    auditParam?: string | null,
+    extraParam?: string | null
+): string[] => {
+    if (typeof window === 'undefined') return [];
+    const params = new URLSearchParams(window.location.search);
+    const uid = uidParam !== undefined ? uidParam : params.get('uid');
+    const slug = slugParam !== undefined ? slugParam : (params.get('slug') || params.get('prospect') || params.get('brand'));
+    const audit = auditParam !== undefined ? auditParam : params.get('audit');
+    const activeSid = typeof localStorage !== 'undefined' ? localStorage.getItem('btp_active_session_id') : null;
+    const activeSlug = typeof localStorage !== 'undefined' ? localStorage.getItem('btp_active_session_slug') : null;
+
+    // Detect path-based slugs like /portail-audit/:slug, /portail-shop/:slug, or /audit-:id
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    let pathSlug: string | null = null;
+    if (pathParts.length > 1 && (pathParts[0] === 'portail-audit' || pathParts[0] === 'portail-shop' || pathParts[0] === 'audit')) {
+        pathSlug = pathParts[1];
+    } else if (pathParts[0]?.startsWith('audit-')) {
+        pathSlug = pathParts[0];
+    }
+
+    const rawCandidates: (string | null | undefined)[] = [
+        uid,
+        slug,
+        audit,
+        extraParam,
+        pathSlug,
+        activeSlug,
+        activeSid,
+    ];
+
+    const list: (string | null | undefined)[] = [];
+    for (const item of rawCandidates) {
+        if (!item || typeof item !== 'string') continue;
+        const trimmed = item.trim();
+        if (!trimmed) continue;
+        list.push(trimmed);
+        list.push(trimmed.replace(/^audit-/, ''));
+        list.push(`audit-${trimmed.replace(/^audit-/, '')}`);
+        list.push(toKebabCaseSlug(trimmed));
+        list.push(getCleanSlug(trimmed));
+    }
+
+    return Array.from(new Set(list.filter(Boolean) as string[]));
+};
+
+interface LocalMockupCacheResult {
+    mergedGarmentMockups: Record<string, string>;
+    cachedMockupsList: MockupItem[];
+    isLocked: boolean;
+    hasRealAi: boolean;
+}
+
+const readMockupCacheFromLocal = (candidateKeys: string[]): LocalMockupCacheResult => {
+    if (typeof localStorage === 'undefined') {
+        return { mergedGarmentMockups: {}, cachedMockupsList: [], isLocked: false, hasRealAi: false };
+    }
+
+    const mergedGarmentMockups: Record<string, string> = {};
+    let cachedMockupsList: MockupItem[] = [];
+    let isLocked = false;
+
+    // 1. Check lock flags: btp_mockups_locked_${k}, btp_mockups_locked
+    for (const k of candidateKeys) {
+        if (localStorage.getItem(`btp_mockups_locked_${k}`) === 'true') {
+            isLocked = true;
+            break;
+        }
+    }
+    if (!isLocked && localStorage.getItem('btp_mockups_locked') === 'true') {
+        isLocked = true;
+    }
+
+    // 2. Check garment mockup maps: garmentMockups_${k}, btp_garment_mockups_${k}
+    for (const k of candidateKeys) {
+        const keysToTry = [
+            `garmentMockups_${k}`,
+            `btp_garment_mockups_${k}`,
+        ];
+        for (const key of keysToTry) {
+            try {
+                const raw = localStorage.getItem(key);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (parsed && typeof parsed === 'object') {
+                        Object.assign(mergedGarmentMockups, parsed);
+                    }
+                }
+            } catch (e) { }
+        }
+    }
+
+    // Fallback to global garmentMockups / btp_garment_mockups
+    try {
+        const globalGm = localStorage.getItem('garmentMockups') || localStorage.getItem('btp_garment_mockups');
+        if (globalGm) {
+            const parsed = JSON.parse(globalGm);
+            if (parsed && typeof parsed === 'object') {
+                Object.assign(mergedGarmentMockups, parsed);
+            }
+        }
+    } catch (e) { }
+
+    // 3. Check mockups lists: mockups_${k}, mockups, session_obj_${k}, btp_active_session_data
+    for (const k of candidateKeys) {
+        try {
+            const rawMockups = localStorage.getItem(`mockups_${k}`);
+            if (rawMockups) {
+                const parsed = JSON.parse(rawMockups);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    cachedMockupsList = parsed;
+                    const extracted = extractGarmentMockupMap(parsed);
+                    Object.assign(mergedGarmentMockups, extracted);
+                    break;
+                }
+            }
+        } catch (e) { }
+    }
+
+    if (cachedMockupsList.length === 0) {
+        try {
+            const rawGlobal = localStorage.getItem('mockups');
+            if (rawGlobal) {
+                const parsed = JSON.parse(rawGlobal);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    cachedMockupsList = parsed;
+                    const extracted = extractGarmentMockupMap(parsed);
+                    Object.assign(mergedGarmentMockups, extracted);
+                }
+            }
+        } catch (e) { }
+    }
+
+    // Check session_obj_${k}
+    for (const k of candidateKeys) {
+        try {
+            const rawSession = localStorage.getItem(`session_obj_${k}`);
+            if (rawSession) {
+                const parsed = JSON.parse(rawSession);
+                if (parsed?.garmentMockups && typeof parsed.garmentMockups === 'object') {
+                    Object.assign(mergedGarmentMockups, parsed.garmentMockups);
+                }
+                if (cachedMockupsList.length === 0 && Array.isArray(parsed?.mockups) && parsed.mockups.length > 0) {
+                    cachedMockupsList = parsed.mockups;
+                }
+            }
+        } catch (e) { }
+    }
+
+    // Global session data
+    try {
+        const rawActive = localStorage.getItem('btp_active_session_data');
+        if (rawActive) {
+            const parsed = JSON.parse(rawActive);
+            if (parsed?.garmentMockups && typeof parsed.garmentMockups === 'object') {
+                Object.assign(mergedGarmentMockups, parsed.garmentMockups);
+            }
+            if (cachedMockupsList.length === 0 && Array.isArray(parsed?.mockups) && parsed.mockups.length > 0) {
+                cachedMockupsList = parsed.mockups;
+            }
+        }
+    } catch (e) { }
+
+    // 4. Direct garment keys in localStorage: btp_mockup_${garment}_${k}, btp_mockup_${garment}
+    const directGarmentKeys = [
+        'tshirt_front', 'tshirt_back', 'tshirt',
+        'polo_front', 'polo_back', 'polo',
+        'hoodie_front', 'hoodie_back', 'hoodie',
+        'sweat_front', 'sweat_back', 'sweat',
+        'tank_front', 'tank_back', 'tank_white_front', 'tank_white_back', 'tank_top',
+        'heavy_front', 'heavy_back', 'tshirt_oversize',
+        'business_card_front', 'business_card_back', 'business_card',
+        'tFront', 'tBack', 'pFront', 'pBack', 'hFront', 'hBack',
+        'tankFront', 'tankBack', 'tankWhiteFront', 'tankWhiteBack', 'heavyFront', 'heavyBack'
+    ];
+
+    for (const directK of directGarmentKeys) {
+        if (!mergedGarmentMockups[directK]) {
+            for (const id of candidateKeys) {
+                const val = localStorage.getItem(`btp_mockup_${directK}_${id}`);
+                if (val && isRealImage(val)) {
+                    mergedGarmentMockups[directK] = val;
+                    break;
+                }
+            }
+            if (!mergedGarmentMockups[directK]) {
+                const val = localStorage.getItem(`btp_mockup_${directK}`);
+                if (val && isRealImage(val)) {
+                    mergedGarmentMockups[directK] = val;
+                }
+            }
+        }
+    }
+
+    const hasRealAi = Object.values(mergedGarmentMockups).some(isRealImage) ||
+        cachedMockupsList.some(m => isRealImage(m?.ai) || isRealImage(m?.aiRemastered) || (isLocked && isRealImage(m?.imageUrl)));
+
+    return { mergedGarmentMockups, cachedMockupsList, isLocked, hasRealAi };
+};
+
+const hydrateMockupsFromCache = (
+    baseMockups: MockupItem[],
+    mergedGarmentMockups: Record<string, string>,
+    cachedMockupsList: MockupItem[]
+): MockupItem[] => {
+    return baseMockups.map(baseM => {
+        const isBack = baseM.view === 'back' || isBackId(baseM.id);
+        const savedM = cachedMockupsList.find((m: any) => m?.id && m.id.toLowerCase() === baseM.id.toLowerCase());
+
+        let gmUrl: string | undefined = mergedGarmentMockups[baseM.id];
+        if (!gmUrl) {
+            if (baseM.garment === 'tshirt') {
+                gmUrl = isBack ? (mergedGarmentMockups.tshirt_back || mergedGarmentMockups.tBack) : (mergedGarmentMockups.tshirt_front || mergedGarmentMockups.tshirt || mergedGarmentMockups.tFront);
+            } else if (baseM.garment === 'polo') {
+                gmUrl = isBack ? (mergedGarmentMockups.polo_back || mergedGarmentMockups.pBack) : (mergedGarmentMockups.polo_front || mergedGarmentMockups.polo || mergedGarmentMockups.pFront);
+            } else if (baseM.garment === 'sweat' || (baseM.garment as string) === 'hoodie') {
+                gmUrl = isBack ? (mergedGarmentMockups.hoodie_back || mergedGarmentMockups.sweat_back || mergedGarmentMockups.hBack) : (mergedGarmentMockups.hoodie_front || mergedGarmentMockups.hoodie || mergedGarmentMockups.sweat_front || mergedGarmentMockups.sweat || mergedGarmentMockups.hFront);
+            } else if (baseM.garment === 'tank_top') {
+                const isWhite = baseM.id?.toLowerCase().includes('white') || baseM.title?.toLowerCase().includes('blanc');
+                gmUrl = isWhite
+                    ? (isBack ? (mergedGarmentMockups.tank_white_back || mergedGarmentMockups.tankWhiteBack) : (mergedGarmentMockups.tank_white_front || mergedGarmentMockups.tankWhiteFront))
+                    : (isBack ? (mergedGarmentMockups.tank_back || mergedGarmentMockups.tankBack) : (mergedGarmentMockups.tank_front || mergedGarmentMockups.tank_top || mergedGarmentMockups.tankFront));
+            } else if (baseM.garment === 'tshirt_oversize') {
+                gmUrl = isBack ? (mergedGarmentMockups.heavy_back || mergedGarmentMockups.heavyBack) : (mergedGarmentMockups.heavy_front || mergedGarmentMockups.tshirt_oversize || mergedGarmentMockups.heavyFront);
+            } else if (baseM.garment === 'business_card') {
+                gmUrl = isBack ? (mergedGarmentMockups.card_back || mergedGarmentMockups.business_card_back || mergedGarmentMockups.cardBack) : (mergedGarmentMockups.card_front || mergedGarmentMockups.business_card_front || mergedGarmentMockups.business_card || mergedGarmentMockups.cardFront);
+            }
+        }
+
+        const savedAi = savedM?.aiRemastered || savedM?.ai || savedM?.imageUrl || (isBack ? (savedM?.backImageUrl || savedM?.imageBack) : (savedM?.frontImageUrl || savedM?.imageFront));
+        const finalAi = isRealImage(gmUrl) ? gmUrl : (isRealImage(savedAi) ? savedAi : null);
+
+        const savedMech = savedM?.mechanical || (savedM as any)?.imageBat;
+        const finalMech = isRealImage(savedMech) ? savedMech : null;
+
+        const primaryUrl = finalAi || finalMech || baseM.base;
+
+        return {
+            ...baseM,
+            selected: savedM !== undefined ? (savedM.selected !== undefined ? !!savedM.selected : true) : true,
+            ai: finalAi || baseM.ai,
+            aiRemastered: finalAi || baseM.aiRemastered,
+            mechanical: finalMech || baseM.mechanical || null,
+            imageUrl: primaryUrl,
+            frontImageUrl: isBack ? undefined : primaryUrl,
+            backImageUrl: isBack ? primaryUrl : undefined,
+            imageFront: isBack ? undefined : primaryUrl,
+            imageBack: isBack ? primaryUrl : undefined
+        };
     });
 };
 
 const GenericAuditPage: React.FC = () => {
     const navigate = useNavigate();
+    const { slug: routeSlug, auditId } = useParams<{ slug?: string; auditId?: string }>();
     const hasRedirected = useRef(false);
-    const isAuditPath = window.location.pathname === '/portail-audit';
-    const [state, setState] = useState<FlowState>('LANDING');
+    const isAuditPath = typeof window !== 'undefined' && window.location.pathname === '/portail-audit';
+    const isHydratedFromLocalRef = useRef<boolean>(
+        typeof window !== 'undefined' && typeof localStorage !== 'undefined'
+            ? readMockupCacheFromLocal(extractAllCandidateKeys()).hasRealAi
+            : false
+    );
+    const [state, setState] = useState<FlowState>(() => {
+        if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+            try {
+                const keys = extractAllCandidateKeys();
+                const cache = readMockupCacheFromLocal(keys);
+                if (cache.hasRealAi) {
+                    return 'RESULT';
+                }
+            } catch (e) { }
+        }
+        return 'LANDING';
+    });
     const [isLoaded, setIsLoaded] = useState(false);
     const [isInbound, setIsInbound] = useState(false);
     const [isConfigOpen, setIsConfigOpen] = useState(true);
@@ -156,17 +616,23 @@ const GenericAuditPage: React.FC = () => {
     const [logoA, setLogoA] = useState<BtpLogo>({ id: 'A', original: null, adapted: null, remastered: null, mode: 'original' });
     const [logoB, setLogoB] = useState<BtpLogo>({ id: 'B', original: null, adapted: null, remastered: null, mode: 'original' });
     const [logoPlacements, setLogoPlacements] = useState<Record<string, 'A' | 'B'>>({
-        tFront: 'A',
+        tFront: 'B',
         tBack: 'A',
-        vFront: 'A',
-        vBack: 'A',
-        hFront: 'A',
+        pFront: 'B',
+        pBack: 'A',
+        hFront: 'B',
         hBack: 'A',
+        tankFront: 'B',
+        tankBack: 'A',
+        tankWhiteFront: 'B',
+        tankWhiteBack: 'A',
+        heavyFront: 'B',
+        heavyBack: 'A',
         cardFront: 'A',
         cardBack: 'A'
     });
 
-    const [logoScaleFront, setLogoScaleFront] = useState(0.20);
+    const [logoScaleFront, setLogoScaleFront] = useState(0.14);
     const [logoScaleBack, setLogoScaleBack] = useState(0.40);
     const [isBatConfirmed, setIsBatConfirmed] = useState(false);
     const [noiseThreshold, setNoiseThreshold] = useState(5);
@@ -179,29 +645,74 @@ const GenericAuditPage: React.FC = () => {
     const [previewId, setPreviewId] = useState<string | null>(null);
     const [hasReferralDiscount, setHasReferralDiscount] = useState(false);
 
-    const [mockups, setMockups] = useState<MockupItem[]>(() => [
-        // CLASSIC BLACK
-        { id: 'tFront', title: 'T-shirt Noir FACE', base: "/assets/tshirt-black-JHK170.png?v=V24", ai: null, aiRemastered: null, isGenerating: false, view: 'front' as const, garment: 'tshirt' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
-        { id: 'tBack', title: 'T-shirt Noir DOS', base: "/assets/tshirt-black-JHK170-dos.png?v=V24", ai: null, aiRemastered: null, isGenerating: false, view: 'back' as const, garment: 'tshirt' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
-        
-        // POLO PREMIUM
-        { id: 'pFront', title: 'Polo Premium FACE', base: "/assets/polo-black-JHK510.png?v=V24", ai: null, aiRemastered: null, isGenerating: false, view: 'front' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
-        { id: 'pBack', title: 'Polo Premium DOS', base: "/assets/polo-black-JHK510-dos.png?v=V24", ai: null, aiRemastered: null, isGenerating: false, view: 'back' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
+    const [mockups, setMockups] = useState<MockupItem[]>(() => {
+        if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+            try {
+                const keys = extractAllCandidateKeys();
+                const cache = readMockupCacheFromLocal(keys);
+                if (cache.hasRealAi) {
+                    return hydrateMockupsFromCache(getBaseMockups(), cache.mergedGarmentMockups, cache.cachedMockupsList);
+                }
+            } catch (e) {
+                console.warn("[Audit] Initial mockups cache read error:", e);
+            }
+        }
+        return getBaseMockups();
+    });
 
-        // HOODIE
-        { id: 'hFront', title: 'Hoodie FACE', base: "/assets/hoodie-black-JHK421.png?v=V24", ai: null, aiRemastered: null, isGenerating: false, view: 'front' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_front.png", selected: true },
-        { id: 'hBack', title: 'Hoodie DOS', base: "/assets/hoodie-black-JHK421-dos.png?v=V24", ai: null, aiRemastered: null, isGenerating: false, view: 'back' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_back.png", selected: true },
+    const [garmentMockups, setGarmentMockups] = useState<Record<string, string>>(() => {
+        if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+            try {
+                const keys = extractAllCandidateKeys();
+                const cache = readMockupCacheFromLocal(keys);
+                if (cache.hasRealAi) {
+                    return cache.mergedGarmentMockups;
+                }
+            } catch (e) { }
+        }
+        return {};
+    });
 
-        // MARKETING ASSETS
-        { id: 'cardFront', title: 'Carte Visite RECTO', base: "/assets/card-base.svg", ai: null, aiRemastered: null, isGenerating: false, view: 'front' as const, garment: 'business_card' as const, mechanical: null, model: "/assets/models/card_mockup_front_neutral.png", selected: true },
-        { id: 'cardBack', title: 'Carte Visite VERSO', base: "/assets/card-base.svg", ai: null, aiRemastered: null, isGenerating: false, view: 'back' as const, garment: 'business_card' as const, mechanical: null, model: "/assets/models/card_mockup_back.png", selected: true }
-    ]);
+    const [dynamicMockups, setDynamicMockups] = useState<any[]>(() => {
+        if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+            try {
+                const keys = extractAllCandidateKeys();
+                const cache = readMockupCacheFromLocal(keys);
+                if (cache.hasRealAi) {
+                    return hydrateMockupsFromCache(getBaseMockups(), cache.mergedGarmentMockups, cache.cachedMockupsList);
+                }
+            } catch (e) { }
+        }
+        return [];
+    });
+
+    const [activeMockups, setActiveMockups] = useState<MockupItem[]>(() => {
+        if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+            try {
+                const keys = extractAllCandidateKeys();
+                const cache = readMockupCacheFromLocal(keys);
+                if (cache.hasRealAi) {
+                    return hydrateMockupsFromCache(getBaseMockups(), cache.mergedGarmentMockups, cache.cachedMockupsList);
+                }
+            } catch (e) { }
+        }
+        return [];
+    });
     const [activeMockupIndex, setActiveMockupIndex] = useState(0);
     const isShop = window.location.pathname.includes('portail-shop');
     const [statusMessage, setStatusMessage] = useState(isShop ? "Portail Produit V24 Actif..." : "Pipeline HD V24 Actif...");
     const [showAuthModal, setShowAuthModal] = useState(false);
     const [stayLoggedIn, setStayLoggedIn] = useState(true);
     const [isRegenerating, setIsRegenerating] = useState(false);
+    const [isSyncingShop, setIsSyncingShop] = useState(false);
+    const isVisualFrozenRef = useRef(false);
+    const mockupsRef = useRef<MockupItem[]>(mockups);
+    useEffect(() => {
+        if (!isVisualFrozenRef.current && !isSyncingShop) {
+            mockupsRef.current = mockups;
+        }
+    }, [mockups, isSyncingShop]);
+    const hasSyncedProfileRef = useRef(false);
     const [auditLogs, setAuditLogs] = useState<string[]>([]);
     const [credits, setCredits] = useState(3);
     const [isIpBlocked, setIsIpBlocked] = useState(false);
@@ -266,14 +777,14 @@ const GenericAuditPage: React.FC = () => {
     const [employeeName, setEmployeeName] = useState('');
     const [selectedSize, setSelectedSize] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [globalLogoColorMode, setGlobalLogoColorMode] = useState<'original' | 'white' | 'black'>('original');
-    const [logoColorModes, setLogoColorModes] = useState<Record<string, 'original' | 'white' | 'black'>>({});
+    const [globalLogoColorMode, setGlobalLogoColorMode] = useState<LogoColorMode>('original');
+    const [logoColorModes, setLogoColorModes] = useState<Record<string, LogoColorMode>>({});
     const SIZES = ['S', 'M', 'L', 'XL', 'XXL', '3XL'];
 
-    const changeGlobalLogoColor = (mode: 'original' | 'white' | 'black') => {
+    const changeGlobalLogoColor = (mode: LogoColorMode) => {
         setGlobalLogoColorMode(mode);
         setLogoColorModes(prev => {
-            const next: Record<string, 'original' | 'white' | 'black'> = {};
+            const next: Record<string, LogoColorMode> = {};
             mockups.forEach(m => {
                 next[m.id] = mode;
             });
@@ -320,26 +831,46 @@ const GenericAuditPage: React.FC = () => {
 
     // HELPER: Get active logo for placement
     const getActiveLogoForPlacement = useCallback((placementId: string) => {
-        const slot = logoPlacements[placementId] || 'A'; // Default to A if not found (fixes cards)
-        const logo = slot === 'A' ? logoA : logoB;
-        if (!logo.original) return null;
-        if (logo.mode === 'remastered') return logo.remastered || logo.adapted;
-        return logo.mode === 'original' ? logo.original : logo.adapted;
+        const isFrontItem = !placementId.toLowerCase().includes('back') && !placementId.toLowerCase().includes('dos') && !placementId.toLowerCase().includes('card');
+        const fallbackSlot = (isFrontItem && logoB?.original && logoB.original.trim().length > 0) ? 'B' : 'A';
+        const slot = logoPlacements[placementId] || fallbackSlot;
+        let logo = slot === 'B' ? logoB : logoA;
+        if (!logo || !logo.original || logo.original.trim().length === 0) {
+            logo = logoA;
+        }
+        if (!logo || !logo.original || logo.original.trim().length === 0) return null;
+
+        let result: string | null | undefined = null;
+        if (logo.mode === 'remastered') {
+            result = logo.remastered || logo.adapted || logo.original;
+        } else if (logo.mode === 'original') {
+            result = logo.original || logo.adapted || logo.remastered;
+        } else {
+            result = logo.adapted || logo.remastered || logo.original;
+        }
+
+        if (!result || result.trim().length === 0) {
+            result = logo.remastered || logo.adapted || logo.original;
+        }
+
+        return (result && result.trim().length > 0) ? result : null;
     }, [logoA, logoB, logoPlacements]);
 
     // DYNAMIC MODELS BASED ON SECTOR
     useEffect(() => {
+        if (isVisualFrozenRef.current || isSyncingShop) return;
         setMockups(prev => prev.map(m => ({
             ...m,
             model: getModelForSector(m.garment, m.view, userData.activity)
         })));
-    }, [userData.activity, getModelForSector]);
+    }, [userData.activity, getModelForSector, isSyncingShop]);
 
     // REAL-TIME MECHANICAL GABARIT RE-RENDERING ON COLOR MODE / SCALE CHANGE
     useEffect(() => {
-        if (state !== 'RESULT' && state !== 'AUDIT') return;
+        if (isVisualFrozenRef.current || isSyncingShop) return;
         const timer = setTimeout(() => {
             const updateMechanicals = async () => {
+                if (isVisualFrozenRef.current || isSyncingShop) return;
                 const updated = await Promise.all(mockups.map(async (m) => {
                     const logoSrc = getActiveLogoForPlacement(m.id);
                     if (!logoSrc && m.garment !== 'business_card') return m;
@@ -348,12 +879,17 @@ const GenericAuditPage: React.FC = () => {
                     const mechanical = await generateMechanicalMockup(m.base, logoSrc || "", m.view, scale, m.garment, cMode);
                     return { ...m, mechanical };
                 }));
-                setMockups(updated);
+                if (!isVisualFrozenRef.current && !isSyncingShop) {
+                    setMockups(prev => {
+                        const hasChanged = JSON.stringify(updated.map(u => u.mechanical)) !== JSON.stringify(prev.map(p => p.mechanical));
+                        return hasChanged ? updated : prev;
+                    });
+                }
             };
             updateMechanicals();
         }, 150);
         return () => clearTimeout(timer);
-    }, [logoColorModes, globalLogoColorMode, logoPlacements, logoScaleFront, logoScaleBack, getActiveLogoForPlacement, state]);
+    }, [logoColorModes, globalLogoColorMode, logoPlacements, logoScaleFront, logoScaleBack, getActiveLogoForPlacement, isSyncingShop]);
 
     // ARCHITECTE : THE VAULT - CLOUD SYNC
     useEffect(() => {
@@ -365,7 +901,7 @@ const GenericAuditPage: React.FC = () => {
                     const data = conf.data() as any;
                     // MERGE WITH DEFAULTS to avoid undefined garment types
                     PLACEMENTS = { ...DEFAULT_PLACEMENTS, ...data };
-                    if (data.tshirt?.front?.scale) setLogoScaleFront(data.tshirt.front.scale);
+                    if (data.tshirt?.front?.scale && data.tshirt.front.scale !== 0.20) setLogoScaleFront(data.tshirt.front.scale);
                     if (data.tshirt?.back?.scale) setLogoScaleBack(data.tshirt.back.scale);
                     console.log("Vault Architect: Placements synchronisés via Cloud.");
                 } else {
@@ -392,18 +928,23 @@ const GenericAuditPage: React.FC = () => {
     // PERSISTENCE & ROUTING LOGIC
     useEffect(() => {
         let isCancelled = false;
+        if (isVisualFrozenRef.current || isSyncingShop) return;
 
         const updateGabarits = async () => {
+            if (isVisualFrozenRef.current || isSyncingShop || isCancelled) return;
             const updated = await Promise.all(mockups.map(async (m) => {
-                const slot = logoPlacements[m.id] || 'A';
+                const isFrontItem = m.view === 'front' || (!m.id.toLowerCase().includes('back') && !m.id.toLowerCase().includes('dos') && !m.id.toLowerCase().includes('card'));
+                const fallbackSlot = (isFrontItem && logoB?.original && logoB.original.trim().length > 0) ? 'B' : 'A';
+                const slot = logoPlacements[m.id] || fallbackSlot;
                 const logo = slot === 'A' ? logoA : logoB;
                 const logoSrc = logo.mode === 'original' ? logo.original : (logo.remastered || logo.adapted);
                 
                 if (!logoSrc && m.garment !== 'business_card' && m.garment !== 'banner') return m;
 
                 const scale = m.view === 'front' ? logoScaleFront : logoScaleBack;
+                const cMode = logoColorModes[m.id] || globalLogoColorMode || 'original';
                 try {
-                    const mechanical = await generateMechanicalMockup(m.base, logoSrc || "", m.view, scale, m.garment);
+                    const mechanical = await generateMechanicalMockup(m.base, logoSrc || "", m.view, scale, m.garment, cMode);
                     return { ...m, mechanical };
                 } catch (e) {
                     console.error("Gabarit Error:", e);
@@ -411,7 +952,7 @@ const GenericAuditPage: React.FC = () => {
                 }
             }));
 
-            if (!isCancelled) {
+            if (!isCancelled && !isVisualFrozenRef.current && !isSyncingShop) {
                 setMockups(prev => {
                     const hasChanged = JSON.stringify(updated.map(u => u.mechanical)) !== JSON.stringify(prev.map(p => p.mechanical));
                     return hasChanged ? updated : prev;
@@ -421,7 +962,7 @@ const GenericAuditPage: React.FC = () => {
 
         const debounceTimer = setTimeout(updateGabarits, 200);
         return () => { isCancelled = true; clearTimeout(debounceTimer); };
-    }, [logoScaleFront, logoScaleBack, logoA, logoB, logoPlacements, mockups.length]);
+    }, [logoScaleFront, logoScaleBack, logoA, logoB, logoPlacements, logoColorModes, globalLogoColorMode, mockups.length, isSyncingShop]);
 
 
 
@@ -576,9 +1117,13 @@ const GenericAuditPage: React.FC = () => {
                     setAssetColor(config.accentColor);
                 }
                 
+                const profileKeys = extractAllCandidateKeys(uid);
+                const localCacheCheck = readMockupCacheFromLocal(profileKeys);
+                const hasLocalMockups = isHydratedFromLocalRef.current || localCacheCheck.hasRealAi;
+
                 if (config.logoUrl) {
                     const lastSynced = localStorage.getItem(`lastSyncedLogoUrl_${uid}`);
-                    const isAlreadySynced = lastSynced === config.logoUrl;
+                    const isAlreadySynced = (lastSynced === config.logoUrl) || hasLocalMockups;
 
                     if (!isAlreadySynced) {
                         // Play full sync animation with delays
@@ -645,7 +1190,13 @@ const GenericAuditPage: React.FC = () => {
                         await new Promise(r => setTimeout(r, 1200));
 
                         // Store sync cache locally
-                        localStorage.setItem(`lastSyncedLogoUrl_${uid}`, config.logoUrl);
+                        try {
+                            if (isSafeStorageUrl(config.logoUrl)) {
+                                safeLocalStorageSetItem(`lastSyncedLogoUrl_${uid}`, config.logoUrl);
+                            }
+                        } catch (e) {
+                            console.warn("[Storage] lastSyncedLogoUrl save notice:", e);
+                        }
                     } else {
                         // Skip loading delays and process logo instantly
                         try {
@@ -667,8 +1218,13 @@ const GenericAuditPage: React.FC = () => {
                         }
                     }
                     
-                    setState('CLEAN_CHECK');
-                    setIsConfigOpen(true);
+                    if (!hasLocalMockups) {
+                        setState('CLEAN_CHECK');
+                        setIsConfigOpen(true);
+                    } else {
+                        setState('RESULT');
+                        setIsConfigOpen(false);
+                    }
                 }
                 addLog(`COMPTE LIÉ : ${config.companyName.toUpperCase()} ACTIF.`);
             }
@@ -693,333 +1249,134 @@ const GenericAuditPage: React.FC = () => {
         return () => unsubscribe();
     }, []);
 
-    const saveSession = useCallback(async (lA: BtpLogo, lB: BtpLogo, placements: Record<string, 'A' | 'B'>, uData: UserData, currentMockups: MockupItem[]) => {
+    const syncSessionToCloud = useCallback(async (
+        forceCloudOrParams: boolean | SaveSessionParams = true,
+        overrideMockups?: MockupItem[]
+    ) => {
+        if (typeof forceCloudOrParams === 'object' && forceCloudOrParams !== null) {
+            return await syncSessionToCloudService(forceCloudOrParams);
+        }
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetSlug = extractRootSlug(urlParams, { slug: routeSlug, auditId }, userData, sessionId);
         let sid = sessionId;
-        if (!sid) {
-            sid = `audit-${Math.random().toString(36).substring(2, 9)}`;
+        if (!sid || (sid.startsWith('audit-') && targetSlug && !targetSlug.startsWith('audit-'))) {
+            sid = targetSlug;
             setSessionId(sid);
-            window.history.pushState({}, '', `?audit=${sid}`);
+        }
+        const currentMockups = overrideMockups || (mockupsRef.current && mockupsRef.current.length > 0 ? mockupsRef.current : mockups);
+
+        const params: SaveSessionParams = {
+            sessionId: sid,
+            slug: targetSlug,
+            logoA,
+            logoB,
+            logoPlacements,
+            userData,
+            mockups: currentMockups,
+            logoColorModes,
+            globalLogoColorMode
+        };
+
+        await saveSessionLocal(params);
+        const res = await syncSessionToCloudService(params);
+        if (res.previewId) setPreviewId(res.previewId);
+        if (res.mockups && !isVisualFrozenRef.current && !isSyncingShop) setMockups(res.mockups);
+        return res;
+    }, [sessionId, routeSlug, auditId, logoA, logoB, logoPlacements, userData, mockups, logoColorModes, globalLogoColorMode, isSyncingShop]);
+
+    const handleDirectCloudSync = useCallback(async (
+        lA: BtpLogo = logoA,
+        lB: BtpLogo = logoB,
+        placements: Record<string, 'A' | 'B'> = logoPlacements,
+        uData: UserData = userData,
+        currentMockups: MockupItem[] = mockups
+    ) => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetSlug = extractRootSlug(urlParams, { slug: routeSlug, auditId }, uData, sessionId);
+        let sid = sessionId;
+        if (!sid || (sid.startsWith('audit-') && targetSlug && !targetSlug.startsWith('audit-'))) {
+            sid = targetSlug;
+            setSessionId(sid);
         }
 
-        try {
-            // 1. HEAVY ASSETS & SESSION DATA TO INDEXED DB (UNLIMITED SPACE)
-            if (lA.original) await dbSet(`${sid}_A_orig`, lA.original);
-            if (lA.adapted) await dbSet(`${sid}_A_adapt`, lA.adapted);
-            if (lA.remastered) await dbSet(`${sid}_A_remastered`, lA.remastered);
-            
-            if (lB.original) await dbSet(`${sid}_B_orig`, lB.original);
-            if (lB.adapted) await dbSet(`${sid}_B_adapt`, lB.adapted);
-            if (lB.remastered) await dbSet(`${sid}_B_remastered`, lB.remastered);
+        const params: SaveSessionParams = {
+            sessionId: sid,
+            slug: targetSlug,
+            logoA: lA,
+            logoB: lB,
+            logoPlacements: placements,
+            userData: uData,
+            mockups: currentMockups,
+            logoColorModes,
+            globalLogoColorMode
+        };
 
-            for (const m of currentMockups) {
-                if (m.ai && m.ai.startsWith('data:')) {
-                    await dbSet(`${sid}_ai_${m.id}`, m.ai);
-                }
-            }
+        await saveSessionLocal(params);
+        const res = await syncSessionToCloudService(params);
+        if (res.previewId) setPreviewId(res.previewId);
+        if (res.mockups && !isVisualFrozenRef.current && !isSyncingShop) setMockups(res.mockups);
+        return res;
+    }, [sessionId, routeSlug, auditId, logoA, logoB, logoPlacements, userData, mockups, logoColorModes, globalLogoColorMode, isSyncingShop]);
 
-            const lightweightMockups = currentMockups.map(m => ({
-                id: m.id,
-                title: m.title,
-                base: m.base,
-                isGenerating: m.isGenerating,
-                view: m.view,
-                garment: m.garment,
-                hasAi: !!m.ai,
-                selected: m.selected,
-                mechanical: m.mechanical,
-                ai: m.ai || (m as any).aiRemastered || null
-            }));
-
-            const fullSession = {
-                logoPlacements: placements,
-                logoAMode: lA.mode,
-                logoBMode: lB.mode,
-                userData: uData,
-                mockups: lightweightMockups,
-                timestamp: new Date().toISOString()
-            };
-
-            // Save the WHOLE session object in IDB
-            await dbSet(`session_obj_${sid}`, JSON.stringify(fullSession));
-
-            // Also explicitly save each individual AI image to IDB for fast key-based retrieval (Compressed for ultra-fast loading)
-            for (const m of currentMockups) {
-                const activeAi = (m as any).aiRemastered || m.ai;
-                if (activeAi && typeof activeAi === 'string') {
-                    const compressedAi = await compressBase64Image(activeAi, 800, 0.82);
-                    await dbSet(`${sid}_ai_${m.id}`, compressedAi);
-                }
-                if (m.mechanical && typeof m.mechanical === 'string') {
-                    const compressedMech = await compressBase64Image(m.mechanical, 800, 0.82);
-                    await dbSet(`${sid}_mech_${m.id}`, compressedMech);
-                }
-            }
-
-            // Only save the current session ID in localStorage (Tiny)
-            localStorage.setItem('btp_active_session_id', sid);
-
-            // 2. LIVE SYNC TO CLOUD FIRESTORE FOR PROSPECTS ACCESS
-            try {
-                const { query, collection, where, getDocs, setDoc, addDoc, doc } = await import('firebase/firestore');
-                
-                let pId = localStorage.getItem(`btp_preview_uuid_${sid}`);
-                if (!pId) {
-                    pId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-                        return v.toString(16);
-                    });
-                    localStorage.setItem(`btp_preview_uuid_${sid}`, pId);
-                }
-
-                const getActiveLogoUrl = async (l: BtpLogo, slot: string) => {
-                    const mode = l.mode || 'original';
-                    let base64 = l[mode as keyof BtpLogo] || l.original;
-                    if (mode === 'adapted' && l.remastered && (l as any).adaptedRemastered) {
-                        base64 = (l as any).adaptedRemastered;
-                    }
-                    if (base64 && typeof base64 === 'string' && base64.startsWith('http')) {
-                        return base64;
-                    }
-                    if (base64 && typeof base64 === 'string' && base64.startsWith('data:image')) {
-                        try {
-                            const lRef = ref(storage, `btp_mockups/${sid}/print/logo_${slot}_${Date.now()}.png`);
-                            await uploadString(lRef, base64, 'data_url');
-                            const downloadUrl = await getDownloadURL(lRef);
-
-                            // Purge old logo file from Firebase Storage if it exists and differs
-                            const prevUrl = l.activeUrl;
-                            if (prevUrl && prevUrl !== downloadUrl && prevUrl.includes('firebasestorage.googleapis.com')) {
-                                deleteStorageFileByUrl(prevUrl);
-                            }
-
-                            return downloadUrl;
-                        } catch (e) {
-                            console.warn(`Failed to upload logo_${slot}:`, e);
-                            return null;
-                        }
-                    }
-                    return null;
-                };
-
-                const uploadIfBase64 = async (base64OrUrl: string | null, id: string, type: string, previousUrl?: string | null) => {
-                    if (!base64OrUrl || typeof base64OrUrl !== 'string') return null;
-                    if (base64OrUrl.startsWith('http')) return base64OrUrl;
-                    if (base64OrUrl.startsWith('/assets/')) return base64OrUrl;
-                    if (!base64OrUrl.startsWith('data:')) return null;
-                    try {
-                        const assetRef = ref(storage, `btp_mockups/${sid}/web/${id}_${type}_${Date.now()}.png`);
-                        await uploadString(assetRef, base64OrUrl, 'data_url');
-                        const downloadUrl = await getDownloadURL(assetRef);
-
-                        // Purge previous orphan file from Firebase Storage after new file upload succeeds
-                        if (previousUrl && previousUrl !== downloadUrl && previousUrl.includes('firebasestorage.googleapis.com')) {
-                            deleteStorageFileByUrl(previousUrl);
-                        }
-
-                        return downloadUrl;
-                    } catch (e) {
-                        console.warn(`Failed to upload ${type} for ${id} during autosave:`, e);
-                        return null;
-                    }
-                };
-
-                const urlA = await getActiveLogoUrl(lA, 'A');
-                const urlB = await getActiveLogoUrl(lB, 'B');
-
-                // Map and upload any base64 mockup images
-                // Also check IDB for AI images that might not be in the current mockup state
-                const uploadedMockups = await Promise.all(currentMockups.map(async m => {
-                    const slot = placements[m.id] || 'A';
-                    const logo = slot === 'A' ? lA : lB;
-                    const isRemastered = logo.mode === 'remastered';
-                    let activeAi = isRemastered ? ((m as any).aiRemastered || m.ai) : m.ai;
-                    
-                    // If m.ai is null but we know an AI image exists in IDB, fetch it
-                    if (!activeAi || (typeof activeAi === 'string' && activeAi.startsWith('/assets/'))) {
-                        const idbAi = await dbGet(`${sid}_ai_${m.id}`);
-                        if (idbAi && typeof idbAi === 'string' && idbAi.length > 50) {
-                            activeAi = idbAi;
-                        }
-                    }
-                    
-                    let mechData = m.mechanical;
-                    // If mechanical is null or a local asset, check IDB
-                    if (!mechData || (typeof mechData === 'string' && mechData.startsWith('/assets/'))) {
-                        const idbMech = await dbGet(`${sid}_mech_${m.id}`);
-                        if (idbMech && typeof idbMech === 'string' && idbMech.length > 50) {
-                            mechData = idbMech;
-                        }
-                    }
-
-                    const prevAiUrl = m.ai && typeof m.ai === 'string' && m.ai.startsWith('http') ? m.ai : null;
-                    const prevMechUrl = m.mechanical && typeof m.mechanical === 'string' && m.mechanical.startsWith('http') ? m.mechanical : null;
-
-                    const [aiUrl, mechUrl] = await Promise.all([
-                        uploadIfBase64(activeAi, m.id, 'ai', prevAiUrl),
-                        uploadIfBase64(mechData, m.id, 'mech', prevMechUrl)
-                    ]);
-
-                    const finalAi = (aiUrl && aiUrl.startsWith('http')) ? aiUrl : (activeAi && typeof activeAi === 'string' && activeAi.startsWith('http') ? activeAi : null);
-                    const finalMech = (mechUrl && mechUrl.startsWith('http')) ? mechUrl : (mechData && typeof mechData === 'string' && mechData.startsWith('http') ? mechData : null);
-
-                    return {
-                        id: m.id || "",
-                        title: m.title || "",
-                        garment: m.garment || "",
-                        view: m.view || "",
-                        selected: !!m.selected,
-                        ai: finalAi,
-                        mechanical: finalMech,
-                        base: (m as any).base || ""
-                    };
-                }));
-
-                const q = query(collection(db, 'btp_projects'), where('projectId', '==', sid));
-                const snap = await getDocs(q);
-
-                const projectData = {
-                    projectId: sid,
-                    previewId: pId,
-                    userData: {
-                        companyName: uData.companyName || "",
-                        email: uData.email || "",
-                        activity: uData.activity || "",
-                        phone: uData.phone || "",
-                        website: uData.website || "",
-                        tva: uData.tva || ""
-                    },
-                    logoUrl: urlA || urlB || "", 
-                    logos: {
-                        logoA: {
-                            id: 'A' as const,
-                            original: null,
-                            adapted: null,
-                            remastered: null,
-                            activeUrl: urlA,
-                            mode: lA.mode || 'original'
-                        },
-                        logoB: {
-                            id: 'B' as const,
-                            original: null,
-                            adapted: null,
-                            remastered: null,
-                            activeUrl: urlB,
-                            mode: lB.mode || 'original'
-                        }
-                    },
-                    placements: Object.fromEntries(
-                        Object.entries(placements || {}).map(([k, v]) => [k, v || 'A'])
-                    ),
-                    mockups: uploadedMockups,
-                    status: 'PENDING_PAYMENT',
-                    updatedAt: new Date().toISOString(),
-                    type: 'BTP_PROJECT_V24'
-                };
-
-                if (!snap.empty) {
-                    const docRef = snap.docs[0].ref;
-                    await setDoc(docRef, sanitizeForFirestore(projectData), { merge: true });
-                } else {
-                    await addDoc(collection(db, 'btp_projects'), sanitizeForFirestore(projectData));
-                }
-
-                const previewData = {
-                    previewId: pId,
-                    companyName: uData.companyName || "",
-                    logoUrl: urlA || urlB || "",
-                    logoOriginalUrl: null,
-                    logoAdaptedUrl: urlA || urlB || "",
-                    accentColor: (placements as any)?.accentColor || "#ea580c",
-                    items: uploadedMockups.map(m => ({
-                        id: m.id,
-                        title: m.title,
-                        price: m.id.includes('basic') ? 25 : 39,
-                        imageFront: m.ai || (m as any).base || "",
-                        imageBack: m.mechanical || "",
-                        selected: !!m.selected,
-                        garment: m.garment || ""
-                    })),
-                    status: 'pending',
-                    userEmail: uData.email || null,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                };
-
-                await setDoc(doc(db, 'anonymous_previews', pId), sanitizeForFirestore(previewData), { merge: true });
-
-                // Centralized single-source SiteConfigs update using Canonical Slug
-                try {
-                    const canonicalId = getCanonicalSlug(sid);
-                    const tshirtAiUrl = uploadedMockups.find(m => m.id === 'tFront' || m.garment === 'tshirt')?.ai || uploadedMockups.find(m => m.id === 'tFront' || m.garment === 'tshirt')?.mechanical || null;
-                    const poloAiUrl = uploadedMockups.find(m => m.id === 'pFront' || m.garment === 'polo')?.ai || uploadedMockups.find(m => m.id === 'pFront' || m.garment === 'polo')?.mechanical || null;
-                    const hoodieAiUrl = uploadedMockups.find(m => m.id === 'hFront' || m.garment === 'sweat')?.ai || uploadedMockups.find(m => m.id === 'hFront' || m.garment === 'sweat')?.mechanical || null;
-
-                    const siteConfigsPayload = {
-                        canonicalSlug: canonicalId,
-                        projectId: sid,
-                        aliases: ["djdfazz", "fabrizio", "guest_ms3ijgnco2xnid", sid],
-                        products: {
-                            tshirt: { aiImageUrl: (tshirtAiUrl && typeof tshirtAiUrl === 'string' && tshirtAiUrl.startsWith('http')) ? tshirtAiUrl : "" },
-                            polo: { aiImageUrl: (poloAiUrl && typeof poloAiUrl === 'string' && poloAiUrl.startsWith('http')) ? poloAiUrl : "" },
-                            hoodie: { aiImageUrl: (hoodieAiUrl && typeof hoodieAiUrl === 'string' && hoodieAiUrl.startsWith('http')) ? hoodieAiUrl : "" }
-                        },
-                        mockups: uploadedMockups,
-                        items: uploadedMockups,
-                        logoUrl: urlA || urlB || "",
-                        logoAdaptedUrl: urlA || urlB || "",
-                        lastUpdated: serverTimestamp(),
-                        updatedAt: new Date().toISOString()
-                    };
-
-                    // Single write to canonical document
-                    const siteConfigRef = doc(db, 'SiteConfigs', canonicalId);
-                    await setDoc(siteConfigRef, sanitizeForFirestore(siteConfigsPayload), { merge: true });
-
-                    // If audit sid is different from canonicalId, create lightweight pointer
-                    if (sid && sid !== canonicalId) {
-                        const pointerRef = doc(db, 'SiteConfigs', sid);
-                        await setDoc(pointerRef, sanitizeForFirestore({
-                            canonicalSlug: canonicalId,
-                            aliasOf: canonicalId,
-                            projectId: sid,
-                            updatedAt: new Date().toISOString()
-                        }), { merge: true });
-                    }
-                } catch (scErr) {
-                    console.warn("SiteConfigs canonical sync error:", scErr);
-                }
-
-                setPreviewId(pId);
-            } catch (cloudErr) {
-                console.warn("Firestore live sync failed:", cloudErr);
-            }
-
-        } catch (e) {
-            console.error("Audit Persistence Error:", e);
+    const saveSession = useCallback(async (
+        lA: BtpLogo,
+        lB: BtpLogo,
+        placements: Record<string, 'A' | 'B'>,
+        uData: UserData,
+        currentMockups: MockupItem[],
+        syncCloud: boolean = false
+    ) => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetSlug = extractRootSlug(urlParams, { slug: routeSlug, auditId }, uData, sessionId);
+        let sid = sessionId;
+        if (!sid || (sid.startsWith('audit-') && targetSlug && !targetSlug.startsWith('audit-'))) {
+            sid = targetSlug;
+            setSessionId(sid);
         }
-    }, [sessionId]);
 
-    const initializeMockups = useCallback(() => {
-        return [
-            // CLASSIC BLACK
-            { id: 'tFront', title: 'T-shirt Noir FACE', base: "/assets/tshirt-black-JHK170.png?v=V24", ai: null, aiRemastered: null, isGenerating: false, view: 'front' as const, garment: 'tshirt' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
-            { id: 'tBack', title: 'T-shirt Noir DOS', base: "/assets/tshirt-black-JHK170-dos.png?v=V24", ai: "/assets/presets/tshirt_back_dfazz.png", aiRemastered: "/assets/presets/tshirt_back_dfazz.png", isGenerating: false, view: 'back' as const, garment: 'tshirt' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
-            
-            // POLO PREMIUM
-            { id: 'pFront', title: 'Polo Premium FACE', base: "/assets/polo-black-JHK510.png?v=V24", ai: "/assets/presets/polo_front_dfazz.png", aiRemastered: "/assets/presets/polo_front_dfazz.png", isGenerating: false, view: 'front' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
-            { id: 'pBack', title: 'Polo Premium DOS', base: "/assets/polo-black-JHK510-dos.png?v=V24", ai: "/assets/presets/polo_back_dfazz.png", aiRemastered: "/assets/presets/polo_back_dfazz.png", isGenerating: false, view: 'back' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
+        const params: SaveSessionParams = {
+            sessionId: sid,
+            slug: targetSlug,
+            logoA: lA,
+            logoB: lB,
+            logoPlacements: placements,
+            userData: uData,
+            mockups: currentMockups,
+            logoColorModes,
+            globalLogoColorMode
+        };
 
-            // HOODIE
-            { id: 'hFront', title: 'Hoodie FACE', base: "/assets/hoodie-black-JHK421.png?v=V24", ai: null, aiRemastered: null, isGenerating: false, view: 'front' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_front.png", selected: true },
-            { id: 'hBack', title: 'Hoodie DOS', base: "/assets/hoodie-black-JHK421-dos.png?v=V24", ai: "/assets/presets/hoodie_back_dfazz.png", aiRemastered: "/assets/presets/hoodie_back_dfazz.png", isGenerating: false, view: 'back' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_back.png", selected: true },
+        await saveSessionLocal(params);
 
-            // MARKETING ASSETS
-            { id: 'cardFront', title: 'Carte Visite RECTO', base: "/assets/card-base.svg", ai: "/assets/presets/card_dfazz.png", aiRemastered: "/assets/presets/card_dfazz.png", isGenerating: false, view: 'front' as const, garment: 'business_card' as const, mechanical: null, model: "/assets/models/card_mockup_front_neutral.png", selected: true },
-            { id: 'cardBack', title: 'Carte Visite VERSO', base: "/assets/card-base.svg", ai: "/assets/presets/card_dfazz.png", aiRemastered: "/assets/presets/card_dfazz.png", isGenerating: false, view: 'back' as const, garment: 'business_card' as const, mechanical: null, model: "/assets/models/card_mockup_back.png", selected: true }
-        ];
+        if (syncCloud) {
+            const res = await syncSessionToCloudService(params);
+            if (res.previewId) setPreviewId(res.previewId);
+            if (res.mockups && !isVisualFrozenRef.current && !isSyncingShop) setMockups(res.mockups);
+            return res;
+        }
+    }, [sessionId, routeSlug, auditId, logoA, logoB, logoPlacements, userData, mockups, logoColorModes, globalLogoColorMode, isSyncingShop]);
+
+    const initializeMockups = useCallback((): MockupItem[] => {
+        return getBaseMockups();
     }, []);
 
     useEffect(() => {
+        // 0. RESTAURATION PRIORITAIRE DEPUIS LE CACHE LOCAL AU MONTAGE
+        // Avant tout fetch Firestore ou initialisation de mockups par défaut,
+        // vérifie si des mockups existent dans localStorage (clés btp_mockups_locked_${uid}, garmentMockups_${uid}, ou mockups_${uid}).
+        const initialMountKeys = extractAllCandidateKeys();
+        const initialMountCache = readMockupCacheFromLocal(initialMountKeys);
+        if (initialMountCache.hasRealAi) {
+            const hydrated = hydrateMockupsFromCache(getBaseMockups(), initialMountCache.mergedGarmentMockups, initialMountCache.cachedMockupsList);
+            setMockups(hydrated);
+            setGarmentMockups(initialMountCache.mergedGarmentMockups);
+            setDynamicMockups(hydrated);
+            setActiveMockups(hydrated);
+            setState('RESULT');
+            setIsLoaded(true);
+            isHydratedFromLocalRef.current = true;
+        }
+
         // 1. ADMIN BYPASS
         if (localStorage.getItem('btp_god_mode') === 'true') {
             setCredits(999);
@@ -1051,28 +1408,50 @@ const GenericAuditPage: React.FC = () => {
         const params = new URLSearchParams(window.location.search);
         const uidParam = params.get('uid');
         const refreshParam = params.get('refresh');
-        
-        let sid = params.get('audit');
-        if (!sid) {
-            if (uidParam) {
-                sid = uidParam;
-            } else {
-                sid = localStorage.getItem('btp_active_session_id');
-            }
-        }
 
         if (refreshParam === 'true') {
-            sid = null;
             localStorage.removeItem('btp_active_session_id');
+            localStorage.removeItem('btp_active_session_slug');
         }
-        
-        const currentIsInbound = !uidParam && !sid && lastEmail !== 'logosigneed@gmail.com';
+
+        const hasExplicitUrlSlug = !!(
+            params.get('slug') ||
+            params.get('prospect') ||
+            params.get('brand') ||
+            params.get('uid') ||
+            params.get('audit') ||
+            routeSlug ||
+            auditId
+        );
+
+        let sid: string | null = null;
+        if (hasExplicitUrlSlug) {
+            sid = extractRootSlug(params, { slug: routeSlug, auditId }, userData, null);
+        } else if (refreshParam !== 'true') {
+            sid = localStorage.getItem('btp_active_session_slug') || localStorage.getItem('btp_active_session_id');
+        }
+
+        const currentIsInbound = !hasExplicitUrlSlug && !sid && lastEmail !== 'logosigneed@gmail.com';
         setIsInbound(currentIsInbound);
 
         if (sid) {
             const loadSessionData = async () => {
-                const idbSaved = await dbGet(`session_obj_${sid}`);
-                const lsSaved = localStorage.getItem(`btp_session_${sid}`);
+                const cleanSid = sid!.replace(/^audit-/, '');
+                const sidKeys = extractAllCandidateKeys(uidParam, sid, auditId);
+                const sidCache = readMockupCacheFromLocal(sidKeys);
+                if (sidCache.hasRealAi && !isHydratedFromLocalRef.current) {
+                    const hydrated = hydrateMockupsFromCache(getBaseMockups(), sidCache.mergedGarmentMockups, sidCache.cachedMockupsList);
+                    setMockups(hydrated);
+                    setGarmentMockups(sidCache.mergedGarmentMockups);
+                    setDynamicMockups(hydrated);
+                    setActiveMockups(hydrated);
+                    setState('RESULT');
+                    setIsLoaded(true);
+                    isHydratedFromLocalRef.current = true;
+                }
+
+                const idbSaved = await dbGet(`session_obj_${sid}`) || (cleanSid !== sid ? await dbGet(`session_obj_${cleanSid}`) : null);
+                const lsSaved = localStorage.getItem(`session_obj_${sid}`) || (cleanSid !== sid ? localStorage.getItem(`session_obj_${cleanSid}`) : null) || localStorage.getItem(`btp_session_${sid}`);
                 let saved = idbSaved || lsSaved;
                 let cloudDoc: any = null;
 
@@ -1081,15 +1460,26 @@ const GenericAuditPage: React.FC = () => {
                 try {
                     let q = query(collection(db, 'btp_projects'), where('projectId', '==', sid));
                     let snap = await getDocs(q);
+                    if (snap.empty && cleanSid !== sid) {
+                        q = query(collection(db, 'btp_projects'), where('projectId', '==', cleanSid));
+                        snap = await getDocs(q);
+                    }
                     if (snap.empty) {
                         q = query(collection(db, 'btp_projects'), where('previewId', '==', sid));
+                        snap = await getDocs(q);
+                    }
+                    if (snap.empty && cleanSid !== sid) {
+                        q = query(collection(db, 'btp_projects'), where('previewId', '==', cleanSid));
                         snap = await getDocs(q);
                     }
                     if (!snap.empty) {
                         cloudDoc = snap.docs[0].data();
                     } else {
                         const prevRef = doc(db, 'anonymous_previews', sid);
-                        const prevSnap = await getDoc(prevRef);
+                        let prevSnap = await getDoc(prevRef);
+                        if (!prevSnap.exists() && cleanSid !== sid) {
+                            prevSnap = await getDoc(doc(db, 'anonymous_previews', cleanSid));
+                        }
                         if (prevSnap.exists()) {
                             const pData = prevSnap.data();
                             cloudDoc = {
@@ -1097,6 +1487,26 @@ const GenericAuditPage: React.FC = () => {
                                 mockups: pData.items || [],
                                 logoUrl: pData.logoUrl || pData.logoAdaptedUrl || ""
                             };
+                        } else {
+                            let siteSnap = await getDoc(doc(db, 'SiteConfigs', sid));
+                            if (!siteSnap.exists() && cleanSid !== sid) {
+                                siteSnap = await getDoc(doc(db, 'SiteConfigs', cleanSid));
+                            }
+                            if (siteSnap.exists()) {
+                                const sData = siteSnap.data();
+                                cloudDoc = {
+                                    userData: {
+                                        companyName: sData.companyName || "",
+                                        email: sData.contactEmail || sData.email || "",
+                                        activity: sData.activitySector || sData.activity || "",
+                                        phone: sData.whatsappNumber || sData.phone || "",
+                                        website: sData.websiteUrl || sData.website || "",
+                                        tva: sData.vatNumber || sData.tva || ""
+                                    },
+                                    mockups: sData.items || sData.products || sData.mockups || [],
+                                    logoUrl: sData.logoUrl || sData.auditLogoUrl || ""
+                                };
+                            }
                         }
                     }
                     if (cloudDoc && !saved) {
@@ -1112,7 +1522,11 @@ const GenericAuditPage: React.FC = () => {
                     if (data.userData) setUserData(data.userData);
 
                     if (data.userData?.email) {
-                        localStorage.setItem('btp_last_email', data.userData.email);
+                        try {
+                            safeLocalStorageSetItem('btp_last_email', data.userData.email);
+                        } catch (e) {
+                            console.warn("[Storage] btp_last_email save notice:", e);
+                        }
                         const userCredits = localStorage.getItem(`btp_credits_${data.userData.email}`);
                         if (userCredits !== null) setCredits(parseInt(userCredits));
                     }
@@ -1145,22 +1559,45 @@ const GenericAuditPage: React.FC = () => {
 
                     if (data.logoPlacements) setLogoPlacements(prev => ({ ...prev, ...data.logoPlacements }));
 
+                    if (data.logoColorModes || cloudDoc?.logoColorModes) {
+                        setLogoColorModes(prev => ({ ...prev, ...(data.logoColorModes || cloudDoc?.logoColorModes) }));
+                    }
+                    if (data.globalLogoColorMode || cloudDoc?.globalLogoColorMode) {
+                        setGlobalLogoColorMode(data.globalLogoColorMode || cloudDoc?.globalLogoColorMode);
+                    }
+
                     const baseMockups = initializeMockups();
                     const savedMockups = data.mockups || data.items || data.previews || [];
                     // Cloud mockups have Firebase Storage URLs for AI and mechanical images
                     const cloudMockups = cloudDoc?.mockups || cloudDoc?.items || [];
                     
+                    const matchMockup = (list: any[], baseM: MockupItem) => {
+                        if (!Array.isArray(list)) return undefined;
+                        // 1. Exact ID match (case-insensitive)
+                        const exact = list.find((m: any) => m?.id && m.id.toLowerCase() === baseM.id.toLowerCase());
+                        if (exact) return exact;
+
+                        // 2. Garment + View match with white variant check
+                        return list.find((m: any) => {
+                            const mGarment = m?.garment || m?.type;
+                            if (mGarment !== baseM.garment || m?.view !== baseM.view) return false;
+                            
+                            // Distinguish black vs white tank top if ID or title specifies white/blanc
+                            if (baseM.garment === 'tank_top') {
+                                const isBaseWhite = baseM.id.toLowerCase().includes('white') || baseM.title.toLowerCase().includes('blanc');
+                                const isMWhite = (m.id && m.id.toLowerCase().includes('white')) || (m.title && m.title.toLowerCase().includes('blanc'));
+                                return isBaseWhite === isMWhite;
+                            }
+                            return true;
+                        });
+                    };
+
                     const restoredMockups = await Promise.all(baseMockups.map(async (baseM) => {
-                        const savedM = savedMockups.find((sm: any) => 
-                            sm.id === baseM.id || 
-                            (sm.garment === baseM.garment && sm.view === baseM.view) ||
-                            (sm.type === baseM.garment && sm.view === baseM.view)
-                        );
-                        // Also check cloud mockups for Firebase Storage URLs
-                        const cloudM = cloudMockups.find((cm: any) => 
-                            cm.id === baseM.id || 
-                            (cm.garment === baseM.garment && cm.view === baseM.view)
-                        );
+                        const savedM = matchMockup(savedMockups, baseM);
+                        const cloudM = matchMockup(cloudMockups, baseM);
+                        const cachedM = sidCache.cachedMockupsList?.find((m: any) => m?.id && m.id.toLowerCase() === baseM.id.toLowerCase());
+                        const cachedGmUrl = sidCache.mergedGarmentMockups[baseM.id];
+                        const isBack = baseM.view === 'back' || isBackId(baseM.id);
                         
                         // Prefer fresh Firebase Storage URL from cloud over potentially stale IDB cache
                         const cloudAiUrl = cloudM?.ai || cloudM?.aiRemastered || cloudM?.imageStudio || cloudM?.imageFront || savedM?.ai || savedM?.imageStudio || savedM?.imageFront || null;
@@ -1168,31 +1605,70 @@ const GenericAuditPage: React.FC = () => {
                         
                         // Only read IDB if cloud doesn't have a fresh Firebase Storage URL
                         const idbAi = (!isFirebaseStorageUrl(cloudAiUrl) && (savedM?.hasAi || savedM?.ai)) ? await dbGet(`${sid}_ai_${baseM.id}`) : null;
-                        const aiVal = (isFirebaseStorageUrl(cloudAiUrl) ? cloudAiUrl : null) || idbAi || savedM?.aiRemastered || cloudM?.aiRemastered || savedM?.url || savedM?.generatedUrl || null;
+
+                        const localAi = (isRealImage(cachedGmUrl) ? cachedGmUrl : null)
+                            || (cachedM && isRealImage(cachedM.ai) ? cachedM.ai : null)
+                            || (cachedM && isRealImage(cachedM.aiRemastered) ? cachedM.aiRemastered : null);
+
+                        const aiVal = (isFirebaseStorageUrl(cloudAiUrl) ? cloudAiUrl : null) 
+                            || localAi 
+                            || idbAi 
+                            || (isRealImage(savedM?.aiRemastered) ? savedM.aiRemastered : null)
+                            || (isRealImage(cloudM?.aiRemastered) ? cloudM.aiRemastered : null)
+                            || (isRealImage(savedM?.ai) ? savedM.ai : null)
+                            || (isRealImage(cloudM?.ai) ? cloudM.ai : null)
+                            || (isRealImage(savedM?.imageUrl) ? savedM.imageUrl : null)
+                            || (isRealImage(cloudM?.imageUrl) ? cloudM.imageUrl : null)
+                            || (isRealImage(savedM?.url) ? savedM.url : null)
+                            || (isRealImage(savedM?.generatedUrl) ? savedM.generatedUrl : null)
+                            || null;
                         
                         const idbMech = (savedM?.mechanical || savedM?.hasAi) ? await dbGet(`${sid}_mech_${baseM.id}`) : null;
-                        const mechVal = idbMech || savedM?.mechanical || cloudM?.mechanical || savedM?.imageBat || cloudM?.imageBat || savedM?.imageBack || cloudM?.imageBack || null;
+                        const mechVal = idbMech || savedM?.mechanical || cloudM?.mechanical || savedM?.imageBat || cloudM?.imageBat || null;
 
-                        const isReal = (url: any) => url && typeof url === 'string' && (url.startsWith('http') || url.startsWith('data:') || url.length > 100);
+                        const finalAi = isRealImage(aiVal) ? aiVal : (isRealImage(localAi) ? localAi : baseM.ai);
+                        const finalMech = isRealImage(mechVal) ? mechVal : null;
+                        const primaryUrl = finalAi || finalMech || baseM.base;
 
                         return {
                             ...baseM,
-                            selected: savedM !== undefined ? !!savedM.selected : baseM.selected,
-                            ai: isReal(aiVal) ? aiVal : baseM.ai,
-                            aiRemastered: isReal(aiVal) ? aiVal : baseM.aiRemastered,
-                            mechanical: isReal(mechVal) ? mechVal : null
+                            selected: savedM !== undefined ? (savedM.selected !== undefined ? !!savedM.selected : true) : true,
+                            ai: finalAi,
+                            aiRemastered: finalAi,
+                            mechanical: finalMech,
+                            imageUrl: primaryUrl,
+                            frontImageUrl: isBack ? undefined : primaryUrl,
+                            backImageUrl: isBack ? primaryUrl : undefined,
+                            imageFront: isBack ? undefined : primaryUrl,
+                            imageBack: isBack ? primaryUrl : undefined
                         };
                     }));
 
-                    setMockups(restoredMockups);
-                    setState('RESULT');
+                    if (restoredMockups.some(m => isRealImage(m.ai) || isRealImage(m.aiRemastered))) {
+                        setMockups(restoredMockups);
+                        const fullGm = { ...extractGarmentMockupMap(restoredMockups), ...sidCache.mergedGarmentMockups };
+                        setGarmentMockups(fullGm);
+                        setDynamicMockups(restoredMockups);
+                        setActiveMockups(restoredMockups);
+                        setState('RESULT');
+                        isHydratedFromLocalRef.current = true;
+                    } else if (isHydratedFromLocalRef.current) {
+                        setState('RESULT');
+                    } else {
+                        setMockups(restoredMockups);
+                        setState('RESULT');
+                    }
                 }
                 setIsLoaded(true);
             };
             loadSessionData();
         } else {
             setIsLoaded(true);
-            syncProfile();
+            if (!isHydratedFromLocalRef.current) {
+                syncProfile();
+            } else {
+                setState('RESULT');
+            }
         }
     }, [initializeMockups]);
 
@@ -1401,7 +1877,7 @@ const GenericAuditPage: React.FC = () => {
         });
     };
 
-    const generateMechanicalMockup = async (garmentUrl: string, logoUrl: string, view: 'front' | 'back', customScale?: number, garmentType?: string, colorMode?: 'original' | 'white' | 'black') => {
+    const generateMechanicalMockup = async (garmentUrl: string, logoUrl: string | null, view: 'front' | 'back', customScale?: number, garmentType?: string, colorMode?: LogoColorMode) => {
         const getAccentColor = (opacity: number = 1.0) => {
             const base = assetColor || '#f97316';
             if (base.startsWith('rgb')) {
@@ -1417,10 +1893,31 @@ const GenericAuditPage: React.FC = () => {
             return base;
         };
         try {
-            const [imgGarment, rawImgLogo] = await Promise.all([
-                loadImage(garmentUrl),
-                loadImage(logoUrl)
-            ]);
+            const imgGarment = await loadImage(garmentUrl);
+
+            // Si aucun logo n'est fourni ou valide, retourner le vêtement de base neutre verrouillé à 1024x1024
+            if (!logoUrl || logoUrl.trim().length === 0) {
+                const targetSize = 1024;
+                const canvas = document.createElement('canvas');
+                canvas.width = targetSize;
+                canvas.height = targetSize;
+                const ctx = canvas.getContext('2d');
+                if (ctx) {
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.clearRect(0, 0, targetSize, targetSize);
+                    const scaleFactor = Math.max(targetSize / imgGarment.width, targetSize / imgGarment.height);
+                    const scaledW = imgGarment.width * scaleFactor;
+                    const scaledH = imgGarment.height * scaleFactor;
+                    const dx = (targetSize - scaledW) / 2;
+                    const dy = (targetSize - scaledH) / 2;
+                    ctx.drawImage(imgGarment, dx, dy, scaledW, scaledH);
+                    return canvas.toDataURL('image/png', 1.0);
+                }
+                return garmentUrl;
+            }
+
+            const rawImgLogo = await loadImage(logoUrl);
 
             let imgLogo: HTMLImageElement | HTMLCanvasElement = rawImgLogo;
             if (colorMode && colorMode !== 'original') {
@@ -1431,12 +1928,36 @@ const GenericAuditPage: React.FC = () => {
                 lCtx.drawImage(rawImgLogo, 0, 0);
                 const lData = lCtx.getImageData(0, 0, lCanvas.width, lCanvas.height);
                 const pixels = lData.data;
-                const targetRgb = colorMode === 'white' ? 255 : 0;
-                for (let i = 0; i < pixels.length; i += 4) {
-                    if (pixels[i + 3] > 0) {
-                        pixels[i] = targetRgb;
-                        pixels[i + 1] = targetRgb;
-                        pixels[i + 2] = targetRgb;
+
+                if (colorMode === 'white' || colorMode === 'black') {
+                    const targetRgb = colorMode === 'white' ? 255 : 0;
+                    for (let i = 0; i < pixels.length; i += 4) {
+                        if (pixels[i + 3] > 0) {
+                            pixels[i] = targetRgb;
+                            pixels[i + 1] = targetRgb;
+                            pixels[i + 2] = targetRgb;
+                        }
+                    }
+                } else if (colorMode === 'knockout_black') {
+                    for (let i = 0; i < pixels.length; i += 4) {
+                        const a = pixels[i + 3];
+                        if (a > 0) {
+                            const r = pixels[i];
+                            const g = pixels[i + 1];
+                            const b = pixels[i + 2];
+                            const maxC = Math.max(r, g, b);
+                            const k = maxC / 255.0;
+
+                            if (k < 0.10) {
+                                pixels[i + 3] = 0;
+                            } else {
+                                const factor = (k - 0.10) / (1.0 - 0.10);
+                                pixels[i + 3] = Math.round(a * Math.pow(factor, 0.85));
+                                pixels[i] = Math.min(255, Math.round(r / Math.max(0.15, factor)));
+                                pixels[i + 1] = Math.min(255, Math.round(g / Math.max(0.15, factor)));
+                                pixels[i + 2] = Math.min(255, Math.round(b / Math.max(0.15, factor)));
+                            }
+                        }
                     }
                 }
                 lCtx.putImageData(lData, 0, 0);
@@ -1449,16 +1970,12 @@ const GenericAuditPage: React.FC = () => {
                 canvas.height = 1024;
                 const ctx = canvas.getContext('2d')!;
                 
-                // Background
-                ctx.fillStyle = isLightMode ? '#ffffff' : '#0a0a0a';
+                // Background: Remplit 100% de la zone sans bandes de padding
+                ctx.clearRect(0, 0, 1024, 1024);
+                ctx.fillStyle = '#0a0a0a';
                 ctx.fillRect(0, 0, 1024, 1024);
                 
-                const baseColor = assetColor || (isLightMode ? '#ffffff' : '#050505');
-                
-                // Mockup Border/Shadow
-                ctx.strokeStyle = isLightMode ? '#eeeeee' : '#1a1a1a';
-                ctx.lineWidth = 20;
-                ctx.strokeRect(10, 10, 1004, 1004);
+                const baseColor = assetColor || '#050505';
 
                 const isCard = garmentType === 'business_card';
                 const isBanner = garmentType === 'banner';
@@ -1707,7 +2224,9 @@ const GenericAuditPage: React.FC = () => {
             // 2. Détecter le type de vêtement pour le placement
             const isSweat = garmentUrl.includes('hoodie');
             const isPolo = garmentUrl.includes('polo');
-            const rawType = garmentType || (isPolo ? 'polo' : (isSweat ? 'sweat' : 'tshirt'));
+            const isTank = garmentUrl.includes('tank') || garmentUrl.includes('debardeur');
+            const isOversize = garmentUrl.includes('oversize') || garmentUrl.includes('NX7200');
+            const rawType = garmentType || (isPolo ? 'polo' : (isSweat ? 'sweat' : (isTank ? 'tank_top' : (isOversize ? 'tshirt_oversize' : 'tshirt'))));
             const typeGroup = PLACEMENTS[rawType as keyof typeof PLACEMENTS] || PLACEMENTS.tshirt;
             const pos = typeGroup[view] || typeGroup.front;
             
@@ -1722,7 +2241,7 @@ const GenericAuditPage: React.FC = () => {
                 }
             }
 
-            // 3. Positionnement définitif
+            // 3. Positionnement définitif du logo graphique pur
             const logoW = canvas.width * scale;
             const logoH = logoW * (imgLogo.height / imgLogo.width);
 
@@ -1735,6 +2254,10 @@ const GenericAuditPage: React.FC = () => {
                 logoH
             );
 
+            // PURGE ABSOLUE TEXTE / BRANDING INVOLONTAIRE SUR LE TEXTILE (garmentPreview) :
+            // Strictement AUCUN fillText, strokeText ou dessin textuel (companyName, prospectName, slug, title, uid) n'est injecté sur le textile.
+            // Le vêtement source envoyé à l'IA ne contient strictement que le fichier graphique du logo (ex: l'abeille) centré sur le textile, sans aucun lettrage ajouté par le code.
+
             // 5. EXPORT AT UNIFIED SQUARE (1024x1024)
             const targetSize = 1024;
             const exportCanvas = document.createElement('canvas');
@@ -1746,9 +2269,11 @@ const GenericAuditPage: React.FC = () => {
             exportCtx.imageSmoothingEnabled = true;
             exportCtx.imageSmoothingQuality = 'high';
             
+            // Fond du canvas transparent sans bandes de padding blanches
             exportCtx.clearRect(0, 0, targetSize, targetSize);
 
-            const scaleFactor = Math.min(targetSize / canvas.width, targetSize / canvas.height);
+            // Remplir 100% de la zone 1024x1024 sans bandes de padding blanches
+            const scaleFactor = Math.max(targetSize / canvas.width, targetSize / canvas.height);
             const scaledW = canvas.width * scaleFactor;
             const scaledH = canvas.height * scaleFactor;
             const dx = (targetSize - scaledW) / 2;
@@ -1761,6 +2286,12 @@ const GenericAuditPage: React.FC = () => {
             return logoUrl;
         }
     };
+
+    // ALIASES STRICTS POUR LE RENDU ET LA CAPTURE DES GABARITS TECHNIQUES
+    // Garantit l'absence totale de tout lettrage ou typo automatique sur le textile source
+    const drawGarment = generateMechanicalMockup;
+    const renderMockupToCanvas = generateMechanicalMockup;
+    const captureGarmentPreview = generateMechanicalMockup;
 
     const compressImage = (base64: string, maxEdge: number = 800, forceSquare: boolean = false): Promise<string> => {
         return new Promise((resolve, reject) => {
@@ -1819,21 +2350,46 @@ const GenericAuditPage: React.FC = () => {
         }
     };
 
-    const fetchBase64 = async (url: string) => {
-        try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error(`HTTP ${response.status} sur ${url}`);
-            const blob = await response.blob();
-            return new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-            });
-        } catch (e) {
-            console.error("Fetch Error:", e);
-            throw e;
+    const localAssetBase64Cache = useRef<Map<string, string>>(new Map());
+
+    const fetchBase64 = async (url: string, retries = 2): Promise<string> => {
+        if (!url) throw new Error("URL vide");
+        if (url.startsWith('data:image') || url.startsWith('data:')) {
+            return url;
         }
+        if (localAssetBase64Cache.current.has(url)) {
+            return localAssetBase64Cache.current.get(url)!;
+        }
+
+        let lastError: any = null;
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 12000);
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
+
+                if (!response.ok) throw new Error(`HTTP ${response.status} sur ${url}`);
+                const blob = await response.blob();
+                const dataUrl = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+                if (url.startsWith('/') || url.includes('/assets/')) {
+                    localAssetBase64Cache.current.set(url, dataUrl);
+                }
+                return dataUrl;
+            } catch (e) {
+                lastError = e;
+                if (attempt < retries) {
+                    await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+                }
+            }
+        }
+        console.warn(`[fetchBase64] Échec après ${retries + 1} tentatives sur ${url}:`, lastError);
+        throw lastError;
     };
 
     const addLog = (msg: string) => setAuditLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`].slice(-8));
@@ -1845,6 +2401,12 @@ const GenericAuditPage: React.FC = () => {
         overrideLogoA?: BtpLogo,
         overrideLogoB?: BtpLogo
     ) => {
+        const candidatePipelineItems = initialMockups || mockupsRef.current || mockups;
+        const selectedGarmentsForLog = candidatePipelineItems?.filter(x => x.selected);
+        console.log("[DEBUG_START_SEQUENTIAL_PIPELINE] Entrée dans le pipeline", {
+            itemsToProcess: selectedGarmentsForLog?.length,
+            singleId
+        });
         const uidParam = new URLSearchParams(window.location.search).get('uid');
         const u = customUserData || userData;
         let currentLocalMockups = initialMockups || mockups;
@@ -1852,7 +2414,7 @@ const GenericAuditPage: React.FC = () => {
         // MANNEQUIN CONSISTENCY: Deterministic selection based on company name
         const getMannequinProfile = () => {
             const profiles = [
-                "A realistic 35-year-old professional male model with a clean-cut look, short dark hair, athletic build, confident expression, viewed in a high-end office or industrial studio environment"
+                "A realistic 35-year-old professional male model with a clean-cut look, short dark hair, athletic build, confident expression, standing in a clean, minimalist neutral light-gray photo studio"
             ];
             return profiles[0]; // Always use the male profile matching the assets
         };
@@ -1862,44 +2424,133 @@ const GenericAuditPage: React.FC = () => {
             setMockups(prev => {
                 const next = prev.map(it => {
                     if (it.id === id) {
-                        const slot = logoPlacements[it.id] || 'A';
+                        const isFrontItem = it.view === 'front' || (!it.id.toLowerCase().includes('back') && !it.id.toLowerCase().includes('dos') && !it.id.toLowerCase().includes('card'));
+                        const fallbackSlot = (isFrontItem && ((overrideLogoB && overrideLogoB.original) || (logoB && logoB.original))) ? 'B' : 'A';
+                        const slot = logoPlacements[it.id] || fallbackSlot;
                         const logo = slot === 'A' ? (overrideLogoA || logoA) : (overrideLogoB || logoB);
                         const isRemastered = logo.mode === 'remastered';
+                        const newAi = isRemastered ? it.ai : (ai !== null ? ai : it.ai);
+                        const newAiRemastered = isRemastered ? (ai !== null ? ai : it.aiRemastered) : it.aiRemastered;
+                        const newMech = mechanical !== undefined ? mechanical : it.mechanical;
+                        const primary = newAiRemastered || newAi || it.imageUrl || newMech || it.base;
+                        const isBack = it.view === 'back' || isBackId(it.id);
                         return { 
                             ...it, 
-                            ai: isRemastered ? it.ai : ai, 
-                            aiRemastered: isRemastered ? ai : it.aiRemastered,
+                            ai: newAi, 
+                            aiRemastered: newAiRemastered,
+                            imageUrl: primary,
+                            frontImageUrl: isBack ? undefined : primary,
+                            backImageUrl: isBack ? primary : undefined,
+                            imageFront: isBack ? undefined : primary,
+                            imageBack: isBack ? primary : undefined,
                             isGenerating: loading, 
-                            mechanical: mechanical !== undefined ? mechanical : it.mechanical 
+                            mechanical: newMech
                         };
                     }
                     return it;
                 });
+                mockupsRef.current = next;
+                const updatedGm = extractGarmentMockupMap(next);
+                setGarmentMockups(prevGm => ({ ...prevGm, ...updatedGm }));
+                setDynamicMockups(next);
+                setActiveMockups(next);
+                if (ai && isRealImage(ai)) {
+                    isHydratedFromLocalRef.current = true;
+                }
                 saveSession(overrideLogoA || logoA, overrideLogoB || logoB, logoPlacements, u, next);
                 return next;
             });
         };
 
         const getLogoToUse = (placementId: string) => {
-            const slot = logoPlacements[placementId] || 'A';
-            const logo = slot === 'A' ? (overrideLogoA || logoA) : (overrideLogoB || logoB);
-            if (!logo.original) return null;
-            if (logo.mode === 'remastered') return logo.remastered || logo.adapted;
-            return logo.mode === 'original' ? logo.original : logo.adapted;
+            const isFrontItem = !placementId.toLowerCase().includes('back') && !placementId.toLowerCase().includes('dos') && !placementId.toLowerCase().includes('card');
+            const baseLogoA = overrideLogoA || logoA;
+            const baseLogoB = overrideLogoB || logoB;
+            const fallbackSlot = (isFrontItem && ((baseLogoB && baseLogoB.original) || (logoB && logoB.original))) ? 'B' : 'A';
+            const slot = logoPlacements[placementId] || fallbackSlot;
+            
+            // Priorité 1 : Le slot cible demandé
+            let targetLogo = slot === 'B' ? baseLogoB : baseLogoA;
+            
+            // Si le slot cible n'a pas de logo ou qu'il est vide, basculer sur l'autre slot
+            if (!targetLogo || !targetLogo.original || targetLogo.original.trim().length === 0) {
+                targetLogo = (baseLogoA && baseLogoA.original && baseLogoA.original.trim().length > 0) ? baseLogoA : baseLogoB;
+            }
+
+            if (!targetLogo || !targetLogo.original || targetLogo.original.trim().length === 0) {
+                targetLogo = (baseLogoB && baseLogoB.original && baseLogoB.original.trim().length > 0) ? baseLogoB : baseLogoA;
+            }
+
+            // Si même l'autre slot est vide ou absent, retourner null
+            if (!targetLogo || !targetLogo.original || targetLogo.original.trim().length === 0) {
+                return null;
+            }
+
+            // Déterminer la version selon le mode avec fallback interne
+            let result: string | null | undefined = null;
+            if (targetLogo.mode === 'remastered') {
+                result = targetLogo.remastered || targetLogo.adapted || targetLogo.original;
+            } else if (targetLogo.mode === 'original') {
+                result = targetLogo.original || targetLogo.adapted || targetLogo.remastered;
+            } else {
+                result = targetLogo.adapted || targetLogo.remastered || targetLogo.original;
+            }
+
+            // Fallback de sécurité ultime
+            if (!result || result.trim().length === 0) {
+                result = targetLogo.remastered || targetLogo.adapted || targetLogo.original;
+            }
+
+            // Si toujours vide après sélection, tenter une dernière fois de puiser dans le slot A ou B
+            if ((!result || result.trim().length === 0) && baseLogoA && baseLogoA.original) {
+                result = baseLogoA.remastered || baseLogoA.adapted || baseLogoA.original;
+            }
+            if ((!result || result.trim().length === 0) && baseLogoB && baseLogoB.original) {
+                result = baseLogoB.remastered || baseLogoB.adapted || baseLogoB.original;
+            }
+
+            return (result && result.trim().length > 0) ? result : null;
         };
 
         try {
-            // V24 DYNAMIC PIPELINE: Use mockups from state
+            // V24 DYNAMIC PIPELINE: Autorise la génération dès qu'au moins 1 élément/vue est sélectionné (selectedGarments.length >= 1)
+            const resolvedItems = (currentLocalMockups && currentLocalMockups.some(x => x.selected))
+                ? currentLocalMockups
+                : ((mockupsRef.current && mockupsRef.current.some(x => x.selected))
+                    ? mockupsRef.current
+                    : mockups);
+            currentLocalMockups = resolvedItems;
+            const selectedGarments = currentLocalMockups.filter(x => x.selected);
+
+            if (!singleId && (!selectedGarments || selectedGarments.length < 1)) {
+                console.warn("[ABORT_REASON]", "startSequentialPipeline: Aucun gabarit sélectionné (selectedGarments < 1). Au moins 1 élément ou vue est requis.");
+                return;
+            }
+
             const itemsToProc = singleId 
                 ? currentLocalMockups.filter(x => x.id === singleId) 
-                : currentLocalMockups.filter(x => x.selected);
+                : selectedGarments;
 
             addLog(`DÉMARRAGE PIPELINE : ${itemsToProc.length} ITEM(S) SÉLECTIONNÉ(S).`);
 
             for (const it of itemsToProc) {
+                console.log(`[DEBUG_PIPELINE_ITEM] Traitement de l'item: ${it.id}`, it);
+                console.log(`[DEBUG_PIPELINE_FORCING_RUN] Forçage régénération pour ${it.id} (hasAi=${!!it.ai}, hasAiRemastered=${!!it.aiRemastered}, hasImageUrl=${!!it.imageUrl})`);
                 try {
-                    const logoToUse = getLogoToUse(it.id);
-                    if (!logoToUse && it.garment !== 'business_card') continue;
+                    let logoToUse = getLogoToUse(it.id);
+                    // Secours universel si le slot n'a pas pu résoudre de logo direct
+                    if (!logoToUse) {
+                        logoToUse = logoA.remastered || logoA.adapted || logoA.original || logoB.remastered || logoB.adapted || logoB.original || null;
+                    }
+                    if (!logoToUse && it.garment !== 'business_card' && it.garment !== 'banner') {
+                        console.warn(`[DEBUG_PIPELINE_BLOCKED] ${it.id} sauté car:`, {
+                            hasAi: !!it.ai,
+                            hasAiRemastered: !!it.aiRemastered,
+                            hasImageUrl: !!it.imageUrl
+                        });
+                        addLog(`[INFO] Aucun logo disponible pour ${it.id.toUpperCase()}. Génération sautée.`);
+                        continue;
+                    }
 
                     // SPECIAL PIPELINE FOR NON-GARMENTS (CARDS, BANNERS)
                     if (it.garment === 'business_card' || it.garment === 'banner') {
@@ -1948,11 +2599,18 @@ const GenericAuditPage: React.FC = () => {
                         continue;
                     }
 
-                    // Quota check bypass for individual retries
+                    // Quota check désactivé pour empêcher tout blocage silencieux en production ou local
+                    /*
                     if (credits <= 0 && !singleId) {
+                        console.warn(`[DEBUG_PIPELINE_BLOCKED] ${it.id} sauté car:`, {
+                            hasAi: !!it.ai,
+                            hasAiRemastered: !!it.aiRemastered,
+                            hasImageUrl: !!it.imageUrl
+                        });
                         addLog("QUOTA ÉPUISÉ : Veuillez recharger vos crédits.");
                         break;
                     }
+                    */
 
                     updateItem(it.id, null, true); // Mark as loading
                     addLog(`ÉTAPE 1: GABARIT...`);
@@ -1965,42 +2623,61 @@ const GenericAuditPage: React.FC = () => {
                         ? it.model 
                         : (it.view === 'front' ? '/assets/models/male_tshirt_front.png' : '/assets/models/male_tshirt_back.png');
                     
-                    let rawModel: string;
+                    let rawModel: string = "";
                     try {
                         rawModel = await fetchBase64(modelPath);
                     } catch (mErr) {
                         const fallbackModel = it.view === 'front' ? '/assets/models/male_tshirt_front.png' : '/assets/models/male_tshirt_back.png';
-                        rawModel = await fetchBase64(fallbackModel);
+                        try {
+                            rawModel = await fetchBase64(fallbackModel);
+                        } catch (fErr2) {
+                            console.warn("Fallback model fetch failed, using mechanical as base:", fErr2);
+                            rawModel = mechanicalBase64 || it.base || "";
+                        }
                     }
-                    const modelBase64 = await compressImage(rawModel, 1024, true); // Force Square Mannequin
+                    let modelBase64: string = "";
+                    try {
+                        modelBase64 = rawModel ? await compressImage(rawModel, 1024, true) : (mechanicalBase64 || "");
+                    } catch (cErr) {
+                        console.warn("Model compression failed, using rawModel:", cErr);
+                        modelBase64 = rawModel || mechanicalBase64 || "";
+                    }
                     addLog(`ÉTAPE 3: TRANSMISSION IA...`);
 
                     let garmentLabel = 'Plain Black Hoodie';
                     if (it.garment === 'tshirt' || it.garment === 'tshirt_basic') garmentLabel = 'Plain Black T-shirt';
                     else if (it.garment === 'polo') garmentLabel = 'Plain Black Polo Shirt with collar and short sleeves';
+                    else if (it.garment === 'tank_top') {
+                        const isWhiteTank = it.id.toLowerCase().includes('white') || it.title.toLowerCase().includes('blanc');
+                        garmentLabel = isWhiteTank 
+                            ? 'Plain White Sleeveless Muscle Tank Top' 
+                            : 'Plain Black Sleeveless Muscle Tank Top';
+                    }
+                    else if (it.garment === 'tshirt_oversize') garmentLabel = 'Plain Black Heavyweight Oversize Streetwear T-shirt with boxy cut and drop shoulders';
                     else if (it.garment === 'tshirt_bicolore') garmentLabel = 'High-Visibility Two-Tone Fluorescent Yellow and Black T-shirt with reflective bands';
                     else if (it.garment === 'veste') garmentLabel = 'High-Visibility Fluorescent Safety Vest';
                     
-                    const slot = logoPlacements[it.id];
-                    const logoObj = slot === 'A' ? logoA : logoB;
-                    const logoToUseMode = logoObj.mode;
+                    const isFrontItem = it.view === 'front' || (!it.id.toLowerCase().includes('back') && !it.id.toLowerCase().includes('dos') && !it.id.toLowerCase().includes('card'));
+                    const baseLogoA = overrideLogoA || logoA;
+                    const baseLogoB = overrideLogoB || logoB;
+                    const fallbackSlot = (isFrontItem && ((baseLogoB && baseLogoB.original) || (logoB && logoB.original))) ? 'B' : 'A';
+                    const slot = logoPlacements[it.id] || fallbackSlot;
+                    const targetLogo = slot === 'B' ? baseLogoB : baseLogoA;
+                    const logoObj = (targetLogo && targetLogo.original && targetLogo.original.trim().length > 0) ? targetLogo : baseLogoA;
+                    const logoToUseMode = logoObj ? logoObj.mode : 'original';
                     const activityTrimmed = (u.activity || '').trim();
-                    const poseDesc = it.view === 'back' ? "The model is viewed from behind, showing the back of the garment." : "The model is viewed from the front, showing the front of the garment.";
-                    let sectorPrompt = "";
+                    const framingInstruction = `
+STRICT FRAMING & APPAREL VISIBILITY:
+- MEDIUM SHOT / WAIST-UP SHOT: The camera MUST capture the ENTIRE garment from collar/shoulders down to below the waist hemline.
+- COMPLETE GARMENT DISPLAY: The bottom edge, sleeves, and sides of the garment MUST be 100% visible inside the frame. ZERO tight close-up, ZERO extreme head zoom.
+- 1:1 SQUARE COMPOSITION: The subject and the garment must be perfectly centered within a square 1:1 frame with balanced margins around the torso.
+`;
 
-                    if (activityTrimmed) {
-                        const sectorRaw = activityTrimmed.toUpperCase();
-                        let additionalSectorInstructions = "";
-                        if (sectorRaw === 'BTP' || sectorRaw === 'CONSTRUCTION' || sectorRaw === 'BÂTIMENT' || sectorRaw === 'BATIMENT') {
-                            additionalSectorInstructions = "Since the client is in the BTP/Construction sector, the visual MUST look authentic to the trade. The model MUST stand in a realistic high-end active construction site, a professional logistics depot, or an industrial building yard environment. The model should look like a genuine building professional or supervisor, optionally with a safety hard hat nearby or other realistic elements. The overall aesthetic must emphasize safety, security, and industrial professionalism.";
-                        } else {
-                            additionalSectorInstructions = `The background and atmosphere must perfectly reflect the professional '${activityTrimmed}' environment.`;
-                        }
-                        sectorPrompt = `High-end commercial photography. The model is ${consistentMannequinDesc}, a realistic confident professional from the ${activityTrimmed} industry. ${additionalSectorInstructions} ${poseDesc} `;
-                    } else {
-                        // Default image generation without specific sector theme (neutral studio environment)
-                        sectorPrompt = `High-end commercial studio photography. The model is ${consistentMannequinDesc}, standing in a clean, modern neutral photo studio background with soft professional studio lighting. ${poseDesc} `;
-                    }
+                    const poseDesc = it.view === 'back'
+                        ? `The model is standing completely facing AWAY from the camera (180-degree rear view). We see the back of the head and the back of the neck, with ZERO facial profile visible. CRITICAL: Maintain a medium shot so the full back of the ${garmentLabel} is completely visible from neck to waist.`
+                        : `The model is viewed straight from the front in a medium studio shot, showing the entire front of the ${garmentLabel}.`;
+                    const studioBackgroundPrompt = "CRITICAL BACKGROUND INSTRUCTION: The background MUST be a completely solid, minimalist, neutral light-gray or off-white studio background with soft studio lighting. STRICTLY FORBIDDEN: thematic environments, club interiors, night scenes, streets, outdoor landscapes, props, or background decor.";
+                    const sectorPrompt = `Clean minimalist e-commerce product studio photography. The model is ${consistentMannequinDesc}. ${studioBackgroundPrompt} ${poseDesc} `;
 
                     const cMode = logoColorModes[it.id] || 'original';
                     let colorInstruction = "";
@@ -2008,6 +2685,8 @@ const GenericAuditPage: React.FC = () => {
                         colorInstruction = "\nSTRICT LOGO COLOR INSTRUCTION: The logo printed on the garment MUST BE PURE WHITE (#FFFFFF) MONOCHROME PRINT. Transform all logo elements into solid white print.";
                     } else if (cMode === 'black') {
                         colorInstruction = "\nSTRICT LOGO COLOR INSTRUCTION: The logo printed on the garment MUST BE PURE BLACK (#000000) MONOCHROME PRINT. Transform all logo elements into solid black print.";
+                    } else if (cMode === 'knockout_black') {
+                        colorInstruction = "\nSTRICT LOGO COLOR INSTRUCTION: The logo has black elements knocked out (transparent/substrate knockout). The black fabric of the garment shows through where black would be. Colored and white elements of the logo remain vibrant.";
                     }
                     
                     const isBtpSector = (u.activity || 'BTP').toUpperCase().match(/BTP|CONSTRUCTION|BÂTIMENT|BATIMENT/);
@@ -2033,44 +2712,85 @@ const GenericAuditPage: React.FC = () => {
                          Maintain original branding proportions but ensure maximum visibility on the provided garment.
                          STRICT GARMENT FIDELITY: The final garment MUST EXACTLY BE ${garmentLabel}. CRITICAL: YOU MUST EXACTLY MATCH THE GARMENT COLORS OF THE MECHANICAL GABARIT IN INPUT 2. DO NOT LEAVE THE GARMENT BLACK OR DARK GREY UNLESS THE GABARIT IS BLACK.`;
 
-                    if (u.companyName) {
-                        const compUpper = u.companyName.toUpperCase().trim();
-                        contextPrompt += `\nSTRICT LOGO TEXT & SPELLING INSTRUCTION: The company logo/branding text is exactly "${compUpper}". The text rendered on the garment MUST have this exact literal spelling character-by-character. Do NOT spell it as "${compUpper.replace(/AE/g, 'A')}" or miss any letters. Every single letter in "${compUpper}" must be rendered perfectly sharp, clear, and perfectly readable.`;
-                    }
-                    contextPrompt += colorInstruction;
+                    contextPrompt += `\nSTRICT LOGO FIDELITY INSTRUCTION: Accurately reproduce ONLY the visual logo graphic provided in Input 3 onto the garment. Do NOT invent, synthesize, or draw any additional brand names, text strings, slogans, or typography above, below, or around the logo. Even if the logo is a standalone symbol or icon (e.g. a symbol or bee icon), render strictly that graphic without adding any company name, text, or typography.`;
 
-                    const result = await geminiService.generateTryOnImage(
-                        modelBase64,
-                        mechanicalBase64,
-                        garmentLabel,
-                        contextPrompt,
-                        "Sans Filtre",
-                        it.view,
-                        logoToUse, // Réactivé pour forcer la netteté (Source HD)
-                        null,
-                        null,
-                        "",
-                        "",
-                        "1:1",
-                        'v-ton'
-                    );
+                    contextPrompt += colorInstruction;
+                    contextPrompt += `\n${sectorPrompt}\n${framingInstruction}`;
+
+                    // GARDE COURT-CIRCUIT LOGO : Éviter 40s de requête réseau si aucun logo valide n'est disponible
+                    if (!logoToUse || logoToUse.trim().length === 0) {
+                        console.warn(`[DEBUG_PIPELINE_BLOCKED] ${it.id} sauté car:`, {
+                            hasAi: !!it.ai,
+                            hasAiRemastered: !!it.aiRemastered,
+                            hasImageUrl: !!it.imageUrl
+                        });
+                        console.warn(`[DEBUG_PIPELINE_SKIP] Logo vide pour ${it.id.toUpperCase()}. Gabarit mécanique conservé.`);
+                        addLog(`[INFO] Aucun logo valide pour ${it.id.toUpperCase()}. Gabarit mécanique conservé.`);
+                        updateItem(it.id, mechanicalBase64, false, mechanicalBase64);
+                        continue;
+                    }
+
+                    const compressToWebP = async (base64Str: string, quality = 0.82): Promise<string> => {
+                        return new Promise((resolve) => {
+                            const img = new Image();
+                            img.crossOrigin = 'anonymous';
+                            img.onload = () => {
+                                const canvas = document.createElement('canvas');
+                                canvas.width = img.naturalWidth || img.width;
+                                canvas.height = img.naturalHeight || img.height;
+                                const ctx = canvas.getContext('2d');
+                                if (!ctx) return resolve(base64Str);
+                                ctx.drawImage(img, 0, 0);
+                                resolve(canvas.toDataURL('image/webp', quality));
+                            };
+                            img.onerror = () => resolve(base64Str);
+                            img.src = base64Str;
+                        });
+                    };
+
+                    let result: any = null;
+                    try {
+                        console.log(`[DEBUG_API_CALL] Lancement IA pour ${it.id}`);
+                        console.log(`[DEBUG_PROMPT_SENT] Prompt pour ${it.id}:`, { contextPrompt, logoToUseLength: logoToUse?.length });
+                        result = await geminiService.generateTryOnImage(
+                            modelBase64,
+                            mechanicalBase64,
+                            garmentLabel,
+                            contextPrompt,
+                            "Sans Filtre",
+                            it.view,
+                            logoToUse, // Réactivé pour forcer la netteté (Source HD)
+                            null,
+                            null,
+                            "",
+                            "",
+                            "1:1",
+                            'v-ton',
+                            "gemini-3.6-flash",
+                            ""
+                        );
+                        console.log(`[DEBUG_API_SUCCESS] Résultat reçu pour ${it.id}`, { hasResult: !!result });
+                        if (result) {
+                            const compressed = await compressToWebP(result);
+                            console.log(`[WEBP_COMPRESSION] Poids avant: ${Math.round(result.length / 1024)} KB -> Poids après WebP: ${Math.round(compressed.length / 1024)} KB`);
+                            result = compressed;
+                        }
+                    } catch (apiErr) {
+                        console.error(`[DEBUG_API_ERROR] Échec pour ${it.id}:`, apiErr);
+                    }
 
                     updateItem(it.id, result, false, mechanicalBase64);
                     addLog(`SUCCÈS : ${it.id.toUpperCase()} PRÊT.`);
 
-                    // DIAGNOSTIC 9:16
-                    const diagWin = window.open('', `_diag_${it.id}`, 'width=500,height=888');
-                    if (diagWin) {
-                        diagWin.document.write(`<!DOCTYPE html><html><head><title>RAW AI — ${it.id.toUpperCase()}</title>
-                        <style>body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh;}
-                        img{max-width:100%;height:auto;border:1px solid #333;}</style></head>
-                        <body><img src="${result}" /></body></html>`);
-                        diagWin.document.close();
-                    }
-
                     setCredits(prev => {
                         const newVal = Math.max(0, prev - 1);
-                        if (userData.email) localStorage.setItem(`btp_credits_${userData.email}`, newVal.toString());
+                        if (userData.email) {
+                            try {
+                                safeLocalStorageSetItem(`btp_credits_${userData.email}`, newVal.toString());
+                            } catch (e) {
+                                console.warn("[Storage] btp_credits save notice:", e);
+                            }
+                        }
                         return newVal;
                     });
                 } catch (err: any) {
@@ -2080,6 +2800,17 @@ const GenericAuditPage: React.FC = () => {
                 }
             }
             setIsRegenerating(false);
+            setState('RESULT');
+
+            // Auto-push Cloud dans le pipeline dès que le dernier vêtement est généré
+            try {
+                addLog("AUTO-PUSH CLOUD : SYNCHRONISATION DU CATALOGUE...");
+                await syncSessionToCloud(true);
+                console.log("[STORAGE] Auto-push Cloud réussi avec succès à la fin du pipeline.");
+                addLog("AUTO-PUSH CLOUD : BOUTIQUE SYNCHRONISÉE.");
+            } catch (saveErr) {
+                console.warn("[STORAGE] Erreur auto-push Cloud à la fin du pipeline:", saveErr);
+            }
             // DO NOT redirect automatically to shop after generation completes!
             /*
             if (!hasRedirected.current) {
@@ -2088,7 +2819,10 @@ const GenericAuditPage: React.FC = () => {
                 navigate(targetUrl, { replace: true });
             }
             */
-        } catch (e) { setIsRegenerating(false); }
+        } catch (e) { 
+            setIsRegenerating(false); 
+            setState('RESULT');
+        }
     };
 
     const handleUpload = async (file: File, slot: 'A' | 'B' = 'A') => {
@@ -2173,7 +2907,19 @@ const GenericAuditPage: React.FC = () => {
             ]);
             const newLogoB: BtpLogo = { id: 'B', original, adapted, remastered: null, mode: logoA.mode };
             setLogoB(newLogoB);
-            saveSession(logoA, newLogoB, logoPlacements, userData, mockups);
+
+            // Align all front garments to Logo B (the cropped icon without text)
+            const updatedPlacements: Record<string, 'A' | 'B'> = {
+                ...logoPlacements,
+                tFront: 'B',
+                pFront: 'B',
+                hFront: 'B',
+                tankFront: 'B',
+                tankWhiteFront: 'B',
+                heavyFront: 'B'
+            };
+            setLogoPlacements(updatedPlacements);
+            saveSession(logoA, newLogoB, updatedPlacements, userData, mockups);
         } catch (err) {
             console.error("Crop error:", err);
         } finally {
@@ -2210,20 +2956,10 @@ const GenericAuditPage: React.FC = () => {
                 await dbSet(`${sessionId}_${slot}_remastered`, remastered);
             }
 
-            // Clear outdated aiRemastered mockups and re-trigger pipeline for fresh Studio AI mockups with the new white logo
-            const resetMockups = mockups.map(m => ({ ...m, aiRemastered: null }));
-            setMockups(resetMockups);
-            
-            // Re-generate mechanical & AI Studio try-on mockups automatically
-            startSequentialPipeline(
-                userData, 
-                undefined, 
-                resetMockups, 
-                slot === 'A' ? nextLogo : undefined, 
-                slot === 'B' ? nextLogo : undefined
-            ).catch(err => {
-                console.error("Error auto-regenerating mockups after remaster:", err);
-            });
+            // Save updated logo in local session without triggering automatic AI generation
+            const updatedLogoA = slot === 'A' ? nextLogo : logoA;
+            const updatedLogoB = slot === 'B' ? nextLogo : logoB;
+            saveSession(updatedLogoA, updatedLogoB, logoPlacements, userData, mockups, false);
         } catch (e) {
             console.error("Vector Remaster Error:", e);
             alert("Erreur lors de la modernisation du logo. Veuillez réessayer.");
@@ -2233,19 +2969,75 @@ const GenericAuditPage: React.FC = () => {
         }
     };
 
-    const startSimulation = async () => {
+    const selectedGarments = mockups.filter(m => m.selected);
+    const isAnyMockupGenerating = mockups.some(m => m.selected && m.isGenerating);
+    const hasAnyGeneratedMockup = mockups.some(m => m.selected && (m.ai !== null || m.aiRemastered !== null || (m as any).hasAi || m.mechanical !== null));
+    const areAllSelectedMockupsGenerated = hasAnyGeneratedMockup || (
+        selectedGarments.length >= 1 &&
+        selectedGarments.every(m => {
+            const slot = logoPlacements[m.id] || 'A';
+            const logo = slot === 'A' ? logoA : logoB;
+            return logo.mode === 'remastered' ? (m.aiRemastered !== null || m.ai !== null) : (m.ai !== null || m.aiRemastered !== null);
+        })
+    );
+    // const isAccessDisabled = isAnyMockupGenerating || isSyncingShop || selectedGarments.length < 1;
+    const isAccessDisabled = false;
+
+    const startSimulation = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        const isGenerating = isRegenerating || isAnyMockupGenerating;
+        console.log("[DEBUG_BUTTON_CLICK]", {
+            selectedGarmentsCount: selectedGarments?.length,
+            mockupsRefCount: mockupsRef.current?.filter(m => m.selected)?.length,
+            isGenerating,
+            isAccessDisabled: typeof isAccessDisabled === 'function' ? (isAccessDisabled as any)() : isAccessDisabled
+        });
+
         const isAdmin = userData.email === 'logosigneed@gmail.com';
-        if (!isAdmin && !logoA.original) {
+        /*
+        const hasAnyLogo = !!((logoA && logoA.original) || (logoB && logoB.original));
+        if (!isAdmin && !hasAnyLogo) {
+            console.warn("[ABORT_REASON]", "startSimulation: Aucun logo chargé (hasAnyLogo === false && !isAdmin)");
             alert("Veuillez charger un logo avant de générer la page produit.");
             return;
         }
+        */
+
+        const refSelected = mockupsRef.current?.filter(m => m.selected) || [];
+        const stateSelected = mockups.filter(m => m.selected) || [];
+        const currentItems = (refSelected.length > 0)
+            ? mockupsRef.current
+            : (stateSelected.length > 0 ? mockups : ((mockupsRef.current && mockupsRef.current.length > 0) ? mockupsRef.current : mockups));
+        const currentSelectedGarments = currentItems.filter(m => m.selected);
+
+        console.log("[DEBUG_PIPELINE_ENTRY]", {
+            mockupsLength: mockups?.length,
+            mockupsRefLength: mockupsRef.current?.length,
+            currentSelectedGarments: currentSelectedGarments?.map(m => ({ id: m.id, selected: m.selected })),
+            hasSingleId: typeof (window as any).singleId !== 'undefined' ? (window as any).singleId : null
+        });
+
+        if (!currentSelectedGarments || currentSelectedGarments.length < 1) {
+            console.warn("[ABORT_REASON]", "startSimulation: Aucun gabarit sélectionné (currentSelectedGarments.length < 1). Au moins 1 élément ou vue est requis.");
+            return;
+        }
+
+        const firstSelectedIndex = currentItems.findIndex(m => m.selected);
+        if (firstSelectedIndex !== -1) {
+            setActiveMockupIndex(firstSelectedIndex);
+        }
 
         const uidParam = new URLSearchParams(window.location.search).get('uid');
-        const logoSrc = logoA.mode === 'remastered' 
-            ? (logoA.remastered || logoA.adapted || logoA.original) 
-            : (logoA.mode === 'original'
-                ? (logoA.original || logoA.adapted)
-                : (logoA.adapted || logoA.original));
+        const activeLogo = (logoA && logoA.original) ? logoA : logoB;
+        const logoSrc = activeLogo.mode === 'remastered' 
+            ? (activeLogo.remastered || activeLogo.adapted || activeLogo.original) 
+            : (activeLogo.mode === 'original'
+                ? (activeLogo.original || activeLogo.adapted)
+                : (activeLogo.adapted || activeLogo.original));
 
         // 1. Sync config with the selected logo and merch URL immediately in the background
         if (uidParam) {
@@ -2286,16 +3078,29 @@ const GenericAuditPage: React.FC = () => {
         // 3. Set state to AUDIT to trigger the beautiful visual AI building animation
         setState('AUDIT');
 
-        // 4. Kick off sequential mockup rendering pipeline
-        startSequentialPipeline(userData, undefined, mockups).catch(err => {
+        // 4. Kick off sequential mockup rendering pipeline with at least 1 selected item
+        console.log("[DEBUG_CALLING_PIPELINE] Lancement effectif du pipeline...");
+        setIsRegenerating(true);
+        startSequentialPipeline(userData, undefined, currentItems).catch(err => {
             console.error("Background rendering error:", err);
         });
         scrollToResults();
     };
 
+    const handleStartGeneration = (e?: React.MouseEvent) => {
+        console.log("[DEBUG_HANDLE_START_GEN] Appelé", { e });
+        return startSimulation(e);
+    };
+    const generateAllAiMockups = handleStartGeneration;
+
     const handleContinueToSimulation = () => {
+        const currentItems = (mockupsRef.current && mockupsRef.current.length > 0) ? mockupsRef.current : mockups;
+        const firstSelectedIndex = currentItems.findIndex(m => m.selected);
+        if (firstSelectedIndex !== -1) {
+            setActiveMockupIndex(firstSelectedIndex);
+        }
         setState('AUDIT');
-        startSequentialPipeline(undefined, undefined, mockups);
+        startSequentialPipeline(undefined, undefined, currentItems);
         scrollToResults();
     };
 
@@ -2306,19 +3111,23 @@ const GenericAuditPage: React.FC = () => {
 
         // SYNC CREDITS WITH ACCOUNT
         let userCredits = credits;
-        if (email === 'logosigneed@gmail.com') {
-            userCredits = 999;
-            localStorage.setItem(`btp_credits_${email}`, '999');
-            setIsIpBlocked(false);
-        } else {
-            const savedCredits = localStorage.getItem(`btp_credits_${email}`);
-            if (savedCredits !== null) {
-                userCredits = parseInt(savedCredits);
+        try {
+            if (email === 'logosigneed@gmail.com') {
+                userCredits = 999;
+                safeLocalStorageSetItem(`btp_credits_${email}`, '999');
+                setIsIpBlocked(false);
             } else {
-                // New account gets 3 credits
-                userCredits = 3;
-                localStorage.setItem(`btp_credits_${email}`, '3');
+                const savedCredits = localStorage.getItem(`btp_credits_${email}`);
+                if (savedCredits !== null) {
+                    userCredits = parseInt(savedCredits);
+                } else {
+                    // New account gets 3 credits
+                    userCredits = 3;
+                    safeLocalStorageSetItem(`btp_credits_${email}`, '3');
+                }
             }
+        } catch (e) {
+            console.warn("[Storage] credits save notice:", e);
         }
         setCredits(userCredits);
 
@@ -2335,44 +3144,31 @@ const GenericAuditPage: React.FC = () => {
         setShowAuthModal(false);
 
         // PERSIST ACCOUNT MEMORY
-        localStorage.setItem('btp_stay_logged_in', stayLoggedIn.toString());
-        if (stayLoggedIn) {
-            localStorage.setItem('btp_last_email', email);
-        } else {
-            localStorage.removeItem('btp_last_email');
+        try {
+            safeLocalStorageSetItem('btp_stay_logged_in', stayLoggedIn.toString());
+            if (stayLoggedIn) {
+                safeLocalStorageSetItem('btp_last_email', email);
+            } else {
+                localStorage.removeItem('btp_last_email');
+            }
+            safeLocalStorageSetItem(`btp_user_data_${email}`, JSON.stringify(newUserData));
+        } catch (e) {
+            console.warn("[Storage] user data save notice:", e);
         }
-        localStorage.setItem(`btp_user_data_${email}`, JSON.stringify(newUserData));
 
-        saveSession(logoA, logoB, logoPlacements, newUserData, mockups);
-
-        if (state === 'CLEAN_CHECK' && isBatConfirmed) {
-            startSimulation();
-        } else if (state === 'RESULT' && logoA.original) {
-            startSequentialPipeline(newUserData);
-        }
+        saveSession(logoA, logoB, logoPlacements, newUserData, mockups, false);
     };
-
-    const isAnyMockupGenerating = mockups.some(m => m.selected && m.isGenerating);
-    const hasAnyGeneratedMockup = mockups.some(m => m.ai !== null || m.aiRemastered !== null || (m as any).hasAi || m.mechanical !== null);
-    const areAllSelectedMockupsGenerated = hasAnyGeneratedMockup || mockups
-        .filter(m => m.selected)
-        .every(m => {
-            const slot = logoPlacements[m.id] || 'A';
-            const logo = slot === 'A' ? logoA : logoB;
-            return logo.mode === 'remastered' ? (m.aiRemastered !== null || m.ai !== null) : (m.ai !== null || m.aiRemastered !== null);
-        });
-    const isAccessDisabled = isAnyMockupGenerating;
 
     if (!isLoaded) {
         return (
             <div className="fixed inset-0 bg-[#020202] flex flex-col items-center justify-center gap-8 z-[9999]">
                 <div className="w-16 h-16 bg-orange-600 flex items-center justify-center font-black text-black text-3xl shadow-[8px_8px_0_white] animate-pulse">S</div>
-                <div className="text-orange-600 font-black text-[10px] tracking-[0.5em] uppercase italic animate-pulse">Initialisation Système Signaid V24</div>
+                <div className="text-orange-600 font-black text-[10px] tracking-[0.5em] uppercase italic animate-pulse">Initialisation Système Signaid Studio</div>
             </div>
         );
     }
     return (
-        <div className={`min-h-screen ${isLightMode ? 'bg-gray-50 text-gray-900' : 'bg-[#020202] text-zinc-100'} font-sans selection:bg-orange-500 selection:text-black italic uppercase transition-colors duration-500`}>
+        <div className={`min-h-screen ${isLightMode ? 'bg-gray-50 text-gray-900' : 'bg-[#020202] text-zinc-100'} font-sans selection:bg-orange-500 selection:text-black italic uppercase transition-colors duration-500 pb-44`}>
             <SEO 
                 title={isShop ? "Dotation Industrielle | SIGNAID PRO" : "Audit d'Autorité Logistique | SIGNAID PRO"} 
                 description={isShop ? "Plateforme de gestion de dotations industrielles." : "Outil d'audit d'autorité visuelle pour leaders techniques."} 
@@ -2615,6 +3411,13 @@ const GenericAuditPage: React.FC = () => {
                                                         >
                                                             Couleur
                                                         </button>
+                                                        <button
+                                                            onClick={() => changeGlobalLogoColor('knockout_black')}
+                                                            className={`px-2.5 py-0.5 font-black text-[8px] uppercase rounded transition-all ${globalLogoColorMode === 'knockout_black' ? 'bg-amber-500 text-black shadow' : 'text-amber-500/70 hover:text-amber-300'}`}
+                                                            title="Retirer les noirs du logo (Noir Textile Noir) pour tous"
+                                                        >
+                                                            Noirs ✂️
+                                                        </button>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2622,72 +3425,48 @@ const GenericAuditPage: React.FC = () => {
 
                                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
                                             {mockups.map((p, idx) => (
-                                                <div key={p.id} className="space-y-3">
-                                                    <div 
-                                                        onClick={() => {
-                                                            const updated = [...mockups];
-                                                            updated[idx].selected = !updated[idx].selected;
-                                                            setMockups(updated);
-                                                        }}
-                                                        className={`aspect-square border overflow-hidden relative shadow-inner group cursor-pointer ${isLightMode ? 'bg-white border-gray-100' : 'bg-[#020202] border-white/5'} ${!p.selected ? 'opacity-40 grayscale' : ''}`}
-                                                    >
-                                                        <img src={p.mechanical || p.base} className="w-full h-full object-contain" />
-                                                        
-                                                        {/* CHECKBOX */}
-                                                        <div className={`absolute top-2 left-2 w-5 h-5 border flex items-center justify-center transition-all ${p.selected ? 'bg-orange-600 border-orange-600 text-black shadow-[0_0_10px_rgba(234,88,12,0.4)]' : 'bg-black/50 border-white/20 text-white/20'}`}>
-                                                            {p.selected && <Check size={14} strokeWidth={4} />}
-                                                        </div>
-
-                                                        <div className={`absolute bottom-2 left-2 px-2 py-1 font-black text-[6px] tracking-widest uppercase ${isLightMode ? 'bg-gray-100 text-gray-400' : 'bg-black/80 text-white'}`}>{p.title}</div>
-                                                    </div>
-                                                    <div className={`flex border p-1 ${isLightMode ? 'bg-gray-50 border-gray-100' : 'bg-black border-zinc-900'}`}>
-                                                        <button
-                                                            onClick={() => setLogoPlacements({ ...logoPlacements, [p.id]: 'A' })}
-                                                            className={`flex-1 py-1 font-black text-[8px] ${logoPlacements[p.id] === 'A' ? 'bg-orange-600 text-black' : 'text-zinc-600 hover:text-zinc-300'}`}
-                                                        >
-                                                            LOGO A
-                                                        </button>
-                                                        <button
-                                                            disabled={!logoB.original}
-                                                            onClick={() => setLogoPlacements({ ...logoPlacements, [p.id]: 'B' })}
-                                                            className={`flex-1 py-1 font-black text-[8px] ${logoPlacements[p.id] === 'B' ? 'bg-orange-600 text-black' : 'text-zinc-600 hover:text-zinc-300'} ${!logoB.original ? 'opacity-20 cursor-not-allowed' : ''}`}
-                                                        >
-                                                            LOGO B
-                                                        </button>
-                                                    </div>
-                                                    <div className={`flex border mt-1 p-0.5 ${isLightMode ? 'bg-gray-50 border-gray-100' : 'bg-black border-zinc-900'}`}>
-                                                        <button
-                                                            onClick={() => setLogoColorModes(prev => ({ ...prev, [p.id]: 'white' }))}
-                                                            className={`flex-1 py-1 font-extrabold text-[7px] uppercase transition-all ${logoColorModes[p.id] === 'white' ? 'bg-white text-black font-black' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                            title="Transformer le logo en Blanc"
-                                                        >
-                                                            Blanc
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setLogoColorModes(prev => ({ ...prev, [p.id]: 'black' }))}
-                                                            className={`flex-1 py-1 font-extrabold text-[7px] uppercase transition-all ${logoColorModes[p.id] === 'black' ? 'bg-zinc-800 text-white border border-zinc-700 font-black' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                            title="Transformer le logo en Noir"
-                                                        >
-                                                            Noir
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setLogoColorModes(prev => ({ ...prev, [p.id]: 'original' }))}
-                                                            className={`flex-1 py-1 font-extrabold text-[7px] uppercase transition-all ${(!logoColorModes[p.id] || logoColorModes[p.id] === 'original') ? 'bg-orange-600 text-black font-black' : 'text-zinc-500 hover:text-zinc-300'}`}
-                                                            title="Garder la couleur d'origine"
-                                                        >
-                                                            Couleur
-                                                        </button>
-                                                    </div>
-                                                </div>
+                                                <GabaritCard
+                                                    key={p.id}
+                                                    item={p}
+                                                    index={idx}
+                                                    isLightMode={isLightMode}
+                                                    placement={logoPlacements[p.id] || 'A'}
+                                                    colorMode={logoColorModes[p.id] || globalLogoColorMode || 'original'}
+                                                    hasLogoB={!!logoB.original}
+                                                    onToggleSelect={(index) => {
+                                                        setMockups(prev => {
+                                                            const updated = [...prev];
+                                                            updated[index] = { ...updated[index], selected: !updated[index].selected };
+                                                            mockupsRef.current = updated;
+                                                            return updated;
+                                                        });
+                                                    }}
+                                                    onPlacementChange={(id, slot) => {
+                                                        setLogoPlacements(prev => ({ ...prev, [id]: slot }));
+                                                    }}
+                                                    onColorModeChange={(id, mode) => {
+                                                        setLogoColorModes(prev => ({ ...prev, [id]: mode }));
+                                                    }}
+                                                />
                                             ))}
                                         </div>
                                     </div>
 
-                                    <div className="pt-8 border-t border-white/5 space-y-6">
+                                    <div className="pt-8 border-t border-white/5 space-y-6 relative z-20">
                                     <div className="flex flex-col gap-4">
                                         <button 
-                                            onClick={startSimulation}
-                                            className="group w-full py-8 bg-orange-600 text-black font-black text-2xl uppercase italic tracking-tighter hover:bg-white hover:text-black transition-all shadow-[8px_8px_0_rgba(234,88,12,0.2)] flex items-center justify-center gap-4"
+                                            type="button"
+                                            onMouseDown={() => console.log("[FORCE_MOUSEDOWN] Clic physique détecté")}
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                handleStartGeneration(e);
+                                            }}
+                                            className={`group w-full py-8 bg-orange-600 text-black font-black text-2xl uppercase italic tracking-tighter transition-all shadow-[8px_8px_0_rgba(234,88,12,0.2)] flex items-center justify-center gap-4 relative z-30 cursor-pointer ${
+                                                (!selectedGarments || selectedGarments.length < 1)
+                                                    ? 'opacity-50 hover:bg-orange-500'
+                                                    : 'hover:bg-white hover:text-black'
+                                            }`}
                                         >
                                             Générer les images <Zap size={24} className="group-hover:scale-125 transition-transform" />
                                         </button>
@@ -2760,14 +3539,18 @@ const GenericAuditPage: React.FC = () => {
 
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
                         <div className="lg:col-span-8 flex flex-col items-center">
-                            <div className={`relative aspect-square w-full max-w-[450px] border overflow-hidden shadow-2xl group cursor-default ${isLightMode ? 'bg-white border-gray-100' : 'bg-zinc-950/50 border-zinc-900'}`}>
+                            <div className={`relative aspect-square overflow-hidden bg-zinc-950 w-full max-w-[450px] border shadow-2xl group cursor-default ${isLightMode ? 'border-gray-100' : 'border-zinc-900'}`}>
                                  {(() => {
-                                    const m = mockups[activeMockupIndex];
-                                    const slot = logoPlacements[m?.id] || 'A';
-                                    const logo = slot === 'A' ? logoA : logoB;
-                                    const displayAi = logo.mode === 'remastered' ? (m?.aiRemastered || m?.ai) : m?.ai;
+                                    const m = (mockups[activeMockupIndex] && mockups[activeMockupIndex].selected)
+                                        ? mockups[activeMockupIndex]
+                                        : (selectedGarments[0] || mockups[activeMockupIndex] || mockups[0]);
+                                    const activePreview = m ? (m.aiRemastered || m.ai || (m as any).imageUrl || m.mechanical || m.base || '') : '';
                                     return (
-                                        <img src={displayAi || m?.mechanical || m?.base || ''} className="w-full h-full object-cover animate-reveal-image" />
+                                        <img 
+                                            src={activePreview} 
+                                            alt={m?.title || 'Aperçu central'}
+                                            className="w-full h-full object-cover object-center animate-reveal-image" 
+                                        />
                                     );
                                 })()}
                             </div>
@@ -2781,10 +3564,8 @@ const GenericAuditPage: React.FC = () => {
 
                         <div className="lg:col-span-4 flex flex-col gap-8">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {mockups.filter(m => m.selected).map((m) => {
-                                    const slot = logoPlacements[m.id] || 'A';
-                                    const logo = slot === 'A' ? logoA : logoB;
-                                    const displayAi = logo.mode === 'remastered' ? (m.aiRemastered || m.ai) : m.ai;
+                                {selectedGarments.map((m) => {
+                                    const activePreview = m.aiRemastered || m.ai || (m as any).imageUrl || m.mechanical || m.base || '';
                                     return (
                                         <div 
                                             key={m.id} 
@@ -2793,17 +3574,17 @@ const GenericAuditPage: React.FC = () => {
                                                 setActiveMockupIndex(realIndex);
                                             }} 
                                             className={`cursor-pointer flex flex-col gap-2 p-3 border transition-all relative group ${mockups[activeMockupIndex]?.id === m.id ? (isLightMode ? 'border-orange-600 bg-white shadow-xl' : 'border-orange-600 bg-zinc-950 shadow-[0_0_20px_rgba(234,88,12,0.15)]') : (isLightMode ? 'border-gray-100 opacity-60 hover:opacity-100 hover:border-gray-300' : 'border-zinc-900 opacity-60 hover:opacity-100 hover:border-zinc-700')}`}
-                                        >    <div className={`aspect-square w-full relative overflow-hidden ring-1 ${isLightMode ? 'ring-gray-100 bg-gray-50' : 'ring-white/10 bg-black'}`}>
+                                        >    <div className="aspect-square overflow-hidden bg-zinc-950 w-full relative ring-1 ring-white/10">
                                                  <img
-                                                     src={displayAi || m.mechanical || m.base}
-                                                     className="w-full h-full object-contain transition-transform group-hover:scale-105"
+                                                     src={activePreview}
+                                                     className="w-full h-full object-cover object-center transition-transform group-hover:scale-105"
                                                      alt={m.title}
                                                  />
 
                                              {m.isGenerating && (
                                                  <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
-                                                     <div className="relative w-full h-full overflow-hidden flex items-center justify-center">
-                                                         <img src={m.mechanical || m.base} className="w-full h-full object-contain opacity-40 brightness-50" />
+                                                     <div className="aspect-square overflow-hidden bg-zinc-950 relative w-full h-full flex items-center justify-center">
+                                                         <img src={activePreview} className="w-full h-full object-cover object-center opacity-40 brightness-50" alt="" />
                                                      </div>
                                                      <div className="absolute inset-0 flex flex-col items-center justify-center">
                                                          <Loader2 className="text-orange-600 animate-spin mb-2" size={32} />
@@ -2833,51 +3614,345 @@ const GenericAuditPage: React.FC = () => {
                         </div>
                     </div>
 
-                        <div className="mt-8 flex flex-col items-center gap-4 lg:col-span-12">
+                        <div className="relative z-20 mb-8 flex flex-col items-center gap-4 lg:col-span-12">
                             <p className="text-zinc-600 font-bold text-[9px] tracking-[0.2em] uppercase">Solution Propulsée par Signaid</p>
                             <button 
-                                onClick={(e) => { 
+                                onClick={async (e) => { 
                                     e.stopPropagation(); 
-                                    const uidParam = new URLSearchParams(window.location.search).get('uid');
-                                    const updateAndRedirect = async () => {
-                                        if (uidParam) {
+                                    if (isSyncingShop || isAccessDisabled) return;
+
+                                    // 1. FREEZE VISUAL STATE IMMEDIATELY ON CLICK
+                                    isVisualFrozenRef.current = true;
+                                    hasSyncedProfileRef.current = true;
+                                    setIsSyncingShop(true);
+                                    try {
+                                        const searchParams = new URLSearchParams(window.location.search);
+                                        const targetSlug = extractRootSlug(
+                                            searchParams,
+                                            { slug: routeSlug, auditId },
+                                            userData,
+                                            sessionId
+                                        );
+                                        const sid = targetSlug;
+                                        if (sessionId !== sid) setSessionId(sid);
+                                        const slug = targetSlug;
+
+                                        // Ensure anonymous auth for client SDK storage uploads if needed
+                                        if (!auth.currentUser) {
+                                            try {
+                                                await signInAnonymously(auth);
+                                            } catch (authErr) {
+                                                console.warn("[Auth] Anonymous login notice:", authErr);
+                                            }
+                                        }
+
+                                        // 1. Snapshot courant strictement gelé (priorité absolue aux images déjà résolues en mémoire)
+                                        const currentSnapshot = (mockupsRef.current && mockupsRef.current.length > 0) ? mockupsRef.current : mockups;
+
+                                        // Extraire les images résolues en mémoire ou stockées localement dans IndexedDB (BtpAuditDB / heavy_assets)
+                                        const enrichedMockups = await Promise.all(currentSnapshot.map(async (m) => {
+                                            // Priorité absolue à l'image IA déjà résolue en mémoire
+                                            let activeAi = getResolvedMockupImage(m);
+
+                                            if (!activeAi || (typeof activeAi === 'string' && (activeAi.startsWith('/assets/') || activeAi.startsWith('/merch/')))) {
+                                                const idbAi = await dbGet(`${sid}_ai_${m.id}`)
+                                                    || (sessionId && sessionId !== sid ? await dbGet(`${sessionId}_ai_${m.id}`) : null)
+                                                    || (slug && slug !== sid ? await dbGet(`${slug}_ai_${m.id}`) : null);
+                                                if (idbAi && isRealImage(idbAi)) {
+                                                    activeAi = idbAi;
+                                                }
+                                            }
+
+                                            let mechData = getResolvedMechImage(m);
+                                            if (!mechData || (typeof mechData === 'string' && (mechData.startsWith('/assets/') || mechData.startsWith('/merch/')))) {
+                                                const idbMech = await dbGet(`${sid}_mech_${m.id}`)
+                                                    || (sessionId && sessionId !== sid ? await dbGet(`${sessionId}_mech_${m.id}`) : null)
+                                                    || (slug && slug !== sid ? await dbGet(`${slug}_mech_${m.id}`) : null);
+                                                if (idbMech && isRealImage(idbMech)) {
+                                                    mechData = idbMech;
+                                                }
+                                            }
+
+                                            const resolvedAi = isRealImage(activeAi) ? activeAi : null;
+                                            const resolvedMech = isRealImage(mechData) ? mechData : null;
+                                            const primary = resolvedAi || resolvedMech || (m as any).imageUrl || m.base;
+                                            const isBack = m.view === 'back' || isBackId(m.id);
+
+                                            return {
+                                                ...m,
+                                                ai: resolvedAi || m.ai || null,
+                                                aiRemastered: resolvedAi || (m as any).aiRemastered || null,
+                                                mechanical: resolvedMech || m.mechanical || null,
+                                                imageUrl: primary,
+                                                frontImageUrl: isBack ? undefined : primary,
+                                                backImageUrl: isBack ? primary : undefined,
+                                                imageFront: isBack ? undefined : primary,
+                                                imageBack: isBack ? primary : undefined
+                                            };
+                                        }));
+
+                                        // 2. Filtrer les mockups sélectionnés ayant un rendu (m.selected && (m.ai || m.mechanical))
+                                        const selectedWithRender = enrichedMockups.filter(m => m.selected && (m.ai || m.mechanical));
+                                        if (selectedWithRender.length === 0) {
+                                            alert("Veuillez sélectionner et générer au moins un gabarit avant d'accéder à la boutique.");
+                                            isVisualFrozenRef.current = false;
+                                            setIsSyncingShop(false);
+                                            return;
+                                        }
+
+                                        // 3. Implémentation du transfert IndexedDB vers Storage via SDK client direct
+                                        const uploadedMockupsMap: Record<string, { aiUrl: string | null; mechUrl: string | null }> = {};
+
+                                        await Promise.all(selectedWithRender.map(async (m) => {
+                                            let aiUrl = (m as any).aiRemastered || m.ai || null;
+                                            let mechUrl = m.mechanical || null;
+
+                                            // Si la source est un Base64 / DataURL local, uploader vers btp_mockups/${slug}/web/${m.id}_${Date.now()}.png
+                                            if (aiUrl && typeof aiUrl === 'string') {
+                                                if (aiUrl.startsWith('https://') || aiUrl.startsWith('http://')) {
+                                                    // Si l'image est déjà une URL distante (https://...), ne pas la réuploader
+                                                } else if (aiUrl.startsWith('data:') || aiUrl.startsWith('blob:') || aiUrl.length > 50) {
+                                                    try {
+                                                        const storagePath = `btp_mockups/${slug}/web/${m.id}_${Date.now()}.png`;
+                                                        const storageRef = ref(storage, storagePath);
+                                                        const base64Data = aiUrl.startsWith('data:') ? aiUrl : `data:image/png;base64,${aiUrl}`;
+                                                        const match = base64Data.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,/);
+                                                        const contentType = match ? match[1] : 'image/png';
+                                                        const metadata: UploadMetadata = {
+                                                            contentType,
+                                                            cacheControl: 'public, max-age=31536000, immutable'
+                                                        };
+                                                        await uploadString(storageRef, base64Data, 'data_url', metadata);
+                                                        aiUrl = await getDownloadURL(storageRef);
+                                                        console.log(`-> Upload réussi [${m.id}] vers ${storagePath}`);
+                                                    } catch (upErr) {
+                                                        console.warn(`Direct upload failed for ${m.id} (preserving existing base64):`, upErr);
+                                                    }
+                                                }
+                                            }
+
+                                            if (mechUrl && typeof mechUrl === 'string') {
+                                                if (mechUrl.startsWith('https://') || mechUrl.startsWith('http://')) {
+                                                    // Si l'image est déjà une URL distante (https://...), ne pas la réuploader
+                                                } else if (mechUrl.startsWith('data:') || mechUrl.startsWith('blob:') || mechUrl.length > 50) {
+                                                    try {
+                                                        const storagePath = `btp_mockups/${slug}/web/${m.id}_mech_${Date.now()}.png`;
+                                                        const storageRef = ref(storage, storagePath);
+                                                        const base64Data = mechUrl.startsWith('data:') ? mechUrl : `data:image/png;base64,${mechUrl}`;
+                                                        const match = base64Data.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,/);
+                                                        const contentType = match ? match[1] : 'image/png';
+                                                        const metadata: UploadMetadata = {
+                                                            contentType,
+                                                            cacheControl: 'public, max-age=31536000, immutable'
+                                                        };
+                                                        await uploadString(storageRef, base64Data, 'data_url', metadata);
+                                                        mechUrl = await getDownloadURL(storageRef);
+                                                        console.log(`-> Upload réussi [${m.id}_mech] vers ${storagePath}`);
+                                                    } catch (upErr) {
+                                                        console.warn(`Direct mech upload failed for ${m.id} (preserving existing base64):`, upErr);
+                                                    }
+                                                }
+                                            }
+
+                                            uploadedMockupsMap[m.id] = { aiUrl, mechUrl };
+                                        }));
+
+                                        // Mise à jour de tous les gabarits sur la copie locale isolée (sanctuarisation des images IA)
+                                        const mockupsWithPublicUrls = enrichedMockups.map(m => {
+                                            const uploaded = uploadedMockupsMap[m.id];
+                                            const finalAi = uploaded?.aiUrl || (m as any).aiRemastered || m.ai || null;
+                                            const finalMech = uploaded?.mechUrl || m.mechanical || null;
+                                            const primary = finalAi || finalMech || (m as any).imageUrl || m.base;
+                                            const isBack = m.view === 'back' || isBackId(m.id);
+
+                                            return {
+                                                ...m,
+                                                ai: finalAi,
+                                                aiRemastered: finalAi,
+                                                mechanical: finalMech,
+                                                imageUrl: finalAi || primary,
+                                                frontImageUrl: isBack ? undefined : (finalAi || primary),
+                                                backImageUrl: isBack ? (finalAi || primary) : undefined,
+                                                imageFront: isBack ? undefined : (finalAi || primary),
+                                                imageBack: isBack ? (finalAi || primary) : undefined
+                                            };
+                                        });
+
+                                        // 3b. DÉLÉGATION À INDEXEDDB : Stockage illimité des Data URLs et objets complets
+                                        const garmentMockupMap = extractGarmentMockupMap(mockupsWithPublicUrls);
+                                        const urlUid = searchParams.get('uid');
+                                        const keysToSync = extractAllCandidateKeys(urlUid, sid, slug, targetSlug);
+
+                                        try {
+                                            const fullMockupsJson = JSON.stringify(mockupsWithPublicUrls);
+                                            const fullGarmentJson = JSON.stringify(garmentMockupMap);
+                                            await Promise.all([
+                                                dbSet(`mockups_${sid}`, fullMockupsJson),
+                                                slug && slug !== sid ? dbSet(`mockups_${slug}`, fullMockupsJson) : Promise.resolve(true),
+                                                dbSet(`garmentMockups_${sid}`, fullGarmentJson),
+                                                slug && slug !== sid ? dbSet(`garmentMockups_${slug}`, fullGarmentJson) : Promise.resolve(true)
+                                            ]);
+
+                                            for (const m of mockupsWithPublicUrls) {
+                                                if (m.ai && typeof m.ai === 'string' && m.ai.trim().length > 0) {
+                                                    await dbSet(`${sid}_ai_${m.id}`, m.ai);
+                                                    if (slug && slug !== sid) await dbSet(`${slug}_ai_${m.id}`, m.ai);
+                                                }
+                                                if (m.mechanical && typeof m.mechanical === 'string' && m.mechanical.trim().length > 0) {
+                                                    await dbSet(`${sid}_mech_${m.id}`, m.mechanical);
+                                                    if (slug && slug !== sid) await dbSet(`${slug}_mech_${m.id}`, m.mechanical);
+                                                }
+                                            }
+                                        } catch (idbErr) {
+                                            console.warn("[IndexedDB] Direct cache delegation error:", idbErr);
+                                        }
+
+                                        // 3c. SÉCURISATION ET NETTOYAGE PRÉVENTIF LOCALSTORAGE
+                                        if (typeof localStorage !== 'undefined') {
+                                            try {
+                                                // Nettoyage préventif des clés volumineuses de sessions précédentes
+                                                pruneBulkyLocalStorageKeys(keysToSync);
+
+                                                safeLocalStorageSetItem('btp_mockups_locked', 'true');
+                                                keysToSync.forEach(k => {
+                                                    safeLocalStorageSetItem(`btp_mockups_locked_${k}`, 'true');
+                                                });
+
+                                                // Ne stocker QUE des URLs légères / distantes résolues, jamais de Data URLs
+                                                const sanitizedGarmentMap = sanitizeGarmentMockupMap(garmentMockupMap);
+                                                const gmJson = JSON.stringify(sanitizedGarmentMap);
+                                                safeLocalStorageSetItem('btp_garment_mockups', gmJson);
+                                                safeLocalStorageSetItem('garmentMockups', gmJson);
+                                                keysToSync.forEach(k => {
+                                                    safeLocalStorageSetItem(`btp_garment_mockups_${k}`, gmJson);
+                                                    safeLocalStorageSetItem(`garmentMockups_${k}`, gmJson);
+                                                });
+
+                                                const lightweightMockups = mockupsWithPublicUrls.map(sanitizeMockupForLocalStorage);
+                                                const mockupsJson = JSON.stringify(lightweightMockups);
+                                                safeLocalStorageSetItem('mockups', mockupsJson);
+                                                keysToSync.forEach(k => {
+                                                    safeLocalStorageSetItem(`mockups_${k}`, mockupsJson);
+                                                });
+
+                                                const directGarmentEntries: [string, string | undefined][] = [
+                                                    ['tshirt_front', sanitizedGarmentMap.tshirt_front || sanitizedGarmentMap.tFront],
+                                                    ['tshirt_back', sanitizedGarmentMap.tshirt_back || sanitizedGarmentMap.tBack],
+                                                    ['polo_front', sanitizedGarmentMap.polo_front || sanitizedGarmentMap.pFront],
+                                                    ['polo_back', sanitizedGarmentMap.polo_back || sanitizedGarmentMap.pBack],
+                                                    ['hoodie', sanitizedGarmentMap.hoodie || sanitizedGarmentMap.hoodie_front || sanitizedGarmentMap.hFront],
+                                                    ['hoodie_front', sanitizedGarmentMap.hoodie || sanitizedGarmentMap.hoodie_front || sanitizedGarmentMap.hFront],
+                                                    ['hoodie_back', sanitizedGarmentMap.hoodie_back || sanitizedGarmentMap.hBack],
+                                                    ['tank_front', sanitizedGarmentMap.tank_front || sanitizedGarmentMap.tankFront],
+                                                    ['tank_back', sanitizedGarmentMap.tank_back || sanitizedGarmentMap.tankBack],
+                                                    ['tank_white_front', sanitizedGarmentMap.tank_white_front || sanitizedGarmentMap.tankWhiteFront],
+                                                    ['tank_white_back', sanitizedGarmentMap.tank_white_back || sanitizedGarmentMap.tankWhiteBack],
+                                                    ['heavy_front', sanitizedGarmentMap.heavy_front || sanitizedGarmentMap.heavyFront],
+                                                    ['heavy_back', sanitizedGarmentMap.heavy_back || sanitizedGarmentMap.heavyBack],
+                                                ];
+
+                                                for (const [gKey, gVal] of directGarmentEntries) {
+                                                    if (gVal && isSafeStorageUrl(gVal)) {
+                                                        safeLocalStorageSetItem(`btp_mockup_${gKey}`, gVal);
+                                                        keysToSync.forEach(k => {
+                                                            safeLocalStorageSetItem(`btp_mockup_${gKey}_${k}`, gVal);
+                                                        });
+                                                    }
+                                                }
+
+                                                safeLocalStorageSetItem('btp_active_session_id', sid);
+                                                if (slug) safeLocalStorageSetItem('btp_active_session_slug', slug);
+                                            } catch (lsErr) {
+                                                console.warn("[Storage] Warning writing shop sync cache to localStorage:", lsErr);
+                                            }
+                                        }
+
+                                        // 4. Synchronisation Firestore et Persistance locale isolée (SANS muter les states d'affichage visuel)
+                                        const payloadToSync: SaveSessionParams = {
+                                            sessionId: sid,
+                                            slug: slug,
+                                            logoA,
+                                            logoB,
+                                            logoPlacements,
+                                            userData,
+                                            mockups: mockupsWithPublicUrls,
+                                            logoColorModes,
+                                            globalLogoColorMode
+                                        };
+
+                                        const syncResult = await syncSessionToCloud(payloadToSync);
+                                        if (syncResult.previewId) setPreviewId(syncResult.previewId);
+
+                                        // Persistance locale avec le payload isolé
+                                        await saveSessionLocal(payloadToSync);
+
+                                        if (typeof localStorage !== 'undefined') {
+                                            try {
+                                                safeLocalStorageSetItem('btp_active_session_id', sid);
+                                                if (slug) safeLocalStorageSetItem('btp_active_session_slug', slug);
+                                            } catch (e) {
+                                                console.warn("[Storage] btp_active_session save notice:", e);
+                                            }
+                                        }
+
+                                        // 5. Mise à jour de la configuration CMS vitrine si uidParam ou slug
+                                        const configKey = searchParams.get('uid') || slug;
+                                        if (configKey) {
                                             const logoSrc = logoA.mode === 'remastered' 
                                                 ? (logoA.remastered || logoA.adapted || logoA.original) 
                                                 : (logoA.mode === 'original'
                                                     ? (logoA.original || logoA.adapted)
                                                     : (logoA.adapted || logoA.original));
                                             try {
-                                                const config = await getStoredConfig(uidParam);
+                                                const config = await getStoredConfig(configKey);
                                                 if (config) {
                                                     if (logoSrc) {
                                                         config.logoUrl = logoSrc;
                                                     }
-                                                    if (sessionId) {
-                                                        config.generatedKey = sessionId;
-                                                        config.actuationKey = sessionId;
-                                                    }
-                                                    config.merchUrl = `${window.location.origin}/portail-shop?uid=${uidParam}`;
-                                                    await saveStoredConfig(config, uidParam);
+                                                    config.generatedKey = sid;
+                                                    config.actuationKey = sid;
+                                                    config.merchUrl = `${window.location.origin}/portail-shop?slug=${targetSlug}`;
+                                                    await saveStoredConfig(config, configKey);
                                                     console.log("Vault Architect: Vitrine CMS updated with remastered logo & products link.");
                                                 }
                                             } catch (err) {
                                                 console.error("Vault Architect: Failed to update vitrine config:", err);
                                             }
                                         }
-                                        const targetSid = uidParam || sessionId || previewId;
-                                        const targetShopUrl = targetSid ? `/portail-shop?audit=${targetSid}` : '/portail-shop';
-                                        window.open(targetShopUrl, '_blank');
-                                    };
-                                    updateAndRedirect(); 
+
+                                        // 6. Redirection vers le portail boutique en préservant slug et uid
+                                        const targetParams = new URLSearchParams();
+                                        targetParams.set('slug', targetSlug);
+                                        if (urlUid) {
+                                            targetParams.set('uid', urlUid);
+                                        }
+                                        navigate(`/portail-shop?${targetParams.toString()}`);
+                                    } catch (err) {
+                                        console.error("Shop sync error:", err);
+                                        alert("Erreur lors de la synchronisation de la boutique. Veuillez réessayer.");
+                                        isVisualFrozenRef.current = false;
+                                    } finally {
+                                        setIsSyncingShop(false);
+                                    }
                                 }}
-                                disabled={isAccessDisabled}
-                                className={`px-10 py-4 font-black text-xs uppercase italic tracking-tighter transition-all shadow-xl ${isAccessDisabled ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50' : 'bg-black text-white hover:bg-orange-600 cursor-pointer'}`}
+                                disabled={isAccessDisabled || isSyncingShop}
+                                className={`px-10 py-4 font-black text-xs uppercase italic tracking-tighter transition-all shadow-xl ${isAccessDisabled || isSyncingShop ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed opacity-50' : 'bg-black text-white hover:bg-orange-600 cursor-pointer'}`}
                             >
-                                {isAnyMockupGenerating 
-                                    ? "Génération en cours..." 
-                                    : (!areAllSelectedMockupsGenerated 
-                                        ? "En attente des images..." 
-                                        : "Accéder à ma page produit")}
+                                {isSyncingShop ? (
+                                    <span className="flex items-center gap-2">
+                                        <Loader2 size={16} className="animate-spin text-orange-500" />
+                                        Synchronisation du catalogue en cours...
+                                    </span>
+                                ) : isAnyMockupGenerating ? (
+                                    "Génération en cours..." 
+                                ) : (!areAllSelectedMockupsGenerated ? (
+                                    "En attente des images..." 
+                                ) : (
+                                    <span className="flex items-center gap-2">
+                                        Accéder au shop
+                                        <ArrowRight size={16} />
+                                    </span>
+                                ))}
                             </button>
                             {previewId && (
                                 <div className="mt-6 p-4 bg-zinc-900/50 border border-zinc-800 rounded-lg flex flex-col md:flex-row items-center justify-between gap-4 w-full max-w-xl mx-auto text-left">
@@ -2917,7 +3992,7 @@ const GenericAuditPage: React.FC = () => {
                                 </p>
                             </div>
                             <div className="pt-8 border-t border-white/10">
-                                <p className="text-zinc-600 font-black text-[10px] uppercase tracking-[0.5em]">Signaid V24 • L'Autorité Visuelle des Leaders</p>
+                                <p className="text-zinc-600 font-black text-[10px] uppercase tracking-[0.5em]">Signaid Studio • L'Autorité Visuelle des Leaders</p>
                             </div>
                         </div>
                     </div>
@@ -3099,7 +4174,7 @@ const GenericAuditPage: React.FC = () => {
 
                                         {/* Tiny card footer */}
                                         <div className="flex justify-between items-center text-[4px] text-zinc-600 font-mono tracking-widest pt-2 border-t border-white/5 mt-1 relative z-10">
-                                            <span>SIGNAID V24 SECURE</span>
+                                            <span>SIGNAID STUDIO SECURE</span>
                                             <span>RECTO/VERSO PROJECTION</span>
                                         </div>
                                     </div>
@@ -3913,10 +4988,12 @@ const GenericAuditPage: React.FC = () => {
                 };
                 return <CropModal />;
             })()}
-            <AdminQuickBar 
-                uid={sessionId || new URLSearchParams(window.location.search).get('uid') || ''} 
-                companyName={userData?.companyName} 
-            />
+            <div className="pointer-events-none">
+                <AdminQuickBar 
+                    uid={sessionId || new URLSearchParams(window.location.search).get('uid') || ''} 
+                    companyName={userData?.companyName} 
+                />
+            </div>
         </div>
     );
 };

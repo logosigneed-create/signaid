@@ -11,7 +11,7 @@ export interface MerchItem {
   imageBack?: string;
   frontImageUrl?: string;
   backImageUrl?: string;
-  ai?: string | null;
+  ai?: string | boolean | null;
   aiRemastered?: string | null;
   aiBack?: string | null;
   aiRemasteredBack?: string | null;
@@ -273,67 +273,75 @@ export function MerchProductCard({
 
   // Résolution prioritaire absolue de l'image (stricte conformité audit : Studio > AI > Front > ImageUrl > Mechanical > Base > Static Fallback)
   const item = product as any;
+  const safeUrl = (v: any): string | null => (typeof v === 'string' && v.trim() !== '') ? v : null;
+  const isValidUrl = (v: any): string | null => {
+    const s = safeUrl(v);
+    return (s && !isBatSnapshot(s)) ? s : null;
+  };
+
   const rawFrontCandidate = (
-    item.imageStudio ||
-    (!isBatSnapshot(item.aiRemastered) ? item.aiRemastered : null) ||
-    (!isBatSnapshot(item.ai) ? item.ai : null) ||
-    (!isBatSnapshot(item.frontImageUrl) ? item.frontImageUrl : null) ||
-    (!isBatSnapshot(item.imageFront) ? item.imageFront : null) ||
-    (!isBatSnapshot(item.imageUrl) ? item.imageUrl : null) ||
-    item.realAiSnapshotUrl ||
-    item.images?.front ||
-    item.images?.face ||
-    item.images?.recto ||
-    item.aiRemastered ||
-    item.ai ||
-    item.frontImageUrl ||
-    item.imageFront ||
-    item.imageUrl ||
+    safeUrl(item.imageStudio) ||
+    isValidUrl(item.aiRemastered) ||
+    isValidUrl(item.ai) ||
+    isValidUrl(item.frontImageUrl) ||
+    isValidUrl(item.imageFront) ||
+    isValidUrl(item.imageUrl) ||
+    safeUrl(item.realAiSnapshotUrl) ||
+    safeUrl(item.images?.front) ||
+    safeUrl(item.images?.face) ||
+    safeUrl(item.images?.recto) ||
+    safeUrl(item.aiRemastered) ||
+    safeUrl(item.ai) ||
+    safeUrl(item.frontImageUrl) ||
+    safeUrl(item.imageFront) ||
+    safeUrl(item.imageUrl) ||
     clubVisionStudioFront ||
-    item.mechanical ||
-    item.base
+    safeUrl(item.mechanical) ||
+    safeUrl(item.base)
   );
   const frontImageCandidate = (isBatSnapshot(rawFrontCandidate) && clubVisionStudioFront)
     ? clubVisionStudioFront
     : (isBatSnapshot(rawFrontCandidate) ? null : rawFrontCandidate);
 
   const rawBackCandidate = (
-    item.imageStudioBack ||
-    (!isBatSnapshot(item.aiRemasteredBack) ? item.aiRemasteredBack : null) ||
-    (!isBatSnapshot(item.aiBack) ? item.aiBack : null) ||
-    (currentView === 'back' && !isBatSnapshot(item.aiRemastered) ? item.aiRemastered : null) ||
-    (currentView === 'back' && !isBatSnapshot(item.ai) ? item.ai : null) ||
-    (!isBatSnapshot(item.backImageUrl) ? item.backImageUrl : null) ||
-    (!isBatSnapshot(item.imageBack) ? item.imageBack : null) ||
-    item.images?.back ||
-    item.images?.dos ||
-    item.images?.verso ||
-    item.aiRemasteredBack ||
-    item.aiBack ||
-    item.backImageUrl ||
-    item.imageBack ||
-    item.imageUrl ||
+    safeUrl(item.imageStudioBack) ||
+    isValidUrl(item.aiRemasteredBack) ||
+    isValidUrl(item.aiBack) ||
+    (currentView === 'back' ? isValidUrl(item.aiRemastered) : null) ||
+    (currentView === 'back' ? isValidUrl(item.ai) : null) ||
+    isValidUrl(item.backImageUrl) ||
+    isValidUrl(item.imageBack) ||
+    safeUrl(item.images?.back) ||
+    safeUrl(item.images?.dos) ||
+    safeUrl(item.images?.verso) ||
+    safeUrl(item.aiRemasteredBack) ||
+    safeUrl(item.aiBack) ||
+    safeUrl(item.backImageUrl) ||
+    safeUrl(item.imageBack) ||
+    safeUrl(item.imageUrl) ||
     clubVisionStudioBack ||
-    item.mechanical ||
-    item.base
+    safeUrl(item.mechanicalBack) ||
+    safeUrl(item.baseBack) ||
+    safeUrl(item.mechanical) ||
+    safeUrl(item.base)
   );
   const backImageCandidate = (isBatSnapshot(rawBackCandidate) && clubVisionStudioBack)
     ? clubVisionStudioBack
     : (isBatSnapshot(rawBackCandidate) ? null : rawBackCandidate);
 
   const hasBackImage = !isCard && Boolean(
-    (backImageCandidate && backImageCandidate.trim() !== '') ||
+    (typeof backImageCandidate === 'string' && backImageCandidate.trim() !== '') ||
     defaultBackUrl
   );
   const activeView = hasBackImage ? currentView : 'front';
 
   const currentImg = activeView === 'back'
-    ? (backImageCandidate && backImageCandidate.trim() ? backImageCandidate : defaultBackUrl)
-    : (frontImageCandidate && frontImageCandidate.trim() ? frontImageCandidate : defaultFrontUrl);
+    ? (typeof backImageCandidate === 'string' && backImageCandidate.trim() ? backImageCandidate : defaultBackUrl)
+    : (typeof frontImageCandidate === 'string' && frontImageCandidate.trim() ? frontImageCandidate : defaultFrontUrl);
 
   const isAiRender = activeView === 'back'
-    ? Boolean(backImageCandidate && !isBatSnapshot(backImageCandidate) && (backImageCandidate.includes('_ai_') || backImageCandidate.includes('studio') || backImageCandidate.includes('firebasestorage') || backImageCandidate.includes('btp_mockups') || item.aiRemasteredBack || item.aiBack))
-    : Boolean(frontImageCandidate && !isBatSnapshot(frontImageCandidate) && (frontImageCandidate.includes('_ai_') || frontImageCandidate.includes('studio') || frontImageCandidate.includes('firebasestorage') || frontImageCandidate.includes('btp_mockups') || item.aiRemastered || item.ai));
+    ? Boolean(typeof backImageCandidate === 'string' && !isBatSnapshot(backImageCandidate) && (backImageCandidate.includes('_ai_') || backImageCandidate.includes('studio') || backImageCandidate.includes('firebasestorage') || backImageCandidate.includes('btp_mockups') || (typeof item.aiRemasteredBack === 'string') || (typeof item.aiBack === 'string')))
+    : Boolean(typeof frontImageCandidate === 'string' && !isBatSnapshot(frontImageCandidate) && (frontImageCandidate.includes('_ai_') || frontImageCandidate.includes('studio') || frontImageCandidate.includes('firebasestorage') || frontImageCandidate.includes('btp_mockups') || (typeof item.aiRemastered === 'string') || (typeof item.ai === 'string')));
 
   const isTemplateGarment = !isAiRender && (
     !currentImg ||

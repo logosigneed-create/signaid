@@ -62,7 +62,7 @@ svg_content = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 581 481" 
   </g>
 </svg>'''
 
-with open(r'c:\Partage\Projet\Signaid V24\logo.svg', 'w', encoding='utf-8') as f:
+with open(r'c:\Partage\Projet\signaid-studio\logo.svg', 'w', encoding='utf-8') as f:
     f.write(svg_content)
 
 with open(artifact_dir + r'\logo.svg', 'w', encoding='utf-8') as f:

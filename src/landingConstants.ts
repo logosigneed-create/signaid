@@ -48,7 +48,7 @@ export const PLATFORM_FEATURES: FeatureData[] = [
         subtitle: "Workwear & Merch",
         description: "Personnalisation haute fidélité sur textiles premium avec une approche digitale pour simplifier la commande et le rendu.",
         icon: Shirt,
-        details: ["Sérigraphie Pro", "Broderie Digitale", "Coupes Premium"]
+        details: ["Impression DTF HD", "Sérigraphie Pro", "Coupes Premium"]
     },
     {
         id: "06",

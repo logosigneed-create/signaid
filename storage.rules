@@ -7,8 +7,11 @@ service firebase.storage {
     match /shared_media/{allPaths=**} {
       allow read, write: if true;
     }
+    match /users/{allPaths=**} {
+      allow read, write: if true;
+    }
     match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
   }
 }

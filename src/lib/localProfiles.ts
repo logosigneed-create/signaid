@@ -22,6 +22,9 @@ export interface ProfileSummary {
     message?: string;
   };
   siteConfig?: Partial<SiteConfig>;
+  products?: any;
+  items?: any;
+  mockups?: any;
 }
 
 // BtpAuditDB IndexedDB Configuration (from Audit Pipeline)
@@ -552,8 +555,58 @@ export async function createProfile(input: CreateProfileInput): Promise<ProfileS
 
   // 2. Enregistrement Firestore (best-effort)
   try {
-    const docRef = doc(db, "prospects", cleanSlug);
-    await setDoc(docRef, {
+    const initialSiteConfig = buildSiteConfigFromProfile(newSummary);
+    const defaultProducts = [
+      {
+        id: 'tFront',
+        name: `T-Shirt ${companyName}`,
+        title: `T-Shirt ${companyName}`,
+        garment: 'tshirt',
+        price: 29.90,
+        frontImageUrl: newSummary.products?.tshirt?.frontImageUrl || '/assets/tshirt-black-JHK170.png',
+        backImageUrl: newSummary.products?.tshirt?.backImageUrl || '/assets/tshirt-black-JHK170-dos.png',
+        imageUrl: newSummary.products?.tshirt?.frontImageUrl || '/assets/tshirt-black-JHK170.png',
+        ai: Boolean(newSummary.products?.tshirt?.frontImageUrl && !newSummary.products.tshirt.frontImageUrl.includes('JHK')),
+        aiRemastered: Boolean(newSummary.products?.tshirt?.frontImageUrl && !newSummary.products.tshirt.frontImageUrl.includes('JHK')),
+        mechanical: '/assets/tshirt-black-JHK170.png',
+        mechanicalFront: '/assets/tshirt-black-JHK170.png',
+        mechanicalBack: '/assets/tshirt-black-JHK170-dos.png'
+      },
+      {
+        id: 'pFront',
+        name: `Polo ${companyName}`,
+        title: `Polo ${companyName}`,
+        garment: 'polo',
+        price: 39.90,
+        frontImageUrl: newSummary.products?.polo?.frontImageUrl || '/assets/polo-black-JHK510.png',
+        backImageUrl: newSummary.products?.polo?.backImageUrl || '/assets/polo-black-JHK510-dos.png',
+        imageUrl: newSummary.products?.polo?.frontImageUrl || '/assets/polo-black-JHK510.png',
+        ai: Boolean(newSummary.products?.polo?.frontImageUrl && !newSummary.products.polo.frontImageUrl.includes('JHK')),
+        aiRemastered: Boolean(newSummary.products?.polo?.frontImageUrl && !newSummary.products.polo.frontImageUrl.includes('JHK')),
+        mechanical: '/assets/polo-black-JHK510.png',
+        mechanicalFront: '/assets/polo-black-JHK510.png',
+        mechanicalBack: '/assets/polo-black-JHK510-dos.png'
+      },
+      {
+        id: 'hFront',
+        name: `Hoodie ${companyName}`,
+        title: `Hoodie ${companyName}`,
+        garment: 'sweat',
+        price: 49.90,
+        frontImageUrl: newSummary.products?.hoodie?.frontImageUrl || '/assets/hoodie-black-JHK421.png',
+        backImageUrl: newSummary.products?.hoodie?.backImageUrl || '/assets/hoodie-black-JHK421-dos.png',
+        imageUrl: newSummary.products?.hoodie?.frontImageUrl || '/assets/hoodie-black-JHK421.png',
+        ai: Boolean(newSummary.products?.hoodie?.frontImageUrl && !newSummary.products.hoodie.frontImageUrl.includes('JHK')),
+        aiRemastered: Boolean(newSummary.products?.hoodie?.frontImageUrl && !newSummary.products.hoodie.frontImageUrl.includes('JHK')),
+        mechanical: '/assets/hoodie-black-JHK421.png',
+        mechanicalFront: '/assets/hoodie-black-JHK421.png',
+        mechanicalBack: '/assets/hoodie-black-JHK421-dos.png'
+      }
+    ];
+
+    const aiCount = defaultProducts.filter(p => p.ai).length;
+
+    const prospectPayload = {
       slug: cleanSlug,
       company: companyName,
       name: companyName,
@@ -563,14 +616,22 @@ export async function createProfile(input: CreateProfileInput): Promise<ProfileS
       logoUrl: newSummary.logoUrl,
       accentColor,
       theme,
-      mockupCount: 0,
+      mockupCount: defaultProducts.length,
+      products: defaultProducts,
+      items: defaultProducts,
+      mockups: defaultProducts,
+      aiProductsCount: aiCount,
       livePhotoUrls: [],
       createdAt: serverTimestamp()
-    }, { merge: true });
+    };
+
+    await setDoc(doc(db, "prospects", cleanSlug), prospectPayload, { merge: true });
+    await setDoc(doc(db, "audits", cleanSlug), prospectPayload, { merge: true }).catch(() => {});
+    await setDoc(doc(db, "vault", cleanSlug), prospectPayload, { merge: true }).catch(() => {});
 
     const configRef = doc(db, "configs", cleanSlug);
-    const initialSiteConfig = buildSiteConfigFromProfile(newSummary);
-    await setDoc(configRef, initialSiteConfig, { merge: true });
+    await setDoc(configRef, { ...initialSiteConfig, products: defaultProducts, items: defaultProducts }, { merge: true });
+    console.log(`[BACKEND_PROFILE_PERSIST] Profil ${cleanSlug} mis à jour avec ${aiCount} produits IA.`);
   } catch (e) {
     console.warn('Création Firestore restreinte ou hors ligne:', e);
   }

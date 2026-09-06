@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { db, auth } from '../firebaseConfig';
 import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { sanitizeForFirestore } from '../utils/firestoreSanitizer';
 import { onAuthStateChanged } from 'firebase/auth';
 import { 
     ShieldCheck, ShieldAlert, Shield, Zap, Loader2, Sparkles, Check, Sun, Moon, 
@@ -283,12 +284,12 @@ export default function PreviewPage() {
                     description: 'Polo JHK 510 Premium - Coupe Ajustée Professionnelle',
                     unitPrice: 35,
                     isCard: false,
-                    frontStudio,
-                    frontBat,
-                    backStudio,
-                    backBat,
-                    imageFront: frontStudio || frontBat || '/assets/polo-black-JHK510.png',
-                    imageBack: backStudio || backBat || '/assets/polo-black-JHK510-dos.png',
+                    frontStudio: (frontStudio && !frontStudio.includes('male_tshirt')) ? frontStudio : '/assets/polo-black-JHK510.png',
+                    frontBat: (frontBat && !frontBat.includes('male_tshirt')) ? frontBat : '/assets/polo-black-JHK510.png',
+                    backStudio: (backStudio && !backStudio.includes('male_tshirt')) ? backStudio : '/assets/polo-black-JHK510-dos.png',
+                    backBat: (backBat && !backBat.includes('male_tshirt')) ? backBat : '/assets/polo-black-JHK510-dos.png',
+                    imageFront: (frontStudio && !frontStudio.includes('male_tshirt')) ? frontStudio : '/assets/polo-black-JHK510.png',
+                    imageBack: (backStudio && !backStudio.includes('male_tshirt')) ? backStudio : '/assets/polo-black-JHK510-dos.png',
                     items: gItems
                 });
             } else if (garment === 'sweat' || garment === 'hoodie') {
@@ -415,16 +416,16 @@ export default function PreviewPage() {
                 type: 'PREVIEW_CONVERTED'
             };
 
-            await addDoc(collection(db, 'btp_dotations'), dotationData);
+            await addDoc(collection(db, 'btp_dotations'), sanitizeForFirestore(dotationData));
 
             // 2. CONVERT THE PREVIEW DOCUMENT
             if (previewId) {
                 const docRef = doc(db, 'anonymous_previews', previewId);
-                await updateDoc(docRef, {
+                await updateDoc(docRef, sanitizeForFirestore({
                     status: 'converted',
                     userEmail: contactInfo.email,
                     updatedAt: new Date().toISOString()
-                });
+                }));
             }
 
             // 3. PAYMENT GATEWAY CALL (Mollie Firebase Function)
@@ -571,7 +572,7 @@ export default function PreviewPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             {displayPacks.map(pack => {
                                 const mode = displayModes[pack.id] || 'studio';
-                                const view = cardViews[pack.id] || 'front';
+                                const view = cardViews[pack.id] || (pack.isCard ? 'front' : 'back');
                                 
                                 let itemImg = '';
                                 if (view === 'front') {
@@ -729,7 +730,7 @@ export default function PreviewPage() {
                             <button 
                                 onClick={() => {
                                     if (!auth.currentUser && !isAdmin) {
-                                        window.location.href = `/vitrine-admin/dashboard?claim=${previewId}&action=order`;
+                                        window.location.href = `/vitrine-admin?claim=${previewId}&action=order`;
                                     } else {
                                         setShowCheckoutModal(true);
                                     }

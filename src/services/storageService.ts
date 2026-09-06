@@ -28,7 +28,10 @@ export const uploadImageBlob = async (blob: Blob, folder: string = 'cart_images'
         const fullPath = `${folder}/${uniqueId}.${extension}`;
         const storageRef = ref(storage, fullPath);
 
-        const snapshot = await uploadBytes(storageRef, blob);
+        const snapshot = await uploadBytes(storageRef, blob, {
+            contentType: blob.type || 'image/png',
+            cacheControl: 'public, max-age=86400'
+        });
         const downloadURL = await getDownloadURL(snapshot.ref);
 
         return downloadURL;

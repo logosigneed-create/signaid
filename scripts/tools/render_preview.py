@@ -6,7 +6,7 @@ img_path = r'C:\Users\Asus\.gemini\antigravity\brain\dd430df0-1951-4179-8c27-141
 img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
 h, w = img.shape
 
-with open(r'c:\Partage\Projet\Signaid V24\logo.svg', 'r', encoding='utf-8') as f:
+with open(r'c:\Partage\Projet\signaid-studio\logo.svg', 'r', encoding='utf-8') as f:
     svg_text = f.read()
 
 d_matches = re.findall(r'd="([^"]+)"', svg_text)

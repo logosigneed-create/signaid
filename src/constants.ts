@@ -22,6 +22,40 @@ export const productDatabase: ProductDatabase = {
       "#A9A9A9": "/imported_products/VETEMENTS/BCTU05T_Sport-Grey-(Heather) vue dos .jpg"
     }
   },
+  debardeur: {
+    name: "Débardeur Vision Room",
+    category: 'vêtement',
+    price: 27.99,
+    sizes: ["XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL"],
+    slideImage: "/imported_products/VETEMENTS/debardeur/BYBB011/debardeur-black-BYBB011.png",
+    supplierLink: "https://shop.l-shop-team.be/fr/Assortiment/T-shirts-fashion/sans-manches/Basic-Tank.html",
+    reference: "BYBB011",
+    sizeChart: DEFAULT_SIZE_CHART,
+    images: {
+      "#000000": "/assets/tank-black-BYBB011.png",
+      "#FFFFFF": "/assets/tank-white-BYBB011.png"
+    },
+    backImages: {
+      "#000000": "/assets/tank-black-BYBB011-dos.png",
+      "#FFFFFF": "/assets/tank-white-BYBB011-dos.png"
+    }
+  },
+  tshirt_oversize: {
+    name: "T-Shirt Heavyweight Oversize",
+    category: 'vêtement',
+    price: 34.99,
+    sizes: ["XS", "S", "M", "L", "XL", "XXL", "3XL"],
+    slideImage: "/imported_products/VETEMENTS/tshirt/NX7200/tshirt-black-NX7200.png",
+    supplierLink: "https://shop.l-shop-team.be/fr/Assortiment/T-shirts-fashion/col-rond/Unisex-Heavyweight-T-Shirt.html",
+    reference: "NX7200",
+    sizeChart: DEFAULT_SIZE_CHART,
+    images: {
+      "#000000": "/assets/tshirt-black-NX7200.png"
+    },
+    backImages: {
+      "#000000": "/assets/tshirt-black-NX7200-dos.png"
+    }
+  },
   tshirt: {
     name: "T-shirt",
     price: 18,
@@ -32,21 +66,21 @@ export const productDatabase: ProductDatabase = {
     sizeChart: DEFAULT_SIZE_CHART,
     images: {
       "#000000": "/assets/tshirt-black-JHK170.png",
-      "#FFFFFF": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-white-JHK170.png?alt=media",
-      "#EF4444": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-red-JHK170.png?alt=media",
-      "#FFA500": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-orange-JHK170.png?alt=media",
-      "#4169E1": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-royal-blue-JHK170.png?alt=media",
-      "#000080": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-navy-JHK170.png?alt=media",
-      "#FFFF00": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-yellow-JHK170.png?alt=media",
+      "#FFFFFF": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-white-JHK170.png",
+      "#EF4444": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-red-JHK170.png",
+      "#FFA500": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-orange-JHK170.png",
+      "#4169E1": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-royal-blue-JHK170.png",
+      "#000080": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-navy-JHK170.png",
+      "#FFFF00": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-yellow-JHK170.png",
     },
     backImages: {
       "#000000": "/assets/tshirt-black-JHK170-dos.png",
-      "#FFFFFF": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-white-JHK170-dos.png?alt=media",
-      "#EF4444": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-red-JHK170-dos.png?alt=media",
-      "#FFA500": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-orange-JHK170-dos.png?alt=media",
-      "#4169E1": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-royal-blue-JHK170-dos.png?alt=media",
-      "#000080": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-navy-JHK170-dos.png?alt=media",
-      "#FFFF00": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirt%2FJHK170%2Fhostinger_png%2Ftshirt-yellow-JHK170-dos.png?alt=media",
+      "#FFFFFF": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-white-JHK170-dos.png",
+      "#EF4444": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-red-JHK170-dos.png",
+      "#FFA500": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-orange-JHK170-dos.png",
+      "#4169E1": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-royal-blue-JHK170-dos.png",
+      "#000080": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-navy-JHK170-dos.png",
+      "#FFFF00": "/imported_products/VETEMENTS/tshirt/JHK170/hostinger_png/tshirt-yellow-JHK170-dos.png",
     },
   },
   tshirtfemme: {
@@ -85,8 +119,8 @@ export const productDatabase: ProductDatabase = {
       "#87CEEB": "/imported_products/VETEMENTS/tshirtfemme/bctw02t/studio-tshirtfemme-sky-blue-bctw02t.png",
       "#FFFF00": "/imported_products/VETEMENTS/tshirtfemme/bctw02t/studio-tshirtfemme-solar-yellow-bctw02t.png",
       "#40E0D0": "/imported_products/VETEMENTS/tshirtfemme/bctw02t/studio-tshirtfemme-turquoise-bctw02t.png",
-      "#C3B091": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirtfemme%2Fbctw02t%2Ftshirtfemme-urban-khaki-bctw02t.png?alt=media",
-      "#FFFFFF": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirtfemme%2Fbctw02t%2Ftshirtfemme-white-bctw02t.png?alt=media",
+      "#C3B091": "/imported_products/VETEMENTS/tshirtfemme/bctw02t/tshirtfemme-urban-khaki-bctw02t.png",
+      "#FFFFFF": "/imported_products/VETEMENTS/tshirtfemme/bctw02t/tshirtfemme-white-bctw02t.png",
     },
     backImages: {
       "#FFB366": "/imported_products/VETEMENTS/tshirtfemme/bctw02t/studio-tshirtfemme-apricot-bctw02t-dos.png",
@@ -112,8 +146,8 @@ export const productDatabase: ProductDatabase = {
       "#87CEEB": "/imported_products/VETEMENTS/tshirtfemme/bctw02t/studio-tshirtfemme-sky-blue-bctw02t-dos.png",
       "#FFFF00": "/imported_products/VETEMENTS/tshirtfemme/bctw02t/studio-tshirtfemme-solar-yellow-bctw02t-dos.png",
       "#40E0D0": "/imported_products/VETEMENTS/tshirtfemme/bctw02t/studio-tshirtfemme-turquoise-bctw02t-dos.png",
-      "#C3B091": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirtfemme%2Fbctw02t%2Ftshirtfemme-urban-khaki-bctw02t-dos.png?alt=media",
-      "#FFFFFF": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2Ftshirtfemme%2Fbctw02t%2Ftshirtfemme-white-bctw02-tdos.png?alt=media",
+      "#C3B091": "/imported_products/VETEMENTS/tshirtfemme/bctw02t/tshirtfemme-urban-khaki-bctw02t-dos.png",
+      "#FFFFFF": "/imported_products/VETEMENTS/tshirtfemme/bctw02t/tshirtfemme-white-bctw02-tdos.png",
     },
   },
   SW375: {
@@ -171,24 +205,24 @@ export const productDatabase: ProductDatabase = {
     reference: "JHK422",
     sizeChart: DEFAULT_SIZE_CHART,
     images: {
-      "#FFFFFF": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2Ffront%2Fhoodie-white-JHK422.png?alt=media",
-      "#000000": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2Ffront%2Fhoodie-black-JHK422.png?alt=media",
-      "#4CBB17": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2Ffront%2Fhoodie-kellygreen-JHK422.png?alt=media",
-      "#C3B091": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2Ffront%2Fhoodie-khaki-JHK422.png?alt=media",
-      "#FFDB58": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2Ffront%2Fhoodie-mustard-JHK422.png?alt=media",
-      "#000080": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2Ffront%2Fhoodie-navy-JHK422.png?alt=media",
-      "#4169E1": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2Ffront%2Fhoodie-royalblue-JHK422.png?alt=media",
-      "#FF0000": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2Ffront%2Fhoodie-red-JHK422.png?alt=media",
+      "#FFFFFF": "/imported_products/VETEMENTS/JHK422/front/hoodie-white-JHK422.png",
+      "#000000": "/imported_products/VETEMENTS/JHK422/front/hoodie-black-JHK422.png",
+      "#4CBB17": "/imported_products/VETEMENTS/JHK422/front/hoodie-kellygreen-JHK422.png",
+      "#C3B091": "/imported_products/VETEMENTS/JHK422/front/hoodie-khaki-JHK422.png",
+      "#FFDB58": "/imported_products/VETEMENTS/JHK422/front/hoodie-mustard-JHK422.png",
+      "#000080": "/imported_products/VETEMENTS/JHK422/front/hoodie-navy-JHK422.png",
+      "#4169E1": "/imported_products/VETEMENTS/JHK422/front/hoodie-royalblue-JHK422.png",
+      "#FF0000": "/imported_products/VETEMENTS/JHK422/front/hoodie-red-JHK422.png",
     },
     backImages: {
-      "#FFFFFF": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2FBack%2Fhoodie-white-JHK422-dos.png?alt=media",
-      "#000000": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2FBack%2Fhoodie-black-JHK422-dos.png?alt=media",
-      "#4CBB17": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2FBack%2Fhoodie-kellygreen-JHK422-dos.png?alt=media",
-      "#C3B091": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2FBack%2Fhoodie-khaki-JHK422-dos.png?alt=media",
-      "#FFDB58": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2FBack%2Fhoodie-moustard-JHK422-dos.png?alt=media",
-      "#000080": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2FBack%2Fhoodie-navy-JHK422-dos.png?alt=media",
-      "#4169E1": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2FBack%2Fhoodie-royalblue-JHK422-dos.png?alt=media",
-      "#FF0000": "https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/imported_products%2FVETEMENTS%2FJHK422%2FBack%2Fhoodie-red-JHK422-dos.png?alt=media",
+      "#FFFFFF": "/imported_products/VETEMENTS/JHK422/Back/hoodie-white-JHK422-dos.png",
+      "#000000": "/imported_products/VETEMENTS/JHK422/Back/hoodie-black-JHK422-dos.png",
+      "#4CBB17": "/imported_products/VETEMENTS/JHK422/Back/hoodie-kellygreen-JHK422-dos.png",
+      "#C3B091": "/imported_products/VETEMENTS/JHK422/Back/hoodie-khaki-JHK422-dos.png",
+      "#FFDB58": "/imported_products/VETEMENTS/JHK422/Back/hoodie-moustard-JHK422-dos.png",
+      "#000080": "/imported_products/VETEMENTS/JHK422/Back/hoodie-navy-JHK422-dos.png",
+      "#4169E1": "/imported_products/VETEMENTS/JHK422/Back/hoodie-royalblue-JHK422-dos.png",
+      "#FF0000": "/imported_products/VETEMENTS/JHK422/Back/hoodie-red-JHK422-dos.png",
     },
   },
   hoodie_bcwg008: {
@@ -415,9 +449,9 @@ export const productDatabase: ProductDatabase = {
     name: "Catalogue",
     price: 0,
     sizes: [], // Handled externally
-    slideImage: "https://signaid.eu/wp-content/uploads/2025/06/slide-polo.jpeg", // Placeholder
+    slideImage: "/assets/polo-black-JHK510.png",
     images: {
-      "#FFFFFF": "https://signaid.eu/wp-content/uploads/2025/06/polo-white-JHK510.png" // Placeholder
+      "#FFFFFF": "/assets/polo-black-JHK510.png"
     },
     backImages: {}
   }

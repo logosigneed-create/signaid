@@ -34,40 +34,94 @@ export const CookieConsent: React.FC = () => {
 
     return (
         <div className="fixed bottom-24 left-6 right-6 md:left-auto md:right-8 md:bottom-8 md:max-w-md z-[1000000] animate-in fade-in slide-in-from-bottom-5 duration-500">
-            <div className="bg-zinc-900/90 backdrop-blur-xl border border-white/10 p-6 rounded-3xl shadow-2xl overflow-hidden relative group">
-                {/* Decorative background element */}
-                <div className="absolute -top-10 -right-10 w-32 h-32 bg-brand-orange/10 rounded-full blur-3xl group-hover:bg-brand-orange/20 transition-colors duration-500"></div>
-
+            <div 
+                style={{
+                    backgroundColor: 'rgba(24, 24, 27, 0.96)',
+                    backdropFilter: 'blur(20px)',
+                    WebkitBackdropFilter: 'blur(20px)',
+                    border: '1px solid rgba(255, 255, 255, 0.18)',
+                    borderRadius: '24px',
+                    padding: '1.5rem',
+                    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(255, 85, 0, 0.15)',
+                    position: 'relative'
+                }}
+            >
                 <div className="flex items-start gap-4 relative z-10">
-                    <div className="p-3 bg-brand-orange/10 rounded-2xl text-brand-orange ring-1 ring-brand-orange/20">
+                    <div style={{
+                        padding: '0.75rem',
+                        backgroundColor: 'rgba(255, 85, 0, 0.15)',
+                        borderRadius: '16px',
+                        color: '#ff5500',
+                        border: '1px solid rgba(255, 85, 0, 0.3)'
+                    }}>
                         <Cookie size={24} strokeWidth={1.5} />
                     </div>
 
                     <div className="flex-1">
                         <div className="flex items-center justify-between mb-2">
-                            <h3 className="text-white font-bold text-lg tracking-tight">On garde le contact ?</h3>
+                            <h3 style={{ color: '#ffffff', fontWeight: 800, fontSize: '1.1rem', margin: 0 }}>
+                                On garde le contact ?
+                            </h3>
                             <button
                                 onClick={() => setIsVisible(false)}
-                                className="text-zinc-500 hover:text-white transition-colors"
+                                style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: '#a1a1aa',
+                                    cursor: 'pointer',
+                                    padding: '0.2rem',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                }}
+                                aria-label="Fermer"
                             >
                                 <X size={20} />
                             </button>
                         </div>
 
-                        <p className="text-zinc-400 text-sm leading-relaxed mb-6 font-light">
-                            Nous utilisons des cookies pour améliorer votre expérience de personnalisation et sécuriser vos paiements. Pour en savoir plus, consultez notre <Link to="/cookies" className="text-brand-orange hover:underline font-medium">politique de cookies</Link>.
+                        <p style={{ color: '#d4d4d8', fontSize: '0.86rem', lineHeight: 1.5, marginBottom: '1.25rem' }}>
+                            Nous utilisons des cookies pour améliorer votre expérience de personnalisation et sécuriser vos paiements. Pour en savoir plus, consultez notre <Link to="/cookies" style={{ color: '#ff7733', fontWeight: 600, textDecoration: 'underline' }}>politique de cookies</Link>.
                         </p>
 
-                        <div className="grid grid-cols-2 gap-3">
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                             <button
+                                type="button"
                                 onClick={handleDecline}
-                                className="px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold rounded-2xl transition-all text-sm active:scale-95"
+                                style={{
+                                    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                                    color: '#ffffff',
+                                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                                    padding: '0.75rem 1rem',
+                                    borderRadius: '14px',
+                                    fontWeight: 700,
+                                    fontSize: '0.88rem',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s ease',
+                                    textAlign: 'center'
+                                }}
                             >
                                 Refuser
                             </button>
                             <button
+                                type="button"
                                 onClick={handleAccept}
-                                className="px-4 py-3 bg-brand-orange hover:bg-orange-600 text-black font-black rounded-2xl transition-all text-sm shadow-lg shadow-brand-orange/20 flex items-center justify-center gap-2 active:scale-95"
+                                style={{
+                                    background: 'linear-gradient(135deg, #ff5500 0%, #ff7700 100%)',
+                                    color: '#ffffff',
+                                    border: 'none',
+                                    padding: '0.75rem 1rem',
+                                    borderRadius: '14px',
+                                    fontWeight: 900,
+                                    fontSize: '0.88rem',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 4px 16px rgba(255, 85, 0, 0.45)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '0.4rem',
+                                    transition: 'all 0.2s ease'
+                                }}
                             >
                                 <Check size={16} strokeWidth={3} />
                                 Accepter tout

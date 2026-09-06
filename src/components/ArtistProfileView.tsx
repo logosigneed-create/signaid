@@ -85,7 +85,7 @@ export interface ProductItem {
   imageBack?: string;
   frontImageUrl?: string;
   backImageUrl?: string;
-  ai?: string | null;
+  ai?: string | boolean | null;
   aiRemastered?: string | null;
   aiBack?: string | null;
   aiRemasteredBack?: string | null;
@@ -96,11 +96,13 @@ export interface ProductItem {
   color?: string;
   category?: string;
   garment?: string;
+  mechanical?: string | null;
+  base?: string | null;
   isAvailable?: boolean;
 }
 
 export const isBackViewUrl = (u?: string | null) => {
-  if (!u) return false;
+  if (!u || typeof u !== 'string') return false;
   const l = u.toLowerCase();
   if (l.includes('front') || l.includes('face') || l.includes('recto') || l.includes('tfront') || l.includes('pfront') || l.includes('hfront') || l.includes('tankfront') || l.includes('heavyfront')) return false;
   return /(back|dos|verso|tback|pback|hback|tankback|heavyback)/i.test(l);
@@ -268,8 +270,34 @@ export const createDynamicMerchProduct = (m: any, mBack: any, brandName: string)
   const isWhite = m.color === 'Blanc' || (typeof m.id === 'string' && m.id.toLowerCase().includes('white')) || (typeof m.title === 'string' && m.title.toLowerCase().includes('blanc'));
   const mColor = isWhite ? 'Blanc' : 'Noir';
 
-  const fImg = m.aiRemastered || m.ai || m.frontImageUrl || m.imageFront || m.imageUrl || m.url;
-  const bImg = mBack ? (mBack.aiRemastered || mBack.ai || mBack.backImageUrl || mBack.imageBack || mBack.imageUrl || mBack.url) : (m.aiRemasteredBack || m.aiBack || m.backImageUrl || m.imageBack || m.imageUrl || m.url);
+  const fImg = (typeof m.aiRemastered === 'string' && m.aiRemastered.trim() ? m.aiRemastered : null)
+    || (typeof m.ai === 'string' && m.ai.trim() ? m.ai : null)
+    || m.frontImageUrl
+    || m.imageFront
+    || m.imageUrl
+    || m.mechanical
+    || m.base
+    || m.url;
+
+  const bImg = mBack
+    ? ((typeof mBack.aiRemastered === 'string' && mBack.aiRemastered.trim() ? mBack.aiRemastered : null)
+      || (typeof mBack.ai === 'string' && mBack.ai.trim() ? mBack.ai : null)
+      || mBack.backImageUrl
+      || mBack.imageBack
+      || mBack.imageUrl
+      || mBack.mechanicalBack
+      || mBack.mechanical
+      || mBack.base
+      || mBack.url)
+    : ((typeof m.aiRemasteredBack === 'string' && m.aiRemasteredBack.trim() ? m.aiRemasteredBack : null)
+      || (typeof m.aiBack === 'string' && m.aiBack.trim() ? m.aiBack : null)
+      || m.backImageUrl
+      || m.imageBack
+      || m.imageUrl
+      || m.mechanicalBack
+      || m.mechanical
+      || m.base
+      || m.url);
 
   let defaultName = mGarment === 'tank_top'
     ? (isWhite ? 'Débardeur Blanc' : 'Débardeur')
@@ -332,10 +360,12 @@ export const createDynamicMerchProduct = (m: any, mBack: any, brandName: string)
     imageFront: fImg,
     imageBack: bImg || undefined,
     imageUrl: fImg,
-    ai: m.aiRemastered || m.ai || (isAiRenderUrl(fImg) ? fImg : null),
-    aiRemastered: m.aiRemastered || m.ai || (isAiRenderUrl(fImg) ? fImg : null),
-    aiBack: mBack?.aiRemastered || mBack?.ai || (isAiRenderUrl(bImg) ? bImg : null),
-    aiRemasteredBack: mBack?.aiRemastered || mBack?.ai || (isAiRenderUrl(bImg) ? bImg : null),
+    mechanical: m.mechanical || null,
+    base: m.base || null,
+    ai: (typeof m.aiRemastered === 'string' && m.aiRemastered.trim()) ? m.aiRemastered : ((typeof m.ai === 'string' && m.ai.trim()) ? m.ai : (isAiRenderUrl(fImg) ? fImg : (typeof m.ai === 'boolean' ? m.ai : null))),
+    aiRemastered: (typeof m.aiRemastered === 'string' && m.aiRemastered.trim()) ? m.aiRemastered : ((typeof m.ai === 'string' && m.ai.trim()) ? m.ai : (isAiRenderUrl(fImg) ? fImg : null)),
+    aiBack: (typeof mBack?.aiRemastered === 'string' && mBack.aiRemastered.trim()) ? mBack.aiRemastered : ((typeof mBack?.ai === 'string' && mBack.ai.trim()) ? mBack.ai : (isAiRenderUrl(bImg) ? bImg : null)),
+    aiRemasteredBack: (typeof mBack?.aiRemastered === 'string' && mBack.aiRemastered.trim()) ? mBack.aiRemastered : ((typeof mBack?.ai === 'string' && mBack.ai.trim()) ? mBack.ai : (isAiRenderUrl(bImg) ? bImg : null)),
     images: {
       front: fImg,
       face: fImg,
@@ -1118,9 +1148,13 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         )
       ); const prodsObj = (siteData?.products && typeof siteData.products === 'object' && !Array.isArray(siteData.products))
         ? siteData.products
-        : ((previewData?.products && typeof previewData.products === 'object' && !Array.isArray(previewData.products))
-          ? previewData.products
-          : null);
+        : (siteData?.productsMap && typeof siteData.productsMap === 'object' && !Array.isArray(siteData.productsMap))
+          ? siteData.productsMap
+          : ((previewData?.products && typeof previewData.products === 'object' && !Array.isArray(previewData.products))
+            ? previewData.products
+            : (previewData?.productsMap && typeof previewData.productsMap === 'object' && !Array.isArray(previewData.productsMap))
+              ? previewData.productsMap
+              : null);
 
       const prodsAsItems: any[] = [];
       if (prodsObj) {
@@ -1128,8 +1162,22 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
           if (p && typeof p === 'object') {
             const gType = (garmentKey.includes('hoodie') || garmentKey.includes('sweat')) ? 'sweat' : (garmentKey.includes('polo') ? 'polo' : (garmentKey.includes('basic') ? 'tshirt_basic' : (garmentKey.includes('tank') ? 'tank_top' : (garmentKey.includes('heavy') ? 'tshirt_oversize' : 'tshirt'))));
             const item = p as any;
-            const fImg = item.aiRemastered || item.ai || item.frontImageUrl || item.imageFront || item.imageUrl || item.aiImageUrl || item.mechanical || item.base;
-            const bImg = item.aiRemasteredBack || item.aiBack || item.backImageUrl || item.imageBack || item.imageUrl || item.mechanical || item.base;
+            const fImg = (typeof item.aiRemastered === 'string' && item.aiRemastered.trim() ? item.aiRemastered : null)
+              || (typeof item.ai === 'string' && item.ai.trim() ? item.ai : null)
+              || item.frontImageUrl
+              || item.imageFront
+              || item.imageUrl
+              || item.aiImageUrl
+              || item.mechanical
+              || item.base;
+            const bImg = (typeof item.aiRemasteredBack === 'string' && item.aiRemasteredBack.trim() ? item.aiRemasteredBack : null)
+              || (typeof item.aiBack === 'string' && item.aiBack.trim() ? item.aiBack : null)
+              || item.backImageUrl
+              || item.imageBack
+              || item.imageUrl
+              || item.mechanicalBack
+              || item.mechanical
+              || item.base;
             if (fImg || bImg) {
               prodsAsItems.push({
                 id: p.id || `${gType}-item`,
@@ -1137,8 +1185,10 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
                 name: p.name || p.title || `${siteData?.companyName || previewData?.companyName || 'Merch'} ${gType}`,
                 garment: gType,
                 price: p.price,
-                ai: item.aiRemastered || item.ai || null,
-                aiRemastered: item.aiRemastered || item.ai || null,
+                ai: (typeof item.aiRemastered === 'string' && item.aiRemastered.trim()) ? item.aiRemastered : ((typeof item.ai === 'string' && item.ai.trim()) ? item.ai : (typeof item.ai === 'boolean' ? item.ai : null)),
+                aiRemastered: (typeof item.aiRemastered === 'string' && item.aiRemastered.trim()) ? item.aiRemastered : ((typeof item.ai === 'string' && item.ai.trim()) ? item.ai : null),
+                mechanical: item.mechanical || null,
+                base: item.base || null,
                 frontImageUrl: fImg,
                 imageFront: fImg,
                 backImageUrl: bImg,
@@ -1154,8 +1204,10 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         ...(prodsAsItems.length > 0 ? prodsAsItems : []),
         ...(Array.isArray(previewData?.items) ? previewData.items : []),
         ...(Array.isArray(siteData?.items) ? siteData.items : []),
-        ...(Array.isArray(previewData?.mockups) ? previewData.mockups : []),
-        ...(Array.isArray(siteData?.mockups) ? siteData.mockups : [])
+        ...(Array.isArray(previewData?.products) ? previewData.products : []),
+        ...(Array.isArray(siteData?.products) ? siteData.products : []),
+        ...(Array.isArray(previewData?.mockups) ? previewData.mockups : (previewData?.mockups && typeof previewData.mockups === 'object' ? Object.values(previewData.mockups) : [])),
+        ...(Array.isArray(siteData?.mockups) ? siteData.mockups : (siteData?.mockups && typeof siteData.mockups === 'object' ? Object.values(siteData.mockups) : []))
       ];
 
       const items = rawItemsList.filter((it: any) => {
@@ -1311,7 +1363,7 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         let parsedProducts: ProductItem[] = [];
 
         const isBackUrl = (u?: string | null) => {
-          if (!u) return false;
+          if (!u || typeof u !== 'string') return false;
           const lower = u.toLowerCase();
           if (lower.includes('front') || lower.includes('face') || lower.includes('recto') || lower.includes('tfront') || lower.includes('pfront') || lower.includes('hfront') || lower.includes('tankfront') || lower.includes('heavyfront')) {
             return false;
@@ -1320,13 +1372,15 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         };
 
         const isFrontUrl = (u?: string | null) => {
-          if (!u) return false;
+          if (!u || typeof u !== 'string') return false;
           const lower = u.toLowerCase();
           if (lower.includes('back') || lower.includes('dos') || lower.includes('verso') || lower.includes('tback') || lower.includes('pback') || lower.includes('hback') || lower.includes('tankback') || lower.includes('heavyback')) {
             return false;
           }
           return /(front|face|recto|tfront|pfront|hfront|tankfront|heavyfront)/i.test(lower);
         };
+
+        const safeStr = (v: any): string | null => (typeof v === 'string' && v.trim() !== '') ? v : null;
 
         if (items && items.length > 0) {
           const grouped: Record<string, ProductItem> = {};
@@ -1352,10 +1406,10 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
             const colorName = isWhite ? 'Blanc' : 'Noir';
             const defaultName = g === 'polo' ? (isWhite ? 'Polo Blanc' : 'Polo Premium') : (g === 'sweat' ? (isWhite ? 'Hoodie Blanc' : 'Hoodie Premium') : (g === 'tank_top' ? (isWhite ? 'Débardeur Blanc' : 'Débardeur') : (g === 'tshirt_oversize' ? 'T-Shirt Heavyweight' : (g === 'cap' ? 'Casquette Officielle' : (g === 'tote_bag' ? 'Tote Bag Officiel' : (g === 'tshirt_basic' ? 'T-Shirt Léger' : (isWhite ? 'T-Shirt Blanc' : 'T-Shirt Premium')))))));
 
-            const rawFront = it.aiRemastered || it.ai || it.frontImageUrl || it.imageFront || it.imageUrl || it.realAiSnapshotUrl || it.imageStudio || (idbImages[it.id] && !isBackUrl(idbImages[it.id]) ? idbImages[it.id] : null) || it.mechanical || it.base;
+            const rawFront = safeStr(it.aiRemastered) || safeStr(it.ai) || safeStr(it.frontImageUrl) || safeStr(it.imageFront) || safeStr(it.imageUrl) || safeStr(it.realAiSnapshotUrl) || safeStr(it.imageStudio) || (idbImages[it.id] && !isBackUrl(idbImages[it.id]) ? idbImages[it.id] : null) || safeStr(it.mechanical) || safeStr(it.base);
             const candidateFront = (rawFront && !isBackUrl(rawFront)) ? rawFront : (idbImages[g === 'polo' ? 'pFront' : (g === 'sweat' ? 'hFront' : (g === 'tank_top' ? 'tankFront' : (g === 'tshirt_oversize' ? 'heavyFront' : 'tFront')))] || defaultFrontMap[g]);
 
-            const rawBack = it.aiRemasteredBack || it.aiBack || it.backImageUrl || it.imageBack || (isBack ? (it.aiRemastered || it.ai) : null) || it.realAiSnapshotUrl || it.imageUrl || (idbImages[it.id] && !isFrontUrl(idbImages[it.id]) ? idbImages[it.id] : null) || it.mechanical || it.base;
+            const rawBack = safeStr(it.aiRemasteredBack) || safeStr(it.aiBack) || safeStr(it.backImageUrl) || safeStr(it.imageBack) || (isBack ? (safeStr(it.aiRemastered) || safeStr(it.ai)) : null) || safeStr(it.realAiSnapshotUrl) || safeStr(it.imageUrl) || (idbImages[it.id] && !isFrontUrl(idbImages[it.id]) ? idbImages[it.id] : null) || safeStr(it.mechanicalBack) || safeStr(it.baseBack) || safeStr(it.mechanical) || safeStr(it.base);
             const candidateBack = (rawBack && !isFrontUrl(rawBack)) ? rawBack : (idbImages[g === 'polo' ? 'pBack' : (g === 'sweat' ? 'hBack' : (g === 'tank_top' ? 'tankBack' : (g === 'tshirt_oversize' ? 'heavyBack' : 'tBack')))] || defaultBackMap[g]);
 
             if (!grouped[itemKey]) {
@@ -1366,11 +1420,13 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
                 garment: g,
                 color: colorName,
                 colors: [colorName],
-                ai: it.aiRemastered || it.ai || null,
-                aiRemastered: it.aiRemastered || it.ai || null,
+                ai: safeStr(it.aiRemastered) || safeStr(it.ai) || null,
+                aiRemastered: safeStr(it.aiRemastered) || safeStr(it.ai) || null,
                 frontImageUrl: isBack ? (defaultFrontMap[g] || defaultFrontMap.tshirt) : (candidateFront || defaultFrontMap[g]),
                 backImageUrl: isBack ? (candidateBack || defaultBackMap[g]) : (defaultBackMap[g] || defaultBackMap.tshirt),
                 sizes: (g === 'cap' || g === 'tote_bag') ? ['Unique'] : ['S', 'M', 'L', 'XL'],
+                mechanical: safeStr(it.mechanical) || null,
+                base: safeStr(it.base) || null,
               };
             } else {
               if (isBack) {
@@ -1380,9 +1436,9 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
               } else {
                 if (candidateFront && candidateFront !== defaultFrontMap[g]) {
                   grouped[itemKey].frontImageUrl = candidateFront;
-                  if (it.aiRemastered || it.ai) {
-                    (grouped[itemKey] as any).ai = it.aiRemastered || it.ai;
-                    (grouped[itemKey] as any).aiRemastered = it.aiRemastered || it.ai;
+                  if (safeStr(it.aiRemastered) || safeStr(it.ai)) {
+                    (grouped[itemKey] as any).ai = safeStr(it.aiRemastered) || safeStr(it.ai);
+                    (grouped[itemKey] as any).aiRemastered = safeStr(it.aiRemastered) || safeStr(it.ai);
                   }
                 }
                 if (it.title && !it.title.includes('FACE') && !it.title.includes('DOS')) grouped[itemKey].name = it.title;
@@ -1390,12 +1446,14 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
               }
               if (candidateFront && candidateFront !== defaultFrontMap[g]) {
                 grouped[itemKey].frontImageUrl = candidateFront;
-                if (it.aiRemastered || it.ai) {
-                  (grouped[itemKey] as any).ai = it.aiRemastered || it.ai;
-                  (grouped[itemKey] as any).aiRemastered = it.aiRemastered || it.ai;
+                if (safeStr(it.aiRemastered) || safeStr(it.ai)) {
+                  (grouped[itemKey] as any).ai = safeStr(it.aiRemastered) || safeStr(it.ai);
+                  (grouped[itemKey] as any).aiRemastered = safeStr(it.aiRemastered) || safeStr(it.ai);
                 }
               }
               if (candidateBack && candidateBack !== defaultBackMap[g]) grouped[itemKey].backImageUrl = candidateBack;
+              if (safeStr(it.mechanical)) (grouped[itemKey] as any).mechanical = safeStr(it.mechanical);
+              if (safeStr(it.base)) (grouped[itemKey] as any).base = safeStr(it.base);
             }
           });
           parsedProducts = Object.values(grouped);
@@ -1408,28 +1466,30 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
             if (pEntry) {
               const targetG = (gKey === 'hoodie' || gKey === 'sweat') ? 'sweat' : gKey;
               let existing = parsedProducts.find(p => p.garment === targetG);
-              const fImg = pEntry.aiRemastered || pEntry.ai || pEntry.frontImageUrl || pEntry.imageFront || pEntry.imageUrl || pEntry.aiImageUrl || pEntry.mechanical || pEntry.base;
-              const bImg = pEntry.aiRemasteredBack || pEntry.aiBack || pEntry.backImageUrl || pEntry.imageBack || pEntry.mechanical || pEntry.base;
+              const fImg = safeStr(pEntry.aiRemastered) || safeStr(pEntry.ai) || safeStr(pEntry.frontImageUrl) || safeStr(pEntry.imageFront) || safeStr(pEntry.imageUrl) || safeStr(pEntry.aiImageUrl) || safeStr(pEntry.mechanical) || safeStr(pEntry.base);
+              const bImg = safeStr(pEntry.aiRemasteredBack) || safeStr(pEntry.aiBack) || safeStr(pEntry.backImageUrl) || safeStr(pEntry.imageBack) || safeStr(pEntry.mechanicalBack) || safeStr(pEntry.baseBack) || safeStr(pEntry.mechanical) || safeStr(pEntry.base);
               if (!existing && (fImg || bImg)) {
                 existing = {
                   id: `${targetG}-pack`,
                   name: pEntry.name || `${artistProfile.companyName} ${targetG === 'polo' ? 'Polo Premium' : (targetG === 'sweat' ? 'Hoodie VIP' : (targetG === 'tank_top' ? 'Débardeur' : (targetG === 'tshirt_oversize' ? 'T-Shirt Heavyweight' : 'T-Shirt Premium')))}`,
                   price: (pEntry.price && pEntry.price <= 50) ? pEntry.price : (targetG === 'sweat' ? 49.00 : (targetG === 'polo' ? 39.00 : (targetG === 'tank_top' ? 27.99 : 29.99))),
                   garment: targetG,
-                  ai: pEntry.aiRemastered || pEntry.ai || null,
-                  aiRemastered: pEntry.aiRemastered || pEntry.ai || null,
+                  ai: safeStr(pEntry.aiRemastered) || safeStr(pEntry.ai) || null,
+                  aiRemastered: safeStr(pEntry.aiRemastered) || safeStr(pEntry.ai) || null,
                   frontImageUrl: fImg || defaultFrontMap[targetG],
                   backImageUrl: bImg || defaultBackMap[targetG],
                   sizes: ['S', 'M', 'L', 'XL'],
-                  colors: ['Noir', 'Blanc']
+                  colors: ['Noir', 'Blanc'],
+                  mechanical: safeStr(pEntry.mechanical) || null,
+                  base: safeStr(pEntry.base) || null,
                 };
                 parsedProducts.push(existing);
               } else if (existing) {
                 if (fImg && fImg !== defaultFrontMap[targetG]) {
                   existing.frontImageUrl = fImg;
-                  if (pEntry.aiRemastered || pEntry.ai) {
-                    (existing as any).ai = pEntry.aiRemastered || pEntry.ai;
-                    (existing as any).aiRemastered = pEntry.aiRemastered || pEntry.ai;
+                  if (safeStr(pEntry.aiRemastered) || safeStr(pEntry.ai)) {
+                    (existing as any).ai = safeStr(pEntry.aiRemastered) || safeStr(pEntry.ai);
+                    (existing as any).aiRemastered = safeStr(pEntry.aiRemastered) || safeStr(pEntry.ai);
                   }
                 }
                 if (bImg && bImg !== defaultBackMap[targetG]) {
@@ -1437,6 +1497,8 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
                 }
                 if (pEntry.price) existing.price = (pEntry.price <= 50) ? pEntry.price : 49.00;
                 if (pEntry.name) existing.name = pEntry.name;
+                if (safeStr(pEntry.mechanical)) (existing as any).mechanical = safeStr(pEntry.mechanical);
+                if (safeStr(pEntry.base)) (existing as any).base = safeStr(pEntry.base);
               }
             }
           });
@@ -1525,16 +1587,18 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         return mGarment === pGarment && mColor === pColor;
       });
 
-      const mFrontCandidate = mFront?.aiRemastered || mFront?.ai || (isAiRenderUrl(mFront?.frontImageUrl || mFront?.imageUrl || mFront?.url) ? (mFront?.frontImageUrl || mFront?.imageUrl || mFront?.url) : null) || mFront?.frontImageUrl || mFront?.imageFront || mFront?.imageUrl || mFront?.url;
-      const mBackCandidate = mBack?.aiRemasteredBack || mBack?.aiBack || mBack?.aiRemastered || mBack?.ai || (isAiRenderUrl(mBack?.backImageUrl || mBack?.imageUrl || mBack?.url) ? (mBack?.backImageUrl || mBack?.imageUrl || mBack?.url) : null) || mBack?.backImageUrl || mBack?.imageBack || mBack?.imageUrl || mBack?.url || mFront?.aiRemasteredBack || mFront?.aiBack;
+      const safeStr = (v: any): string | null => (typeof v === 'string' && v.trim() !== '') ? v : null;
 
-      let aiFront = mFrontCandidate || p.aiRemastered || p.ai || p.frontImageUrl || p.imageUrl;
-      let aiBack = mBackCandidate || p.aiRemasteredBack || p.aiBack || p.backImageUrl;
+      const mFrontCandidate = safeStr(mFront?.aiRemastered) || safeStr(mFront?.ai) || (isAiRenderUrl(mFront?.frontImageUrl || mFront?.imageUrl || mFront?.url) ? (mFront?.frontImageUrl || mFront?.imageUrl || mFront?.url) : null) || safeStr(mFront?.frontImageUrl) || safeStr(mFront?.imageFront) || safeStr(mFront?.imageUrl) || safeStr(mFront?.url) || safeStr(mFront?.mechanical) || safeStr(mFront?.base);
+      const mBackCandidate = safeStr(mBack?.aiRemasteredBack) || safeStr(mBack?.aiBack) || safeStr(mBack?.aiRemastered) || safeStr(mBack?.ai) || (isAiRenderUrl(mBack?.backImageUrl || mBack?.imageUrl || mBack?.url) ? (mBack?.backImageUrl || mBack?.imageUrl || mBack?.url) : null) || safeStr(mBack?.backImageUrl) || safeStr(mBack?.imageBack) || safeStr(mBack?.imageUrl) || safeStr(mBack?.url) || safeStr(mFront?.aiRemasteredBack) || safeStr(mFront?.aiBack) || safeStr(mBack?.mechanicalBack) || safeStr(mBack?.baseBack) || safeStr(mBack?.mechanical) || safeStr(mBack?.base);
 
-      if (aiFront && (aiFront.includes('snapshot') || aiFront.includes('jhk') || aiFront.includes('clubvision_tshirt_front') || aiFront.includes('clubvision_polo_front') || aiFront.includes('clubvision_hoodie_front'))) {
+      let aiFront = mFrontCandidate || safeStr(p.aiRemastered) || safeStr(p.ai) || safeStr(p.frontImageUrl) || safeStr(p.imageUrl) || safeStr(p.mechanical) || safeStr(p.base);
+      let aiBack = mBackCandidate || safeStr(p.aiRemasteredBack) || safeStr(p.aiBack) || safeStr(p.backImageUrl) || safeStr(p.mechanicalBack) || safeStr(p.baseBack) || safeStr(p.mechanical) || safeStr(p.base);
+
+      if (aiFront && typeof aiFront === 'string' && (aiFront.includes('snapshot') || aiFront.includes('jhk') || aiFront.includes('clubvision_tshirt_front') || aiFront.includes('clubvision_polo_front') || aiFront.includes('clubvision_hoodie_front'))) {
         aiFront = mFrontCandidate || null;
       }
-      if (aiBack && (aiBack.includes('snapshot') || aiBack.includes('jhk') || aiBack.includes('clubvision_tshirt_back') || aiBack.includes('clubvision_polo_back') || aiBack.includes('clubvision_hoodie_back'))) {
+      if (aiBack && typeof aiBack === 'string' && (aiBack.includes('snapshot') || aiBack.includes('jhk') || aiBack.includes('clubvision_tshirt_back') || aiBack.includes('clubvision_polo_back') || aiBack.includes('clubvision_hoodie_back'))) {
         aiBack = mBackCandidate || null;
       }
 
@@ -1554,6 +1618,8 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         updated.imageBack = aiBack;
         updated.images = { ...(updated.images || {}), back: aiBack, dos: aiBack, verso: aiBack };
       }
+      if (safeStr(mFront?.mechanical || p.mechanical)) updated.mechanical = safeStr(mFront?.mechanical || p.mechanical);
+      if (safeStr(mFront?.base || p.base)) updated.base = safeStr(mFront?.base || p.base);
       return updated;
     });
 
@@ -1628,14 +1694,15 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         list = resolveUniversalAiProducts(list, targetIdentifier, activeBrandName);
 
         return list.map((product: any) => {
+          const safeStr = (v: any): string | null => (typeof v === 'string' && v.trim() !== '') ? v : null;
           const displayImage = (
-            product.aiRemastered ||
-            product.ai ||
-            product.frontImageUrl ||
-            product.imageFront ||
-            product.imageUrl ||
-            product.mechanical ||
-            product.base
+            safeStr(product.aiRemastered) ||
+            safeStr(product.ai) ||
+            safeStr(product.frontImageUrl) ||
+            safeStr(product.imageFront) ||
+            safeStr(product.imageUrl) ||
+            safeStr(product.mechanical) ||
+            safeStr(product.base)
           );
 
           console.log("[DEBUG_MERCH_RENDER]", {

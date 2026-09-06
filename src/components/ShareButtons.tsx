@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { db } from '../firebaseConfig';
 import { setDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { sanitizeForFirestore } from '../utils/firestoreSanitizer';
 
 interface ShareButtonsProps {
     postId: string;
@@ -53,12 +54,12 @@ export const ShareButtons: React.FC<ShareButtonsProps> = ({
             // Check if exists, if not create with metadata
             const snap = await getDoc(linkRef);
             if (!snap.exists()) {
-                await setDoc(linkRef, {
+                await setDoc(linkRef, sanitizeForFirestore({
                     postId: postId,
                     productType: productType || null,
                     createdAt: serverTimestamp(),
                     source: 'web_share'
-                });
+                }));
             }
 
             const url = `${window.location.origin}/s/${shortId}`;

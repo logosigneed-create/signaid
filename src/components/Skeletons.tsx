@@ -93,19 +93,17 @@ export const CustomizerSkeleton = () => (
 );
 
 export const GenericSkeleton = () => (
-    <div className="w-full h-screen bg-white flex flex-col">
-        <div className="h-16 border-b flex items-center px-6">
-            <ShimmerItem className="w-40 h-8" />
+    <div className="w-full min-h-screen bg-[#09090b] flex flex-col items-center justify-center gap-6 select-none animate-fade-in">
+        <svg className="w-14 h-8 animate-pulse opacity-80" viewBox="0 0 1024 572" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <g fill="#f4f4f5">
+                <path d="M 42,9 L 10,47 L 0,70 L 0,81 L 80,299 L 112,322 L 182,356 L 303,390 L 447,425 L 455,430 L 454,435 L 448,437 L 160,416 L 213,519 L 231,541 L 248,549 L 367,571 L 488,488 L 490,478 L 478,353 L 223,231 L 189,218 L 210,221 L 490,296 L 315,122 L 196,20 L 175,10 L 152,5 L 82,4 Z" />
+                <path d="M 981,4 L 957,0 L 878,0 L 849,5 L 825,17 L 766,66 L 674,151 L 533,297 L 838,218 L 796,234 L 547,353 L 543,365 L 534,486 L 657,568 L 785,542 L 799,529 L 821,495 L 863,411 L 571,436 L 568,430 L 575,425 L 841,352 L 912,317 L 945,293 L 1023,78 L 1023,65 L 1013,42 Z" />
+            </g>
+        </svg>
+        <div className="w-36 h-0.5 bg-white/10 rounded-full overflow-hidden relative">
+            <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-white/80 to-transparent rounded-full animate-shimmer" />
         </div>
-        <div className="flex-1 p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3, 4, 5, 6].map(i => (
-                <div key={i} className="flex flex-col gap-4">
-                    <ShimmerItem className="w-full aspect-square rounded-2xl" />
-                    <ShimmerItem className="w-3/4 h-4" />
-                    <ShimmerItem className="w-1/2 h-4" />
-                </div>
-            ))}
-        </div>
+        <span className="text-[9px] font-bold tracking-[0.28em] text-zinc-500 uppercase font-mono">INITIALISATION</span>
     </div>
 );
 export const ProfileSkeleton = () => (
@@ -142,3 +140,5 @@ export const ProfileSkeleton = () => (
         </div>
     </div>
 );
+
+export { ProductPortalSkeleton, ProductCardSkeleton, ProductGridSkeleton } from './ProductPortalSkeleton';

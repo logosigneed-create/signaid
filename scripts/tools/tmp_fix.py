@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import sys
 
-filepath = r'c:\Partage\Projet\Signaid V24\src\restoration\CustomizerView.Restored.tsx'
+filepath = r'c:\Partage\Projet\signaid-studio\src\restoration\CustomizerView.Restored.tsx'
 
 with open(filepath, 'rb') as f:
     byte_content = f.read()

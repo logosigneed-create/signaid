@@ -11,7 +11,7 @@ const filesToRestore = [
     'src/components/CartView.tsx'
 ];
 
-const targetDir = 'C:\\Partage\\Projet\\Signaid V24';
+const targetDir = 'C:\Partage\Projet\signaid-studio';
 
 console.log('Undoing restore...');
 

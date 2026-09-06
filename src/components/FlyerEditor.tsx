@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { flyerService, FlyerConfig, FlyerHotspot } from '../services/flyerService';
+import { flyerService, FlyerConfig, FlyerHotspot, DEFAULT_IN_THE_DARK_FLYER_CONFIG } from '../services/flyerService';
 import { storage } from '../firebaseConfig';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
@@ -33,15 +33,7 @@ const FlyerEditor: React.FC = () => {
             if (data) {
                 setConfig(data);
             } else {
-                // Initial Default State
-                setConfig({
-                    theme: {},
-                    globalLink: "https://www.signaid.eu/inthedark",
-                    pages: {
-                        recto: { image: 'recto.png', hotspots: [] },
-                        verso: { image: 'verso.png', hotspots: [] }
-                    }
-                });
+                setConfig(DEFAULT_IN_THE_DARK_FLYER_CONFIG);
             }
             setLoading(false);
         };
@@ -179,7 +171,10 @@ const FlyerEditor: React.FC = () => {
         setUploadingImage(true);
         try {
             const storageRef = ref(storage, `flyers/${Date.now()}_${file.name}`);
-            const uploadTask = uploadBytesResumable(storageRef, file);
+            const uploadTask = uploadBytesResumable(storageRef, file, {
+                contentType: file.type || 'image/png',
+                cacheControl: 'public, max-age=86400'
+            });
 
             uploadTask.on(
                 'state_changed',

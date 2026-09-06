@@ -1,6 +1,7 @@
 import { db, storage } from '../firebaseConfig';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
-import { collection, doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, serverTimestamp, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { sanitizeForFirestore } from '../utils/firestoreSanitizer';
 import { CartItem } from '../types';
 
 class DesignSharingService {
@@ -14,7 +15,10 @@ class DesignSharingService {
         try {
             const filename = `${folder}/${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
             const storageRef = ref(storage, filename);
-            await uploadString(storageRef, dataUrl, 'data_url');
+            await uploadString(storageRef, dataUrl, 'data_url', {
+                contentType: 'image/png',
+                cacheControl: 'public, max-age=86400'
+            });
             return await getDownloadURL(storageRef);
         } catch (error) {
             console.error("Error uploading shared media:", error);
@@ -77,7 +81,7 @@ class DesignSharingService {
                 createdAt: serverTimestamp(),
                 isShared: true
             });
-            await setDoc(doc(this.sharedDesignsCollection, designId), finalDesignData);
+            await setDoc(doc(this.sharedDesignsCollection, designId), sanitizeForFirestore(finalDesignData));
 
             // 3. Generate a short ID for the link
             const shortId = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -88,7 +92,7 @@ class DesignSharingService {
                 createdAt: serverTimestamp(),
                 source: 'customizer_share'
             });
-            await setDoc(doc(this.shortLinksCollection, shortId), finalShortLinkData);
+            await setDoc(doc(this.shortLinksCollection, shortId), sanitizeForFirestore(finalShortLinkData));
 
             console.log(`[DesignSharing] Design shared successfully. Link ID: ${shortId}`);
             return shortId;

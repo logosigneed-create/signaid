@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Widget Live Position - DJ D-Fazz</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
+        body { background: #0c0f17; color: white; border-radius: 16px; overflow: hidden; padding: 12px; }
+        
+        .widget-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .artist-info { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 0.95rem; }
+        
+        .status-badge { 
+            background: rgba(57, 255, 20, 0.15); 
+            border: 1px solid #39ff14; 
+            color: #39ff14; 
+            padding: 4px 10px; 
+            border-radius: 20px; 
+            font-size: 0.75rem; 
+            font-weight: 700;
+            transition: all 0.3s ease;
+        }
+        #widget-map { width: 100%; height: 200px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); }
+        
+        .status-controls { margin-top: 10px; display: flex; gap: 8px; }
+        select {
+            width: 100%;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            outline: none;
+            cursor: pointer;
+        }
+        select option {
+            background: #121624;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="widget-header">
+        <div class="artist-info">
+            <span style="font-size:1.3rem;">🎧</span>
+            <div>
+                <div id="artist-name">DJ D-Fazz</div>
+                <div style="font-size:0.75rem; color:#aaa; font-weight:400;">Position & Live Event</div>
+            </div>
+        </div>
+        <div id="live-status-badge" class="status-badge">🟢 En Live</div>
+    </div>
+    <!-- CARTE TEMPS RÉEL DU PROFIL -->
+    <div id="widget-map"></div>
+    <!-- SÉLECTEUR DE STATUT DE DIFFUSION -->
+    <div class="status-controls">
+        <select id="status-selector" onchange="updateLiveStatus(this.value)">
+            <option value="🟢 En Live au Bar Le Club VIP">🟢 En Live au Bar Le Club VIP</option>
+            <option value="📍 En Déplacement • Namur">📍 En Déplacement • Namur</option>
+            <option value="⭐ Disponible pour Booking">⭐ Disponible pour Booking</option>
+            <option value="🔴 Hors Ligne">🔴 Hors Ligne</option>
+        </select>
+    </div>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Permet la configuration via paramètres URL optionnels (?artist=...&status=...&lat=...&lng=...)
+        const urlParams = new URLSearchParams(window.location.search);
+        const artistName = urlParams.get('artist') || "DJ D-Fazz";
+        const initialStatus = urlParams.get('status');
+        let lat = parseFloat(urlParams.get('lat')) || 50.4669;
+        let lng = parseFloat(urlParams.get('lng')) || 4.8675;
+
+        document.getElementById('artist-name').innerText = artistName;
+
+        // Position initiale (Ex: Namur, Wallonie)
+        let artistPos = [lat, lng];
+        const map = L.map('widget-map', { zoomControl: false, attributionControl: false }).setView(artistPos, 16);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+        // Marqueur de l'artiste
+        const marker = L.marker(artistPos).addTo(map)
+            .bindPopup(`<b>${artistName}</b><br>En Live au Bar Le Club VIP`).openPopup();
+
+        function updateLiveStatus(newStatus) {
+            const badge = document.getElementById('live-status-badge');
+            const parts = newStatus.split(' ');
+            badge.innerText = parts[0] + ' ' + (parts[1] || '');
+
+            if (newStatus.includes('🔴') || newStatus.includes('Hors Ligne')) {
+                badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                badge.style.borderColor = '#ef4444';
+                badge.style.color = '#ef4444';
+            } else if (newStatus.includes('📍') || newStatus.includes('Déplacement')) {
+                badge.style.background = 'rgba(56, 189, 248, 0.15)';
+                badge.style.borderColor = '#38bdf8';
+                badge.style.color = '#38bdf8';
+            } else if (newStatus.includes('⭐') || newStatus.includes('Disponible')) {
+                badge.style.background = 'rgba(234, 179, 8, 0.15)';
+                badge.style.borderColor = '#eab308';
+                badge.style.color = '#eab308';
+            } else {
+                badge.style.background = 'rgba(57, 255, 20, 0.15)';
+                badge.style.borderColor = '#39ff14';
+                badge.style.color = '#39ff14';
+            }
+
+            marker.setPopupContent(`<b>${artistName}</b><br>${newStatus}`);
+        }
+
+        if (initialStatus) {
+            const selectEl = document.getElementById('status-selector');
+            if (selectEl) {
+                // If the status isn't in existing options, add it dynamically
+                let hasMatch = false;
+                for (let i = 0; i < selectEl.options.length; i++) {
+                    if (selectEl.options[i].value === initialStatus) {
+                        hasMatch = true;
+                        break;
+                    }
+                }
+                if (!hasMatch) {
+                    const newOpt = document.createElement('option');
+                    newOpt.value = initialStatus;
+                    newOpt.innerText = initialStatus;
+                    selectEl.appendChild(newOpt);
+                }
+                selectEl.value = initialStatus;
+                updateLiveStatus(initialStatus);
+            }
+        }
+    </script>
+</body>
+</html>

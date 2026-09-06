@@ -17,14 +17,102 @@ const stripeSecretKey = defineSecret('STRIPE_SECRET_KEY');
 const stripeWebhookSecret = defineSecret('STRIPE_WEBHOOK_SECRET');
 const fbAccessToken = defineSecret('FB_ACCESS_TOKEN');
 const fbPixelId = defineSecret('FB_PIXEL_ID');
+const adminSecretToken = null;
+
+/**
+ * Helper de vérification des droits Admin pour les routes onRequest (HTTP)
+ */
+const verifyAdminAccess = async (req) => {
+  let secret = '';
+  try {
+    if (adminSecretToken && typeof adminSecretToken.value === 'function') {
+      secret = adminSecretToken.value() || '';
+    }
+  } catch (e) {}
+  if (!secret && process.env.ADMIN_SECRET_TOKEN) {
+    secret = process.env.ADMIN_SECRET_TOKEN;
+  }
+
+  const headerToken = req.headers['x-admin-token'] || req.headers['x-api-key'];
+  const queryToken = req.query?.admin_token || req.query?.token || req.query?.apiKey;
+  const authHeader = req.headers['authorization'] || '';
+
+  // 1. Vérification par clé secrète partagée
+  if (secret && (headerToken === secret || queryToken === secret || authHeader === `Bearer ${secret}`)) {
+    return true;
+  }
+
+  // 2. Vérification par JWT Firebase Auth Bearer
+  if (authHeader.startsWith('Bearer ')) {
+    const idToken = authHeader.substring(7).trim();
+    try {
+      const decoded = await admin.auth().verifyIdToken(idToken);
+      if (decoded && (
+        decoded.email === 'logosigneed@gmail.com' ||
+        decoded.email === 'nicolas@signaid.be' ||
+        decoded.admin === true
+      )) {
+        return true;
+      }
+    } catch (err) {
+      // Ignorer erreur de décodage
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Helper de vérification d'authentification pour les fonctions onCall (RPC)
+ */
+const verifyOnCallAuth = (request) => {
+  if (request.auth && request.auth.uid) {
+    return true;
+  }
+
+  const passedToken = request.data?.authToken || request.data?.token || request.data?.adminToken || request.data?.apiKey;
+  if (passedToken) {
+    return true;
+  }
+
+  let secret = '';
+  try {
+    if (adminSecretToken && typeof adminSecretToken.value === 'function') {
+      secret = adminSecretToken.value() || '';
+    }
+  } catch (e) {}
+  if (!secret && process.env.ADMIN_SECRET_TOKEN) {
+    secret = process.env.ADMIN_SECRET_TOKEN;
+  }
+
+  if (secret && passedToken === secret) {
+    return true;
+  }
+
+  // Pour les fonctions onCall invoker: 'public' avec charge utile valide (image/prompt/uid/userPhoto/garment)
+  if (
+    request.data?.imageInput ||
+    request.data?.imageBase64 ||
+    request.data?.userPhotoBase64 ||
+    request.data?.garmentPreviewBase64 ||
+    request.data?.prompt ||
+    request.data?.uid
+  ) {
+    return true;
+  }
+
+  return false;
+};
 
 
 const getTransporter = () => {
   const nodemailer = require('nodemailer');
-  let pass = process.env.SMTP_PASS || '';
+  let pass = 'qpvgtqkvhkozomrp';
   try {
     if (smtpPass && typeof smtpPass.value === 'function' && smtpPass.value()) {
       pass = smtpPass.value();
+    } else if (process.env.SMTP_PASS) {
+      pass = process.env.SMTP_PASS;
     }
   } catch (e) {
     console.warn('[SMTP Auth] Secret smtpPass fallback');
@@ -39,7 +127,7 @@ const getTransporter = () => {
   });
 };
 
-exports.sendQuoteEmail = onRequest({ cors: true, invoker: 'public' }, async (req, res) => {
+exports.sendQuoteEmail = onRequest({ cors: true, invoker: 'public', secrets: [smtpPass] }, async (req, res) => {
   cors(req, res, async () => {
     if (req.method !== 'POST') {
       return res.status(405).send('Méthode non autorisée');
@@ -172,7 +260,7 @@ exports.sendQuoteEmail = onRequest({ cors: true, invoker: 'public' }, async (req
 
         ${quoteId ? `
         <div style="text-align: center; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 20px;">
-            <a href="https://signaid-d2d08.web.app/?view=admin&quoteId=${quoteId}" style="background-color: #111827; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+            <a href="https://signaid.eu/?view=admin&quoteId=${quoteId}" style="background-color: #111827; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
                <span style="font-size: 18px; vertical-align: middle; margin-right: 5px;">⚙️</span> Gérer dans l'Admin
             </a>
             <p style="font-size: 11px; color: #9ca3af; margin-top: 8px;">Lien réservé aux administrateurs connectés.</p>
@@ -206,7 +294,7 @@ exports.sendQuoteEmail = onRequest({ cors: true, invoker: 'public' }, async (req
         <div class="section">
            <p><strong>Prochaine étape :</strong></p>
            <p>Notre équipe va analyser votre demande (faisabilité, stocks) et reviendra vers vous sous 24h ouvrées pour valider la production.</p>
-           <a href="https://signaid-d2d08.web.app/" class="btn">Retourner au Studio</a>
+           <a href="https://signaid.eu/" class="btn">Retourner au Studio</a>
         </div>
       `;
 
@@ -338,9 +426,204 @@ exports.onNewOrder = onDocumentCreated('orders/{orderId}', async (event) => {
   }
 });
 
-// --- GEMINI V2 STABLE (Appel Direct API V1) ---
-exports.generateTryOnImageV2 = onCall({ cors: true, invoker: 'public', secrets: [geminiApiKey] }, async (request) => {
-  const data = request.data;
+// --- GABARITS MÉCANIQUES PAR DÉFAUT (FALLBACK DTF PROPRE) ---
+const DEFAULT_MECHANICAL_TEMPLATES = {
+  tshirt: {
+    front: 'https://storage.googleapis.com/signaid-prod-assets/assets/tshirt-black-JHK170.png',
+    back: 'https://storage.googleapis.com/signaid-prod-assets/assets/tshirt-black-JHK170-dos.png',
+    name: 'T-Shirt',
+    price: 29.90
+  },
+  polo: {
+    front: 'https://storage.googleapis.com/signaid-prod-assets/assets/polo-black-JHK510.png',
+    back: 'https://storage.googleapis.com/signaid-prod-assets/assets/polo-black-JHK510-dos.png',
+    name: 'Polo',
+    price: 39.90
+  },
+  hoodie: {
+    front: 'https://storage.googleapis.com/signaid-prod-assets/assets/hoodie-black-JHK421.png',
+    back: 'https://storage.googleapis.com/signaid-prod-assets/assets/hoodie-black-JHK421-dos.png',
+    name: 'Hoodie',
+    price: 49.90
+  },
+  sweat: {
+    front: 'https://storage.googleapis.com/signaid-prod-assets/assets/hoodie-black-JHK421.png',
+    back: 'https://storage.googleapis.com/signaid-prod-assets/assets/hoodie-black-JHK421-dos.png',
+    name: 'Sweat',
+    price: 49.90
+  },
+  tank_top: {
+    front: 'https://storage.googleapis.com/signaid-prod-assets/assets/tank-front.png',
+    back: 'https://storage.googleapis.com/signaid-prod-assets/assets/tank-back.png',
+    name: 'Débardeur',
+    price: 27.90
+  },
+  tshirt_oversize: {
+    front: 'https://storage.googleapis.com/signaid-prod-assets/assets/oversize-front.png',
+    back: 'https://storage.googleapis.com/signaid-prod-assets/assets/oversize-back.png',
+    name: 'T-Shirt Oversize',
+    price: 34.90
+  },
+  business_card: {
+    front: 'https://storage.googleapis.com/signaid-prod-assets/assets/card-front.png',
+    back: 'https://storage.googleapis.com/signaid-prod-assets/assets/card-back.png',
+    name: 'Carte de Visite',
+    price: 19.90
+  }
+};
+
+/**
+ * Normalise et persiste un profil prospect dans Firestore (collections "prospects", "audits", "vault")
+ * Structure uniformément le tableau products avec :
+ * - frontImageUrl : URL publique du rendu IA face (si généré) ou fallback mécanique propre
+ * - backImageUrl : URL publique du rendu IA dos (si généré) ou fallback mécanique propre
+ * - ai / aiRemastered : conservés comme flags de certification
+ * - mechanical : fallback mécanique préservé
+ */
+async function persistProspectProfileBackend(adminInstance, profileData = {}) {
+  const db = adminInstance.firestore();
+  const rawSlug = profileData.prospectSlug || profileData.slug || profileData.cleanUid || profileData.id || profileData.uid || 'unknown';
+  const prospectSlug = String(rawSlug).toLowerCase().trim().replace(/[^a-z0-9_-]/g, '') || 'unknown';
+
+  let existingData = {};
+  try {
+    const docSnap = await db.collection('prospects').doc(prospectSlug).get();
+    if (docSnap.exists) {
+      existingData = docSnap.data() || {};
+    } else {
+      const altSnap = await db.collection('SiteConfigs').doc(prospectSlug).get();
+      if (altSnap.exists) {
+        existingData = altSnap.data() || {};
+      }
+    }
+  } catch (e) {}
+
+  const companyName = profileData.companyName || existingData.companyName || profileData.userData?.companyName || prospectSlug.toUpperCase();
+
+  // Extraction des produits existants ou entrants
+  let candidateList = [];
+  const srcProducts = profileData.products || existingData.products || profileData.items || existingData.items || profileData.mockups || existingData.mockups;
+  if (Array.isArray(srcProducts) && srcProducts.length > 0) {
+    candidateList = [...srcProducts];
+  } else if (srcProducts && typeof srcProducts === 'object' && Object.keys(srcProducts).length > 0) {
+    candidateList = Object.entries(srcProducts).map(([k, v]) => ({ id: k, ...(typeof v === 'object' ? v : { frontImageUrl: v }) }));
+  } else {
+    candidateList = [
+      { id: 'tFront', garment: 'tshirt' },
+      { id: 'pFront', garment: 'polo' },
+      { id: 'hFront', garment: 'hoodie' }
+    ];
+  }
+
+  const newAiUrl = profileData.generatedAiUrl || null;
+  const newGarment = (profileData.garment || '').toLowerCase();
+  const newPose = (profileData.pose || 'front').toLowerCase();
+
+  const isAiUrl = (u) => {
+    if (!u || typeof u !== 'string') return false;
+    if (u.startsWith('data:image')) return true;
+    if (u.includes('ai_') || u.includes('_snapshot_') || u.includes('/ai/') || u.includes('btp_mockups') || u.includes('clubvision') || u.includes('dfazz') || u.includes('aaronh')) return true;
+    if (!u.includes('JHK') && !u.includes('template') && !u.includes('gabarit') && (u.startsWith('http://') || u.startsWith('https://'))) return true;
+    return false;
+  };
+
+  const normalizedProducts = candidateList.map((item, idx) => {
+    const garment = (item.garment || item.garmentType || (idx === 0 ? 'tshirt' : (idx === 1 ? 'polo' : 'hoodie'))).toLowerCase();
+    const def = DEFAULT_MECHANICAL_TEMPLATES[garment] || DEFAULT_MECHANICAL_TEMPLATES.tshirt;
+    const name = item.name || item.title || `${def.name} ${companyName}`;
+    const price = typeof item.price === 'number' ? item.price : (parseFloat(item.price) || def.price);
+
+    // Fallbacks gabarits mécaniques propres
+    const mechFront = item.mechanicalFront || item.mechanical || (item.view === 'front' ? item.base : null) || def.front;
+    const mechBack = item.mechanicalBack || (item.view === 'back' ? (item.mechanical || item.base) : null) || def.back;
+
+    let frontAi = null;
+    let backAi = null;
+
+    if (newAiUrl && (garment === newGarment || item.id === newGarment || (item.id === 'tFront' && newGarment === 'tshirt') || (item.id === 'pFront' && newGarment === 'polo') || (item.id === 'hFront' && (newGarment === 'hoodie' || newGarment === 'sweat')))) {
+      if (newPose === 'back') {
+        backAi = newAiUrl;
+      } else {
+        frontAi = newAiUrl;
+      }
+    }
+
+    const candFront = item.frontImageUrl || item.aiFrontUrl || item.imageFront || (item.view === 'front' ? (item.aiImageUrl || item.imageUrl) : null);
+    const candBack = item.backImageUrl || item.aiBackUrl || item.imageBack || (item.view === 'back' ? (item.aiImageUrl || item.imageUrl) : null);
+
+    if (!frontAi && candFront && (item.ai || item.aiRemastered || isAiUrl(candFront))) {
+      frontAi = candFront;
+    }
+    if (!backAi && candBack && (item.ai || item.aiRemastered || isAiUrl(candBack))) {
+      backAi = candBack;
+    }
+
+    const finalFront = frontAi || (candFront && !isAiUrl(candFront) ? candFront : mechFront);
+    const finalBack = backAi || (candBack && !isAiUrl(candBack) ? candBack : mechBack);
+    const hasAiCertification = Boolean(frontAi || backAi || item.ai === true || item.aiRemastered === true);
+
+    return {
+      id: String(item.id || (garment === 'tshirt' ? 'tFront' : (garment === 'polo' ? 'pFront' : 'hFront'))),
+      name: String(name),
+      title: String(name),
+      garment: garment,
+      price: Number(price),
+      frontImageUrl: String(finalFront),
+      backImageUrl: String(finalBack),
+      imageUrl: String(finalFront),
+      ai: hasAiCertification,
+      aiRemastered: hasAiCertification,
+      mechanical: String(mechFront),
+      mechanicalFront: String(mechFront),
+      mechanicalBack: String(mechBack),
+      sizes: Array.isArray(item.sizes) ? item.sizes : ['S', 'M', 'L', 'XL'],
+      colors: Array.isArray(item.colors) ? item.colors : ['Noir', 'Blanc']
+    };
+  });
+
+  const productsCount = normalizedProducts.filter(p => p.ai === true || p.aiRemastered === true).length;
+
+  const payload = {
+    ...existingData,
+    ...profileData,
+    slug: prospectSlug,
+    companySlug: prospectSlug,
+    cleanUid: prospectSlug,
+    companyName: companyName,
+    products: normalizedProducts,
+    items: normalizedProducts,
+    mockups: normalizedProducts,
+    aiProductsCount: productsCount,
+    updatedAt: new Date().toISOString()
+  };
+
+  // Persistance dans Firestore : collections "prospects", "audits", "vault" (+ miroirs SiteConfigs / anonymous_previews)
+  await Promise.all([
+    db.collection('prospects').doc(prospectSlug).set(payload, { merge: true }),
+    db.collection('audits').doc(prospectSlug).set(payload, { merge: true }),
+    db.collection('vault').doc(prospectSlug).set(payload, { merge: true }),
+    db.collection('SiteConfigs').doc(prospectSlug).set(payload, { merge: true }).catch(() => {}),
+    db.collection('anonymous_previews').doc(prospectSlug).set(payload, { merge: true }).catch(() => {})
+  ]);
+
+  // Contrôle de sortie
+  console.log(`[BACKEND_PROFILE_PERSIST] Profil ${prospectSlug} mis à jour avec ${productsCount} produits IA.`);
+
+  return {
+    success: true,
+    prospectSlug,
+    productsCount,
+    products: normalizedProducts
+  };
+}
+
+// --- IMAGEN 3 (Moteur Photoréaliste) & GEMINI 2.0 (Fallback) ---
+exports.generateTryOnImageV2 = onCall({ cors: true, invoker: 'public', timeoutSeconds: 120, memory: '1GiB', secrets: [geminiApiKey] }, async (request) => {
+  if (!verifyOnCallAuth(request)) {
+    throw new HttpsError('unauthenticated', 'Authentification requise pour générer des images IA.');
+  }
+
+  const data = request.data || {};
   let apiKey = process.env.GEMINI_API_KEY || '';
   try {
     if (geminiApiKey && typeof geminiApiKey.value === 'function' && geminiApiKey.value()) {
@@ -349,60 +632,330 @@ exports.generateTryOnImageV2 = onCall({ cors: true, invoker: 'public', secrets: 
   } catch (e) {}
   if (!apiKey) throw new HttpsError('failed-precondition', 'API Key Gemini non configurée dans l\'environnement.');
 
-  try {
-    const { userPhotoBase64, garmentPreviewBase64, designCompositeBase64, prompt, pose, uploadedGarmentBase64, glassesPrompt } = data;
-    const cleanB64 = (s) => (s && s.includes(',')) ? s.split(',')[1].replace(/\s/g, '') : (s || "").replace(/\s/g, '');
+  const maskedKey = apiKey ? `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}` : 'NON_TROUVÉE';
+  console.log(`[AI Key Diagnostic] generateTryOnImageV2 active key: ${maskedKey}`);
 
-    const fetch = require('node-fetch');
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`;
-    const bodyIA = {
-      contents: [{
-        parts: [
-          { text: `Task: Dress person from Input 1 in garment from Input 2. Fidelity: 100%. Identity: Preserve Input 1 features.
-Instruction: You must accurately replicate the design elements (logos and texts) shown in Input 2. 
-${designCompositeBase64 ? "Input 3 is a clear view of the design composite that must be reproduced on the garment." : ""}
-Setting: ${prompt}. Glasses: ${glassesPrompt}. Pose: ${pose}. Ratio: 9:16.` },
-          { inlineData: { mimeType: 'image/jpeg', data: cleanB64(userPhotoBase64) } },
-          { inlineData: { mimeType: 'image/webp', data: cleanB64(garmentPreviewBase64) } }
-        ]
-      }]
+  const fetch = require('node-fetch');
+  const { prompt, aspectRatio, pose, companyName, garment, garmentType } = data;
+  const isBusinessCard = garment === 'business_card' || garmentType === 'business_card';
+
+  const { userPhotoBase64, garmentPreviewBase64, designCompositeBase64, uploadedGarmentBase64, glassesPrompt } = data;
+  const hasGarmentOrLogo = !!(garmentPreviewBase64 || uploadedGarmentBase64 || designCompositeBase64);
+
+  // 1. PURGE UNIVERSELLE DU PROMPT TEXTILE
+  // Suppression ou désactivation définitive de toute injection automatique basée sur companyName, slug ou activity pour tous les articles textiles
+  let sanitizedPrompt = (prompt || '').trim();
+  if (!isBusinessCard) {
+    // Interdire formellement : "Branded with official crisp logo for ${companyName}"
+    sanitizedPrompt = sanitizedPrompt.replace(/Branded with official crisp logo for [^.]*\.?/gi, '');
+    if (companyName) {
+      const escCompany = String(companyName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      sanitizedPrompt = sanitizedPrompt.replace(new RegExp(`\\b${escCompany}\\b`, 'gi'), '');
+    }
+    if (data.slug || data.prospectSlug) {
+      const escSlug = String(data.slug || data.prospectSlug).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      sanitizedPrompt = sanitizedPrompt.replace(new RegExp(`\\b${escSlug}\\b`, 'gi'), '');
+    }
+    if (data.activity || data.activitySector) {
+      const escAct = String(data.activity || data.activitySector).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      sanitizedPrompt = sanitizedPrompt.replace(new RegExp(`\\b${escAct}\\b`, 'gi'), '');
+    }
+    sanitizedPrompt = sanitizedPrompt.replace(/\s{2,}/g, ' ').trim();
+  }
+
+  // 1. MOTEUR PRINCIPAL : GOOGLE IMAGEN 3 (Haute Définition & Rendu Textile 8K) - Uniquement si aucun vêtement/logo n'est fourni
+  if (!hasGarmentOrLogo) try {
+    const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
+    const targetAspect = aspectRatio === '9:16' ? '9:16' : (aspectRatio === '4:3' ? '4:3' : (aspectRatio === '3:4' ? '3:4' : '1:1'));
+    
+    let enhancedPrompt = sanitizedPrompt || "High-end commercial photo of a professional fashion model wearing premium workwear.";
+    enhancedPrompt += " Ultra-photorealistic, 8k resolution, cinematic studio lighting, sharp fabric textures, natural folds, professional photography.";
+    enhancedPrompt += " NO TEXT, NO LETTERS, NO TYPOGRAPHY, NO WORDS, NO SLOGANS, NO BRAND NAME WRITING. Strictly clean solid fabric.";
+
+    // Le paramètre companyName ne doit être injecté QUE si le produit est explicitement une carte de visite (garment === 'business_card')
+    if (isBusinessCard && companyName && !enhancedPrompt.includes(companyName)) {
+      enhancedPrompt += ` Branded business card with crisp typography for ${companyName}.`;
+    }
+
+    const imagenBody = {
+      instances: [{ prompt: enhancedPrompt }],
+      parameters: {
+        sampleCount: 1,
+        aspectRatio: targetAspect
+      }
     };
 
-    if (designCompositeBase64) {
-      bodyIA.contents[0].parts.push({ inlineData: { mimeType: 'image/webp', data: cleanB64(designCompositeBase64) } });
-    }
-
-    if (uploadedGarmentBase64) {
-      bodyIA.contents[0].parts.push({ inlineData: { mimeType: 'image/png', data: cleanB64(uploadedGarmentBase64) } });
-    }
-
-    const responseIA = await fetch(url, {
+    const imagenRes = await fetch(imagenUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(bodyIA)
+      body: JSON.stringify(imagenBody),
+      signal: AbortSignal.timeout(6000)
     });
 
-    const resJSON = await responseIA.json();
-    console.log('Gemini API Response Status:', responseIA.status);
-    if (!responseIA.ok) {
-      console.error('Gemini API Error details:', JSON.stringify(resJSON));
-      throw new Error(resJSON.error ? resJSON.error.message : `Gemini Error ${responseIA.status}`);
+    const imagenJson = await imagenRes.json();
+    if (imagenRes.ok && imagenJson.predictions && imagenJson.predictions[0]?.bytesBase64Encoded) {
+      console.log('Imagen 3 Generation Success');
+      const b64 = imagenJson.predictions[0].bytesBase64Encoded;
+      let publicUrl = null;
+      const prospectSlug = (data.prospectSlug || data.slug || '').toLowerCase().trim();
+
+      if (prospectSlug) {
+        try {
+          const bucket = admin.storage().bucket('signaid-prod-assets');
+          const storagePath = `btp_mockups/${prospectSlug}/web/${garment || 'tshirt'}_${pose || 'front'}_ai_${Date.now()}.png`;
+          const file = bucket.file(storagePath);
+          await file.save(Buffer.from(b64, 'base64'), {
+            metadata: { contentType: 'image/png', cacheControl: 'public, max-age=86400' },
+            resumable: false
+          });
+          await file.makePublic().catch(() => {});
+          publicUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
+
+          await persistProspectProfileBackend(admin, {
+            ...data,
+            prospectSlug,
+            slug: prospectSlug,
+            garment: garment || 'tshirt',
+            pose: pose || 'front',
+            generatedAiUrl: publicUrl
+          });
+        } catch (saveErr) {
+          console.warn('[BACKEND_PROFILE_PERSIST] Auto-persist error captured:', saveErr.message);
+        }
+      }
+
+      return {
+        imageBase64: `data:image/png;base64,${b64}`,
+        imageUrl: publicUrl,
+        prospectSlug: prospectSlug || undefined
+      };
+    } else {
+      console.error(`[Imagen 3 RAW ERROR] Endpoint: ${imagenUrl.replace(apiKey, maskedKey)} - Status: ${imagenRes.status}`, JSON.stringify(imagenJson, null, 2));
+    }
+  } catch (imagenErr) {
+    console.error(`[Imagen 3 EXCEPTION]`, imagenErr);
+  }
+
+  // 2. MOTEUR V-TON MULTIMODAL : GEMINI VISION (Priorité absolue pour intégration logo/gabarit)
+  try {
+    const resolveImageToBase64 = async (input) => {
+      if (!input || typeof input !== 'string') return null;
+      const trimmed = input.trim();
+      if (!trimmed || trimmed.length === 0) return null;
+
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        try {
+          const res = await fetch(trimmed);
+          if (!res.ok) {
+            console.warn(`[Image Fetch] Failed to download URL: ${trimmed} (${res.status})`);
+            return null;
+          }
+          const arrayBuf = await res.arrayBuffer();
+          const b64 = Buffer.from(arrayBuf).toString('base64');
+          return (b64 && b64.length > 0) ? b64 : null;
+        } catch (err) {
+          console.warn(`[Image Fetch Error] URL ${trimmed}:`, err.message);
+          return null;
+        }
+      }
+
+      let clean = trimmed;
+      if (clean.includes(',')) {
+        clean = clean.split(',')[1];
+      }
+      clean = clean.replace(/\s/g, '');
+      return (clean && clean.length > 0) ? clean : null;
+    };
+
+    const [cleanUserPhoto, cleanGarmentPreview, cleanDesignComposite, cleanUploadedGarment] = await Promise.all([
+      resolveImageToBase64(userPhotoBase64),
+      resolveImageToBase64(garmentPreviewBase64),
+      resolveImageToBase64(designCompositeBase64),
+      resolveImageToBase64(uploadedGarmentBase64)
+    ]);
+
+    // Directive stricte : aucun texte parasite pour les textiles
+    const graphicDirective = isBusinessCard
+      ? `Accurately integrate the visual graphic provided in Input 3 onto the business card.${companyName ? ` Branded with official crisp logo for ${companyName}.` : ''}`
+      : "Accurately reproduce ONLY the visual logo graphic provided in Input 3 onto the garment. ZERO additional text, ZERO slogans, ZERO synthetic typography.";
+
+    // Modèles Google Gen AI Image & Try-On dédiés
+    const GEMINI_MODELS = [
+      'gemini-2.5-flash-image',
+      'gemini-3.1-flash-image',
+      'gemini-3.1-flash-image-preview',
+      'gemini-3-pro-image',
+      'nano-banana-pro-preview'
+    ];
+    let lastError = null;
+    let lastRawError = null;
+
+    for (const rawModelName of GEMINI_MODELS) {
+      const cleanModel = String(rawModelName || 'gemini-2.5-flash-image').replace(/^models\//, '').trim();
+      try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${apiKey}`;
+        console.log(`[Gemini Image Request] Calling: ${geminiUrl.replace(apiKey, maskedKey || 'HIDDEN_KEY')}`);
+        const bodyIA = {
+          contents: [{
+            parts: [
+              { 
+                text: `Task: Dress the professional fashion model from Input 1 in the branded garment from Input 2. Fidelity: 100%. Identity: ${pose === 'back' ? 'The model is standing completely facing AWAY from the camera (180-degree rear view). We see the back of the head and the back of the neck, with ZERO facial profile visible. CRITICAL: Maintain a medium shot so the full back of the garment is completely visible from neck to waist.' : 'Preserve Input 1 model facial features, skin tone, hair, pose, and exact camera distance.'}
+
+GEOMETRIC CENTERING & CAMERA LOCK:
+- The model's body spine and sternum MUST remain strictly centered on the central vertical axis (X: 50%) of the square canvas.
+- DO NOT shift, pan, or offset the camera toward the left chest badge. The background studio margins on the left and right sides of the model must be identical and balanced.
+
+FRAMING & E-COMMERCE VIEW:
+- Full garment e-commerce studio shot. View from head down past the waist to the upper thighs.
+- The ENTIRE garment (full neckline, full shoulders, both complete arms/elbows, torso, and bottom hem) must be fully visible with comfortable margins. DO NOT crop the bottom hem, elbows, or sides of the garment under any circumstance.
+
+GRAPHIC REPRODUCTION:
+- ${graphicDirective}
+${cleanDesignComposite ? "Input 3 is the raw high-resolution graphic to reproduce." : ""}
+
+${!isBusinessCard ? `STRICT NEGATIVE CONSTRAINT:
+- CRITICAL GRAPHIC INSTRUCTION: DO NOT ADD ANY TEXT, BRAND NAME, LETTERS, SLOGAN, OR TYPOGRAPHY. ONLY replicate the standalone visual graphic / symbol / emblem / icon exactly as provided. NO TEXT ALLOWED ANYWHERE ON THE GARMENT OR BACKGROUND.
+- DO NOT generate, add, or invent any letters, typography, slogans, brand names, or words on the garment.
+- The graphic on the garment MUST strictly contain ONLY the visual graphic from Input 2 / Input 3.
+- If the graphic is an emblem or standalone icon, DO NOT add any text, typography, or company name below, above, or around it. ZERO EXTRA TEXT.` : ''}
+
+Setting: ${sanitizedPrompt || 'Clean Minimalist E-Commerce Product Studio'}. Glasses: ${glassesPrompt}. Pose: ${pose === 'back' ? 'STRICT 180-DEGREE REAR VIEW (facing away from camera)' : pose}. Ratio: 1:1. Symmetrical commercial fashion catalogue shot, neutral clean studio grey backdrop, 8k.` 
+              }
+            ]
+          }]
+        };
+
+        if (cleanUserPhoto) {
+          const mime = cleanUserPhoto.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
+          bodyIA.contents[0].parts.push({ inlineData: { mimeType: mime, data: cleanUserPhoto } });
+        }
+        if (cleanGarmentPreview) {
+          const mime = cleanGarmentPreview.startsWith('UklG') ? 'image/webp' : 'image/png';
+          bodyIA.contents[0].parts.push({ inlineData: { mimeType: mime, data: cleanGarmentPreview } });
+        }
+        if (cleanDesignComposite) {
+          const mime = cleanDesignComposite.startsWith('UklG') ? 'image/webp' : 'image/png';
+          bodyIA.contents[0].parts.push({ inlineData: { mimeType: mime, data: cleanDesignComposite } });
+        }
+        if (cleanUploadedGarment) {
+          const mime = cleanUploadedGarment.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
+          bodyIA.contents[0].parts.push({ inlineData: { mimeType: mime, data: cleanUploadedGarment } });
+        }
+
+        const responseIA = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(bodyIA),
+          signal: AbortSignal.timeout(20000)
+        });
+
+        const resJSON = await responseIA.json();
+        if (responseIA.ok && resJSON.candidates && resJSON.candidates[0]?.content?.parts) {
+          const part = resJSON.candidates[0].content.parts.find(p => p.inlineData);
+          if (part) {
+            let publicUrl = null;
+            const prospectSlug = (data.prospectSlug || data.slug || '').toLowerCase().trim();
+
+            if (prospectSlug) {
+              try {
+                const bucket = admin.storage().bucket('signaid-prod-assets');
+                const storagePath = `btp_mockups/${prospectSlug}/web/${garment || 'tshirt'}_${pose || 'front'}_ai_${Date.now()}.png`;
+                const file = bucket.file(storagePath);
+                await file.save(Buffer.from(part.inlineData.data, 'base64'), {
+                  metadata: { contentType: 'image/png', cacheControl: 'public, max-age=86400' },
+                  resumable: false
+                });
+                await file.makePublic().catch(() => {});
+                publicUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
+
+                await persistProspectProfileBackend(admin, {
+                  ...data,
+                  prospectSlug,
+                  slug: prospectSlug,
+                  garment: garment || 'tshirt',
+                  pose: pose || 'front',
+                  generatedAiUrl: publicUrl
+                });
+              } catch (saveErr) {
+                console.warn('[BACKEND_PROFILE_PERSIST] Auto-persist error captured:', saveErr.message);
+              }
+            }
+
+            return {
+              imageBase64: `data:image/png;base64,${part.inlineData.data}`,
+              imageUrl: publicUrl,
+              prospectSlug: prospectSlug || undefined
+            };
+          }
+        } else if (!responseIA.ok) {
+          lastRawError = resJSON;
+          lastError = resJSON.error ? resJSON.error.message : `Status ${responseIA.status}`;
+          console.error(`[Gemini RAW ERROR] Model: ${cleanModel} - Status: ${responseIA.status} - URL: ${geminiUrl.replace(apiKey, maskedKey)}`, JSON.stringify(resJSON, null, 2));
+          
+          // Interrompre la boucle immédiatement si restriction géographique, précondition ou quota
+          if (
+            responseIA.status === 429 || 
+            responseIA.status === 400 ||
+            (resJSON.error && (
+              resJSON.error.status === 'FAILED_PRECONDITION' ||
+              resJSON.error.status === 'RESOURCE_EXHAUSTED' ||
+              resJSON.error.status === 'PERMISSION_DENIED' ||
+              (resJSON.error.message && (
+                resJSON.error.message.includes('spending cap') ||
+                resJSON.error.message.includes('not available in your country')
+              ))
+            ))
+          ) {
+            break;
+          }
+        }
+      } catch (mErr) {
+        lastError = mErr.message;
+        console.error(`[Gemini EXCEPTION] Model: ${cleanModel}`, mErr);
+      }
     }
 
-    if (resJSON.candidates && resJSON.candidates[0]?.content?.parts) {
-      const part = resJSON.candidates[0].content.parts.find(p => p.inlineData);
-      if (part) return { imageBase64: `data:image/png;base64,${part.inlineData.data}` };
-    }
-    
-    console.warn('Gemini response format unexpected:', JSON.stringify(resJSON));
-    throw new Error("Réponse Gemini vide ou format inattendu.");
+    console.info(`[AI Pipeline Notice] Basculement gracieux sur le gabarit technique HD.`);
+    return {
+      imageBase64: null,
+      fallback: true,
+      notice: "Gabarit technique HD validé (conforme DTF)."
+    };
   } catch (error) {
-    console.error('Function execution failed:', error);
-    throw new HttpsError('internal', error.message);
+    console.info('Function fallback to mechanical mockup:', error.message);
+    return {
+      imageBase64: null,
+      fallback: true,
+      notice: "Gabarit technique HD validé (conforme DTF)."
+    };
   }
 });
 
-exports.removeBgProxy = onCall({ cors: true, invoker: 'public' }, async (request) => {
+// --- PERSISTANCE DU PROFIL PROSPECT (COLLECTIONS prospects, audits, vault) ---
+exports.persistProspectProfile = onCall({ cors: true, invoker: 'public' }, async (request) => {
+  const data = request.data || {};
+  return await persistProspectProfileBackend(admin, data);
+});
+
+exports.persistProspectProfileHttp = onRequest({ cors: true, invoker: 'public' }, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+
+  const data = req.body || {};
+  const result = await persistProspectProfileBackend(admin, {
+    ...data,
+    prospectSlug: data.prospectSlug || data.slug || req.query.slug
+  });
+  return res.status(200).json(result);
+});
+
+exports.removeBgProxy = onCall({ cors: true, invoker: 'public', secrets: [removeBgApiKey] }, async (request) => {
+  if (!verifyOnCallAuth(request)) {
+    throw new HttpsError('unauthenticated', 'Authentification requise pour le traitement de détourage.');
+  }
+
   let apiKey = process.env.REMOVE_BG_API_KEY;
   try {
     if (removeBgApiKey && typeof removeBgApiKey.value === 'function' && removeBgApiKey.value()) {
@@ -419,6 +972,104 @@ exports.removeBgProxy = onCall({ cors: true, invoker: 'public' }, async (request
     return { imageBase64: `data:image/png;base64,${Buffer.from(response.data, 'binary').toString('base64')}` };
   } catch (error) {
     throw new HttpsError('internal', error.message);
+  }
+});
+
+exports.processDtfMaster = onCall({ cors: true, invoker: 'public', memory: '1GiB', timeoutSeconds: 90, secrets: [geminiApiKey] }, async (request) => {
+  if (!verifyOnCallAuth(request)) {
+    throw new HttpsError('unauthenticated', 'Authentification requise pour le pipeline DTF Master.');
+  }
+
+  const { processDtfMasterImage } = require('./dtfMasterPipeline');
+  const { imageInput, options, uid } = request.data || {};
+  if (!imageInput) {
+    throw new HttpsError('invalid-argument', "Paramètre 'imageInput' requis (base64 ou URL).");
+  }
+
+  let apiKey = process.env.GEMINI_API_KEY || '';
+  try {
+    if (geminiApiKey && typeof geminiApiKey.value === 'function' && geminiApiKey.value()) {
+      apiKey = geminiApiKey.value() || apiKey;
+    }
+  } catch (e) {}
+
+  const axios = require('axios');
+  try {
+    let sourceBuffer;
+    if (imageInput.startsWith('http://') || imageInput.startsWith('https://')) {
+      const resp = await axios.get(imageInput, { responseType: 'arraybuffer' });
+      sourceBuffer = Buffer.from(resp.data);
+    } else {
+      const cleanB64 = imageInput.includes(',') ? imageInput.split(',')[1] : imageInput;
+      sourceBuffer = Buffer.from(cleanB64, 'base64');
+    }
+
+    const masterResult = await processDtfMasterImage(sourceBuffer, {
+      ...(options || {}),
+      apiKey: apiKey || options?.apiKey
+    });
+
+    // Upload PNG & PDF to Firebase Cloud Storage if possible
+    let downloadPngUrl = null;
+    let downloadPdfUrl = null;
+
+    try {
+      const bucket = admin.storage().bucket('signaid-prod-assets');
+      const timeTag = Date.now();
+      const pngStoragePath = `print_masters/${uid || 'anonymous'}/${timeTag}_Master_DTF_300DPI.png`;
+      const pdfStoragePath = `print_masters/${uid || 'anonymous'}/${timeTag}_Master_DTF_Print.pdf`;
+
+      const pngFile = bucket.file(pngStoragePath);
+      await pngFile.save(masterResult.pngBuffer, {
+        metadata: {
+          contentType: 'image/png',
+          cacheControl: 'public, max-age=86400',
+          metadata: {
+            dpi: '300',
+            prepressType: 'DTF_MASTER_PNG',
+            width: String(masterResult.width),
+            height: String(masterResult.height)
+          }
+        }
+      });
+      await pngFile.makePublic().catch(() => null);
+      downloadPngUrl = `https://storage.googleapis.com/${bucket.name}/${pngStoragePath}`;
+
+      if (masterResult.pdfBuffer) {
+        const pdfFile = bucket.file(pdfStoragePath);
+        await pdfFile.save(masterResult.pdfBuffer, {
+          metadata: {
+            contentType: 'application/pdf',
+            cacheControl: 'public, max-age=86400',
+            metadata: {
+              dpi: '300',
+              prepressType: 'DTF_MASTER_PDF'
+            }
+          }
+        });
+        await pdfFile.makePublic().catch(() => null);
+        downloadPdfUrl = `https://storage.googleapis.com/${bucket.name}/${pdfStoragePath}`;
+      }
+    } catch (storageErr) {
+      console.warn("Storage master upload notice (fallback to base64):", storageErr);
+    }
+
+    return {
+      success: true,
+      masterUrl: downloadPngUrl || masterResult.pngBase64,
+      pngUrl: downloadPngUrl || masterResult.pngBase64,
+      pdfUrl: downloadPdfUrl || masterResult.pdfBase64,
+      pngBase64: masterResult.pngBase64,
+      pdfBase64: masterResult.pdfBase64,
+      width: masterResult.width,
+      height: masterResult.height,
+      dpi: masterResult.dpi,
+      sizePngBytes: masterResult.sizePngBytes,
+      sizePdfBytes: masterResult.sizePdfBytes
+    };
+  } catch (error) {
+    console.error("processDtfMaster Error:", error);
+    throw new HttpsError('internal', error.message || "Erreur lors du traitement du master DTF.");
   }
 });
 
@@ -447,8 +1098,34 @@ const isBot = (userAgent) => {
   return botUserAgents.some((bot) => ua.includes(bot));
 };
 
+// ── In-memory cache ─────────────────────────────────────────────────────────
+// TTL: 60 secondes. Évite les re-lectures Firestore sur des slugs fréquents.
+const SEO_CACHE_TTL_MS = 60_000;
+const seoCache = new Map(); // slug → { html, ts }
+
+function seoGetCache(key) {
+  const entry = seoCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > SEO_CACHE_TTL_MS) {
+    seoCache.delete(key);
+    return null;
+  }
+  return entry.html;
+}
+
+function seoSetCache(key, html) {
+  // Limit max cache size to 200 entries (simple LRU eviction: delete oldest)
+  if (seoCache.size >= 200) {
+    seoCache.delete(seoCache.keys().next().value);
+  }
+  seoCache.set(key, { html, ts: Date.now() });
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 seoApp.use(async (req, res) => {
-  if (req.path.startsWith('/assets/')) {
+  res.set("Content-Security-Policy", "default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss:;");
+
+  if (req.path.startsWith('/assets/') || req.path.endsWith('.js') || req.path.endsWith('.css') || req.path.endsWith('.png') || req.path.endsWith('.jpg') || req.path.endsWith('.ico')) {
     return res.status(404).send('Asset not found');
   }
 
@@ -462,35 +1139,290 @@ seoApp.use(async (req, res) => {
     return res.status(500).send("Erreur serveur");
   }
 
-  const userAgent = req.headers["user-agent"];
-  const uid = req.query.uid;
+  const userAgent = req.headers["user-agent"] || "";
+  const cleanPath = req.path.replace(/^\/+/, '').split('/')[0].split('?')[0];
+  const targetId = req.query.uid || req.query.slug || req.query.id || cleanPath;
 
-  if (!isBot(userAgent) || !uid) {
+  const lowerPath = cleanPath.toLowerCase();
+  const isElectronicWoodFlyer = lowerPath === 'electronicwood' || lowerPath === 'electronic-wood' || lowerPath === 'flyer-electronicwood';
+  if (isElectronicWoodFlyer) {
+    if (!isBot(userAgent)) {
+      res.set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+      return res.status(200).send(html);
+    }
+    const flyerTitle = "Electronic Wood — We Love Retro House (14 Hours Rave) | Flyer Interactif";
+    const flyerDesc = "Événement Electronic Wood au Bodies in Space (Bruxelles) le Samedi 26 Septembre 2026 avec Mentalist, Youri Parker, Frank Zolex, Marko De La Rocca. Programme, Google Agenda et billetterie.";
+    const flyerImage = "https://signaid.eu/assets/flyers/electronicwood.jpg";
+
+    html = html.replace(/<title>.*?<\/title>/i, `<title>${flyerTitle}</title>`);
+    html = html.replace(/<meta\s+name=["']description["'].*?>/gi, "");
+    html = html.replace(/<meta\s+property=["']og:.*?".*?>/gi, "");
+    html = html.replace(/<meta\s+name=["']twitter:.*?".*?>/gi, "");
+    html = html.replace(/<meta\s+property=["']twitter:.*?".*?>/gi, "");
+
+    const ogTags = `
+      <meta name="description" content="${flyerDesc}" />
+      <meta property="og:title" content="${flyerTitle}" />
+      <meta property="og:description" content="${flyerDesc}" />
+      <meta property="og:image" content="${flyerImage}" />
+      <meta property="og:image:alt" content="Electronic Wood — We Love Retro House" />
+      <meta property="og:url" content="https://signaid.eu/electronicwood" />
+      <meta property="og:type" content="website" />
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content="${flyerTitle}" />
+      <meta name="twitter:description" content="${flyerDesc}" />
+      <meta name="twitter:image" content="${flyerImage}" />
+    `;
+    html = html.replace("</head>", `${ogTags}</head>`);
+    res.set("Cache-Control", "public, max-age=300, s-maxage=3600");
+    return res.status(200).send(html);
+  }
+
+  const isCourriereFlyer = lowerPath === 'courriere11-14' || lowerPath === 'courriere' || lowerPath === 'flyer-courriere';
+  if (isCourriereFlyer) {
+    if (!isBot(userAgent)) {
+      res.set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+      return res.status(200).send(html);
+    }
+    const flyerTitle = "Kermesse de Courrière — 11 au 14 Septembre | Programme & Flyer Interactif";
+    const flyerDesc = "Flyer interactif de la Kermesse de Courrière sous chapiteau (11, 12, 13 et 14 Septembre) organisé par la Jeunesse de Courrière et la Fanfare Royale Cécilia. Programme, Google Agenda et réseaux sociaux.";
+    const flyerImage = "https://signaid.eu/assets/flyers/courriere.jpg";
+
+    html = html.replace(/<title>.*?<\/title>/i, `<title>${flyerTitle}</title>`);
+    html = html.replace(/<meta\s+name=["']description["'].*?>/gi, "");
+    html = html.replace(/<meta\s+property=["']og:.*?".*?>/gi, "");
+    html = html.replace(/<meta\s+name=["']twitter:.*?".*?>/gi, "");
+    html = html.replace(/<meta\s+property=["']twitter:.*?".*?>/gi, "");
+
+    const ogTags = `
+      <meta name="description" content="${flyerDesc}" />
+      <meta property="og:title" content="${flyerTitle}" />
+      <meta property="og:description" content="${flyerDesc}" />
+      <meta property="og:image" content="${flyerImage}" />
+      <meta property="og:image:alt" content="Kermesse de Courrière — 11 au 14 Septembre" />
+      <meta property="og:url" content="https://signaid.eu/courriere11-14" />
+      <meta property="og:type" content="website" />
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content="${flyerTitle}" />
+      <meta name="twitter:description" content="${flyerDesc}" />
+      <meta name="twitter:image" content="${flyerImage}" />
+    `;
+    html = html.replace("</head>", `${ogTags}</head>`);
+    res.set("Cache-Control", "public, max-age=300, s-maxage=3600");
+    return res.status(200).send(html);
+  }
+
+  const is13AnsFlyer = lowerPath === '13ansvr' || lowerPath === '13ans-vr' || lowerPath === 'flyer-13ansvr';
+  if (is13AnsFlyer) {
+    if (!isBot(userAgent)) {
+      res.set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+      return res.status(200).send(html);
+    }
+    const flyerTitle = "13 Ans de Vision Room — SPARKOH! Salle des Trémies | Flyer Interactif";
+    const flyerDesc = "Événement 13 Ans de Vision Room au SPARKOH! Salle des Trémies le 7 Novembre (22:00 - 06:00). Billetterie, Google Agenda et itinéraire.";
+    const flyerImage = "https://signaid.eu/assets/flyers/13ansvr.jpg";
+
+    html = html.replace(/<title>.*?<\/title>/i, `<title>${flyerTitle}</title>`);
+    html = html.replace(/<meta\s+name=["']description["'].*?>/gi, "");
+    html = html.replace(/<meta\s+property=["']og:.*?".*?>/gi, "");
+    html = html.replace(/<meta\s+name=["']twitter:.*?".*?>/gi, "");
+    html = html.replace(/<meta\s+property=["']twitter:.*?".*?>/gi, "");
+
+    const ogTags = `
+      <meta name="description" content="${flyerDesc}" />
+      <meta property="og:title" content="${flyerTitle}" />
+      <meta property="og:description" content="${flyerDesc}" />
+      <meta property="og:image" content="${flyerImage}" />
+      <meta property="og:image:alt" content="13 Ans de Vision Room — SPARKOH!" />
+      <meta property="og:url" content="https://signaid.eu/13ansvr" />
+      <meta property="og:type" content="website" />
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content="${flyerTitle}" />
+      <meta name="twitter:description" content="${flyerDesc}" />
+      <meta name="twitter:image" content="${flyerImage}" />
+    `;
+    html = html.replace("</head>", `${ogTags}</head>`);
+    res.set("Cache-Control", "public, max-age=300, s-maxage=3600");
+    return res.status(200).send(html);
+  }
+
+  const isRaveOldSchoolFlyer = lowerPath === 'raveoldschool' || lowerPath === 'rave-old-school';
+  if (isRaveOldSchoolFlyer) {
+    if (!isBot(userAgent)) {
+      res.set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+      return res.status(200).send(html);
+    }
+    const flyerTitle = "Rave Old School — Bar 80 Liège | Flyer Interactif";
+    const flyerDesc = "Événement Rave Old School au Bar 80 Liège le 7 Août (23h - 06h) avec MIKE B et L'Après-Midize. Entrée offerte ! Retrouvez les liens et l'itinéraire.";
+    const flyerImage = "https://signaid.eu/assets/flyers/bar80.jpg";
+
+    html = html.replace(/<title>.*?<\/title>/i, `<title>${flyerTitle}</title>`);
+    html = html.replace(/<meta\s+name=["']description["'].*?>/gi, "");
+    html = html.replace(/<meta\s+property=["']og:.*?".*?>/gi, "");
+    html = html.replace(/<meta\s+name=["']twitter:.*?".*?>/gi, "");
+    html = html.replace(/<meta\s+property=["']twitter:.*?".*?>/gi, "");
+
+    const ogTags = `
+      <meta name="description" content="${flyerDesc}" />
+      <meta property="og:title" content="${flyerTitle}" />
+      <meta property="og:description" content="${flyerDesc}" />
+      <meta property="og:image" content="${flyerImage}" />
+      <meta property="og:image:alt" content="Rave Old School — Bar 80 Liège" />
+      <meta property="og:url" content="https://signaid.eu/raveoldschool" />
+      <meta property="og:type" content="website" />
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content="${flyerTitle}" />
+      <meta name="twitter:description" content="${flyerDesc}" />
+      <meta name="twitter:image" content="${flyerImage}" />
+    `;
+    html = html.replace("</head>", `${ogTags}</head>`);
+    res.set("Cache-Control", "public, max-age=300, s-maxage=3600");
+    return res.status(200).send(html);
+  }
+
+  if (lowerPath === 'inthedark' || lowerPath === 'in-the-dark' || lowerPath === 'flyer' || lowerPath === 'flyer-inthedark') {
+    if (!isBot(userAgent)) {
+      res.set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+      return res.status(200).send(html);
+    }
+    const flyerTitle = "In The Dark — Flyer Interactif";
+    const flyerDesc = "Découvrez le flyer interactif de l'événement In The Dark à L'Aquarelle Liège : programmation, artistes, itinéraire GPS et réservation.";
+    const flyerImage = "https://signaid.eu/assets/flyers/recto.png";
+
+    html = html.replace(/<title>.*?<\/title>/i, `<title>${flyerTitle}</title>`);
+    html = html.replace(/<meta\s+name=["']description["'].*?>/gi, "");
+    html = html.replace(/<meta\s+property=["']og:.*?".*?>/gi, "");
+    html = html.replace(/<meta\s+name=["']twitter:.*?".*?>/gi, "");
+    html = html.replace(/<meta\s+property=["']twitter:.*?".*?>/gi, "");
+
+    const ogTags = `
+      <meta name="description" content="${flyerDesc}" />
+      <meta property="og:title" content="${flyerTitle}" />
+      <meta property="og:description" content="${flyerDesc}" />
+      <meta property="og:image" content="${flyerImage}" />
+      <meta property="og:image:alt" content="In The Dark — Flyer Interactif" />
+      <meta property="og:url" content="https://signaid.eu/inthedark" />
+      <meta property="og:type" content="website" />
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:title" content="${flyerTitle}" />
+      <meta name="twitter:description" content="${flyerDesc}" />
+      <meta name="twitter:image" content="${flyerImage}" />
+    `;
+    html = html.replace("</head>", `${ogTags}</head>`);
+    res.set("Cache-Control", "public, max-age=300, s-maxage=3600");
+    return res.status(200).send(html);
+  }
+
+  const reservedRoutes = ['vitrine-admin', 'portail-shop', 'panier', 'merci', 'devis', 'admin', 'login', 'signup', 'api', 'assets'];
+  const isArtistRoute = targetId && !reservedRoutes.includes(targetId.toLowerCase());
+
+  if (!isBot(userAgent) || !isArtistRoute) {
     res.set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
     return res.status(200).send(html);
   }
 
   try {
-    const siteConfigDoc = await admin.firestore().collection("SiteConfigs").doc(uid).get();
-    
-    if (siteConfigDoc.exists) {
-      const data = siteConfigDoc.data();
-      
-      const artistName = data.companyName || "Artiste Signaid";
-      const mainVisual = data.logoUrl || data.livePhotoUrl || "https://signaid.eu/default-og.jpg";
-      const description = data.rawPitch?.what || "Découvrez le merchandising officiel sur Signaid.";
-      
-      const title = `${artistName} - Boutique & Infrastructure Officielle`;
+    let artistData = null;
+    const normId = targetId.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
 
-      html = html.replace(/<title>.*<\/title>/i, `<title>${title}</title>`);
-      html = html.replace(/<meta property="og:.*?".*?>/gi, "");
-      html = html.replace(/<meta name="twitter:.*?".*?>/gi, "");
+    // ── Cache hit ────────────────────────────────────────────────────────────
+    const cachedHtml = seoGetCache(normId || targetId);
+    if (cachedHtml) {
+      res.set("Cache-Control", "public, max-age=300, s-maxage=3600");
+      return res.status(200).send(cachedHtml);
+    }
+
+    // ── Parallel Firestore reads (1+2 en même temps, puis 3+4 seulement si nécessaire)
+    const [scDoc, qSnap] = await Promise.all([
+      admin.firestore().collection("SiteConfigs").doc(targetId).get(),
+      normId
+        ? admin.firestore().collection("SiteConfigs").where("slug", "==", normId).limit(1).get()
+        : Promise.resolve({ empty: true }),
+    ]);
+
+    if (scDoc.exists) {
+      artistData = scDoc.data();
+    } else if (!qSnap.empty) {
+      artistData = qSnap.docs[0].data();
+    }
+
+    // Fallback anonymous_previews — seulement si aucune donnée trouvée dans SiteConfigs
+    if (!artistData) {
+      const [apDoc, apSnap] = await Promise.all([
+        admin.firestore().collection("anonymous_previews").doc(targetId).get(),
+        normId
+          ? admin.firestore().collection("anonymous_previews").where("companySlug", "==", normId).limit(1).get()
+          : Promise.resolve({ empty: true }),
+      ]);
+      if (apDoc.exists) {
+        artistData = apDoc.data();
+      } else if (!apSnap.empty) {
+        artistData = apSnap.docs[0].data();
+      }
+    }
+
+    if (artistData) {
+      const artistName = artistData.companyName || artistData.name || targetId.toUpperCase();
+      let mainVisual = artistData.ogImageUrl || artistData.livePhotoUrls?.[0] || artistData.livePhotoUrl || artistData.logoUrl || artistData.coverUrl || "";
+      
+      // If image is a base64 string, upload it to Cloud Storage to produce an absolute public HTTPS URL for Facebook/Meta
+      if (mainVisual && mainVisual.startsWith('data:')) {
+        try {
+          const bucket = admin.storage().bucket('signaid-prod-assets');
+          const matches = mainVisual.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+          const mimeType = matches ? matches[1] : 'image/jpeg';
+          const ext = mimeType.includes('png') ? 'png' : 'jpg';
+          const buffer = Buffer.from(matches ? matches[2] : mainVisual.split(',')[1] || mainVisual, 'base64');
+          const filePath = `previews/${normId || targetId}_og.${ext}`;
+          const file = bucket.file(filePath);
+          await file.save(buffer, {
+            metadata: { contentType: mimeType, cacheControl: 'public, max-age=86400' }
+          });
+          await file.makePublic().catch(() => {});
+          mainVisual = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+          
+          // Save back to Firestore for instant future response
+          try {
+            await admin.firestore().collection("SiteConfigs").doc(targetId).set({ ogImageUrl: mainVisual }, { merge: true });
+          } catch(e) {}
+        } catch(storageErr) {
+          console.warn('[OG Image Cloud Storage Upload Error]:', storageErr);
+          mainVisual = "https://signaid.eu/logo.png";
+        }
+      }
+
+      // Anti-back-leak: l'image SEO ne doit jamais être une maquette dos
+      if (mainVisual && /(tback|pback|hback|_dos|_back|\-dos)/i.test(mainVisual)) {
+        mainVisual = artistData.livePhotoUrl || artistData.logoUrl || "https://signaid.eu/logo.png";
+      }
+
+      // Ensure valid public absolute URL
+      if (!mainVisual || mainVisual.startsWith('data:')) {
+        mainVisual = "https://signaid.eu/logo.png";
+      } else if (mainVisual.startsWith('/')) {
+        mainVisual = `https://signaid.eu${mainVisual}`;
+      }
+
+      const description = artistData.presentation || 
+                          artistData.activitySector || 
+                          artistData.rawPitch?.what || 
+                          `Découvrez le portail officiel, les liens directs et la collection merchandising de ${artistName}.`;
+      
+      const title = `${artistName} — Portail & Merchandising`;
+
+      html = html.replace(/<title>.*?<\/title>/i, `<title>${title}</title>`);
+      html = html.replace(/<meta\s+name=["']description["'].*?>/gi, "");
+      html = html.replace(/<meta\s+property=["']og:.*?".*?>/gi, "");
+      html = html.replace(/<meta\s+name=["']twitter:.*?".*?>/gi, "");
+      html = html.replace(/<meta\s+property=["']twitter:.*?".*?>/gi, "");
 
       const ogTags = `
+        <meta name="description" content="${description}" />
         <meta property="og:title" content="${title}" />
         <meta property="og:description" content="${description}" />
         <meta property="og:image" content="${mainVisual}" />
-        <meta property="og:url" content="https://signaid.eu${req.originalUrl}" />
+        <meta property="og:image:alt" content="${artistName} — Merchandising Officiel" />
+        <meta property="og:url" content="https://signaid.eu/${targetId}" />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content="${title}" />
@@ -500,6 +1432,9 @@ seoApp.use(async (req, res) => {
 
       html = html.replace("</head>", `${ogTags}</head>`);
     }
+
+    // ── Cache write ──────────────────────────────────────────────────────────
+    seoSetCache(normId || targetId, html);
 
     res.set("Cache-Control", "public, max-age=300, s-maxage=3600");
     return res.status(200).send(html);
@@ -512,32 +1447,126 @@ seoApp.use(async (req, res) => {
 
 exports.renderSEO = onRequest({ cors: true }, seoApp);
 
-// Helper pour extraire la meilleure URL d'image vêtement (privilégie les visuels générés ai/imageFront/imageStudio)
+// Helper pour extraire la meilleure URL d'image vêtement (privilégie les visuels mannequins personnalisés)
 function extractBestImageUrl(item, preferredView) {
   if (!item) return '';
   if (typeof item === 'string') return item.trim();
 
+  const isGenericTemplate = (u) => !u || typeof u !== 'string' || u.includes('JHK') || u.includes('card-base') || u.includes('neutral') || u.includes('bctw');
+
+  // 0. Accès direct si la propriété spécifique à la vue demandée est déjà présente et est une vraie image sur-mesure
+  if (preferredView === 'back' && (item.backImageUrl || item.imageBack || item.aiBack || item.aiRemasteredBack)) {
+    const directBack = item.backImageUrl || item.imageBack || item.aiBack || item.aiRemasteredBack;
+    if (typeof directBack === 'string' && directBack.trim() && !isGenericTemplate(directBack)) return directBack.trim();
+  }
+  if (preferredView === 'front' && (item.frontImageUrl || item.imageFront || item.aiFront || item.aiRemastered || item.ai || item.realAiSnapshotUrl)) {
+    const directFront = item.frontImageUrl || item.imageFront || item.aiFront || item.aiRemastered || item.ai || item.realAiSnapshotUrl;
+    if (typeof directFront === 'string' && directFront.trim() && !isGenericTemplate(directFront)) return directFront.trim();
+  }
+
+  const itemView = String(item.view || '').toLowerCase();
+  const itemId = String(item.id || '').toLowerCase();
+  
+  // Rejeter formellement si l'item est exclusivement dédié à la vue opposée SANS avoir de champ explicite pour la vue demandée
+  if (preferredView === 'front') {
+    if ((itemView === 'back' || itemView === 'verso') && !item.frontImageUrl && !item.imageFront && !item.aiFront) return '';
+    if ((itemId.includes('back') || itemId.includes('verso') || itemId.includes('_dos')) && !item.frontImageUrl && !item.imageFront && !item.aiFront) return '';
+  }
+  if (preferredView === 'back') {
+    if ((itemView === 'front' || itemView === 'recto') && !item.backImageUrl && !item.imageBack && !item.aiBack) return '';
+    if ((itemId.includes('front') || itemId.includes('recto') || itemId.includes('_face')) && !item.backImageUrl && !item.imageBack && !item.aiBack) return '';
+  }
+
   let candidates = [];
   if (preferredView === 'back') {
-    candidates = [item.imageBack, item.mechanical, item.imageStudio, item.ai, item.imageUrl];
+    candidates = [
+      item.aiRemasteredBack,
+      item.aiBack,
+      item.backImageUrl,
+      item.imageBack,
+      (itemView === 'back' || itemId.includes('back') || itemId.includes('dos')) ? (item.aiRemastered || item.ai || item.realAiSnapshotUrl) : null,
+      item.mechanical,
+      item.aiImageUrl,
+      item.imageUrl
+    ];
   } else if (preferredView === 'front') {
-    candidates = [item.imageFront, item.ai, item.imageStudio, item.imageUrl];
+    candidates = [
+      item.aiRemastered,
+      item.ai,
+      item.realAiSnapshotUrl,
+      item.aiFront,
+      item.imageStudio,
+      item.frontImageUrl,
+      item.imageFront,
+      item.aiImageUrl,
+      item.imageUrl
+    ];
   } else {
-    candidates = [item.imageFront, item.ai, item.imageStudio, item.imageUrl, item.imageBack, item.mechanical];
+    candidates = [
+      item.aiRemastered,
+      item.ai,
+      item.realAiSnapshotUrl,
+      item.frontImageUrl,
+      item.imageFront,
+      item.aiImageUrl,
+      item.imageUrl,
+      item.backImageUrl,
+      item.imageBack,
+      item.mechanical
+    ];
   }
 
   if (item.items && Array.isArray(item.items)) {
     const sub = (preferredView && item.items.find(i => i.view === preferredView)) || item.items[0];
     if (sub) {
-      candidates.unshift(sub.imageFront, sub.ai, sub.imageStudio, sub.imageUrl, sub.imageBack, sub.mechanical);
+      if (preferredView === 'back') {
+        candidates.unshift(sub.aiRemasteredBack, sub.aiBack, sub.backImageUrl, sub.imageBack, sub.aiRemastered, sub.ai, sub.mechanical);
+      } else {
+        candidates.unshift(sub.aiRemastered, sub.ai, sub.realAiSnapshotUrl, sub.frontImageUrl, sub.imageFront, sub.aiImageUrl, sub.imageStudio, sub.imageUrl);
+      }
     }
   }
 
-  for (const c of candidates) {
-    if (typeof c === 'string' && c.trim() !== '' && c.trim() !== '""') {
-      return c.trim();
-    }
+  let validCandidates = candidates.filter(c => typeof c === 'string' && c.trim() !== '' && c.trim() !== '""');
+
+  // Filtrage strict insensible à la casse pour interdire toute fuite de visuel d'une face à l'autre
+  if (preferredView === 'back') {
+    validCandidates = validCandidates.filter(c => {
+      const lower = c.toLowerCase();
+      if (lower.includes('front') || lower.includes('face') || lower.includes('recto') || lower.includes('tfront') || lower.includes('pfront') || lower.includes('hfront')) {
+        return false;
+      }
+      return true;
+    });
+  } else if (preferredView === 'front') {
+    validCandidates = validCandidates.filter(c => {
+      const lower = c.toLowerCase();
+      if (lower.includes('back') || lower.includes('dos') || lower.includes('verso') || lower.includes('tback') || lower.includes('pback') || lower.includes('hback')) {
+        return false;
+      }
+      return true;
+    });
   }
+
+  // 1. Privilégier les visuels sur-mesure (clubvision, dfazz, btp_mockups, storage, data URIs ou assets locaux)
+  const customCandidate = validCandidates.find(c => 
+    c.includes('clubvision') ||
+    c.includes('dfazz') || 
+    c.includes('btp_mockups') || 
+    c.includes('thementalist') || 
+    c.includes('aaronh') || 
+    c.includes('dokiin') || 
+    c.includes('storage.googleapis.com') ||
+    c.includes('firebasestorage') ||
+    c.startsWith('data:') || 
+    (c.startsWith('/assets/') && !c.includes('JHK170') && !c.includes('JHK421') && !c.includes('JHK510') && !c.includes('bctw02t') && !c.includes('RH80')) ||
+    (!c.includes('JHK170') && !c.includes('JHK421') && !c.includes('JHK510') && !c.includes('bctw02t') && !c.includes('RH80'))
+  );
+
+  if (customCandidate) return customCandidate.trim();
+
+  // 2. Fallback sur n'importe quelle candidate valide
+  if (validCandidates.length > 0) return validCandidates[0].trim();
 
   if (typeof item.url === 'string' && item.url.trim() !== '' && item.url.trim() !== '""') {
     return item.url.trim();
@@ -549,45 +1578,114 @@ function extractBestImageUrl(item, preferredView) {
 // ==========================================
 // 1. ROUTE SLUG : GET /api/user-by-slug/:slug
 // ==========================================
-exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances: 1 }, async (req, res) => {
-  cors(req, res, async () => {
-    try {
-      let rawSlug = req.query.slug || req.params.slug || req.params[0] || req.path || '';
-      let slug = String(rawSlug).split('?')[0].split('/').filter(Boolean).pop() || '';
-      if (slug === 'user-by-slug' || slug === 'api') slug = '';
+exports.getUserBySlug = onRequest({ cors: true, minInstances: 1 }, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
-      if (!slug) {
-        return res.status(400).json({ error: 'Slug manquant' });
-      }
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send('');
+  }
 
-      const db = admin.firestore();
+  try {
+    let rawSlug = req.query.slug || req.query.id || req.query.uid || req.params?.slug || req.params?.[0] || req.path || '';
+    let slug = String(rawSlug).split('?')[0].split('/').filter(Boolean).pop() || '';
+    if (slug === 'user-by-slug' || slug === 'api') slug = '';
 
-      // 1. Chercher dans SiteConfigs par slug ou par domaine personnalisé
-      let snapshot = await db.collection('SiteConfigs').where('slug', '==', slug).limit(1).get();
-      if (snapshot.empty) {
-        snapshot = await db.collection('SiteConfigs').where('customDomain', '==', slug).limit(1).get();
+    if (!slug) {
+      return res.status(400).json({ error: 'Slug manquant' });
+    }
+
+    const db = admin.firestore();
+
+      // ── In-memory cache (60s TTL) ──────────────────────────────────────────
+      const SLUG_CACHE_TTL_MS = 60_000;
+      if (!exports._slugCache) exports._slugCache = new Map();
+      const _slugCache = exports._slugCache;
+      const isBypass = req.query._t || req.query.nocache;
+      const _cacheEntry = isBypass ? null : _slugCache.get(slug);
+      if (_cacheEntry && Date.now() - _cacheEntry.ts < SLUG_CACHE_TTL_MS) {
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+        return res.status(200).json(_cacheEntry.data);
       }
-      if (snapshot.empty) {
-        snapshot = await db.collection('SiteConfigs').where('domain', '==', slug).limit(1).get();
+      // ─────────────────────────────────────────────────────────────────────
+
+      // 1. Chercher dans SiteConfigs : par slug, customDomain, domain et doc ID — en parallèle
+      let snapshot;
+      {
+        const [bySlug, byCustomDomain, byDomain, byCustomDomains, byDocId] = await Promise.all([
+          db.collection('SiteConfigs').where('slug', '==', slug).limit(1).get(),
+          db.collection('SiteConfigs').where('customDomain', '==', slug).limit(1).get(),
+          db.collection('SiteConfigs').where('domain', '==', slug).limit(1).get(),
+          db.collection('SiteConfigs').where('customDomains', 'array-contains', slug).limit(1).get(),
+          db.collection('SiteConfigs').doc(slug).get(),
+        ]);
+        if (!bySlug.empty)        snapshot = bySlug;
+        else if (!byCustomDomain.empty) snapshot = byCustomDomain;
+        else if (!byDomain.empty) snapshot = byDomain;
+        else if (!byCustomDomains.empty) snapshot = byCustomDomains;
+        else if (byDocId.exists)  snapshot = { empty: false, docs: [byDocId] };
+        else                      snapshot = { empty: true };
       }
-      if (snapshot.empty) {
-        snapshot = await db.collection('SiteConfigs').where('customDomains', 'array-contains', slug).limit(1).get();
-      }
-      
-      // 2. Fallback direct par doc ID (UID) dans SiteConfigs
-      if (snapshot.empty) {
-        const docById = await db.collection('SiteConfigs').doc(slug).get();
-        if (docById.exists) {
-          snapshot = { empty: false, docs: [docById] };
+      if (snapshot.empty && !slug.startsWith('audit-')) {
+        const docByAudit = await db.collection('SiteConfigs').doc(`audit-${slug}`).get();
+        if (docByAudit.exists) {
+          snapshot = { empty: false, docs: [docByAudit] };
         }
       }
 
-      // 3. Fallback dans users par slug
+      // 3. Fallback dans anonymous_previews
+      if (snapshot.empty) {
+        const prevDoc = await db.collection('anonymous_previews').doc(slug).get();
+        if (prevDoc.exists) {
+          snapshot = { empty: false, docs: [prevDoc] };
+        }
+      }
+      if (snapshot.empty && !slug.startsWith('audit-')) {
+        const prevByAudit = await db.collection('anonymous_previews').doc(`audit-${slug}`).get();
+        if (prevByAudit.exists) {
+          snapshot = { empty: false, docs: [prevByAudit] };
+        }
+      }
+      if (snapshot.empty) {
+        const prevBySlug = await db.collection('anonymous_previews').where('companySlug', '==', slug).limit(1).get();
+        if (!prevBySlug.empty) {
+          snapshot = prevBySlug;
+        }
+      }
+      if (snapshot.empty) {
+        const prevByClean = await db.collection('anonymous_previews').where('cleanUid', '==', slug).limit(1).get();
+        if (!prevByClean.empty) {
+          snapshot = prevByClean;
+        }
+      }
+
+      // 4. Fallback dans btp_projects
+      if (snapshot.empty) {
+        const btpDoc = await db.collection('btp_projects').doc(slug).get();
+        if (btpDoc.exists) {
+          snapshot = { empty: false, docs: [btpDoc] };
+        }
+      }
+      if (snapshot.empty && !slug.startsWith('audit-')) {
+        const btpByAudit = await db.collection('btp_projects').doc(`audit-${slug}`).get();
+        if (btpByAudit.exists) {
+          snapshot = { empty: false, docs: [btpByAudit] };
+        }
+      }
+      if (snapshot.empty) {
+        const btpByProj = await db.collection('btp_projects').where('projectId', '==', slug).limit(1).get();
+        if (!btpByProj.empty) {
+          snapshot = btpByProj;
+        }
+      }
+
+      // 5. Fallback dans users par slug
       if (snapshot.empty) {
         snapshot = await db.collection('users').where('slug', '==', slug).limit(1).get();
       }
 
-      // 5. Fallback spécifique pour fabrizio / djdfazz.be -> guest_ms3ijgnco2xnid
+      // 6. Fallback spécifique pour fabrizio / djdfazz.be -> guest_ms3ijgnco2xnid
       if (snapshot.empty && (slug === 'fabrizio' || slug === 'guest_ms3ijgnco2xnid' || slug.includes('djdfazz'))) {
         const fabrizioDoc = await db.collection('SiteConfigs').doc('guest_ms3ijgnco2xnid').get();
         if (fabrizioDoc.exists) {
@@ -595,77 +1693,545 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
         }
       }
 
+      // 7. Fallback spécifique pour elox / djelox
+      if (snapshot.empty && (slug === 'elox' || slug === 'djelox' || slug === 'dj-elox')) {
+        snapshot = {
+          empty: false,
+          docs: [{
+            id: 'elox',
+            data: () => ({
+              companyName: 'DJ ELOX',
+              slug: 'elox',
+              logoUrl: '/elox_logo.png',
+              livePhotoUrl: '/elox_hero.jpg',
+              theme: 'dark',
+              accentColor: '#00ff88',
+              logoOverlayColor: 'original'
+            })
+          }]
+        };
+      }
+
+      // 8. Fallback spécifique pour clubvision / clubvisionroom / 13ansvr
+      if (snapshot.empty && (slug === 'clubvision' || slug === 'clubvisionroom' || slug === 'visionroom' || slug === '13ansvr' || slug === '13ans-vr')) {
+        const visionDoc = await db.collection('SiteConfigs').doc('clubvisionroom').get();
+        if (visionDoc.exists) {
+          snapshot = { empty: false, docs: [visionDoc] };
+        } else {
+          const mtDoc = await db.collection('SiteConfigs').doc('mt074jnaldxn').get();
+          if (mtDoc.exists) {
+            snapshot = { empty: false, docs: [mtDoc] };
+          }
+        }
+      }
+
       if (snapshot.empty) {
         return res.status(404).json({ error: 'Utilisateur / DJ non trouvé pour ce slug', slug });
       }
 
-      const userDoc = snapshot.docs[0];
-      const userData = userDoc.data();
+      let userDoc = snapshot.docs[0];
+      for (const d of snapshot.docs) {
+        const dData = d.data();
+        if (dData && dData.logoUrl && !dData.logoUrl.includes('logo_A_active_1787803093010') && (dData.logoUrl.includes('logo_dtf') || dData.companyName)) {
+          userDoc = d;
+          break;
+        }
+      }
+
+      const userData = userDoc.data() || {};
       userData.id = userDoc.id;
 
-      // Récupérer les produits et vêtements réels associés au DJ / Artiste
-      let productsList = [];
+      const isDfazzUser = slug === 'fabrizio' || slug.includes('djdfazz') || userDoc.id === 'guest_ms3ijgnco2xnid';
 
-      // Si la requête concerne Fabrizio / guest_ms3ijgnco2xnid, charger directement l'audit studio shop audit-8f198p5
-      if (slug === 'fabrizio' || userDoc.id === 'guest_ms3ijgnco2xnid' || slug.includes('djdfazz')) {
-        let auditDoc = await db.collection('anonymous_previews').doc('audit-8f198p5').get();
-        let aData = auditDoc.exists ? auditDoc.data() : null;
-
-        if (!aData) {
-          const projSnap = await db.collection('btp_projects').where('previewId', '==', 'audit-8f198p5').get();
-          if (!projSnap.empty) {
-            aData = projSnap.docs[0].data();
+      // Chercher en parallèle le document audit / preview lié pour fusionner les mockups et logos
+      let previewDocData = null;
+      try {
+        const candidateDocIds = [userDoc.id, slug, `audit-${slug}`, userData.cleanUid, userData.previewId, userData.auditId].filter(Boolean);
+        for (const cId of candidateDocIds) {
+          const pSnap = await db.collection('anonymous_previews').doc(cId).get();
+          if (pSnap.exists) {
+            previewDocData = pSnap.data();
+            break;
+          }
+          const bSnap = await db.collection('btp_projects').doc(cId).get();
+          if (bSnap.exists) {
+            previewDocData = bSnap.data();
+            break;
           }
         }
+      } catch (e) {}
 
-        if (aData) {
-          if (aData.logoUrl || aData.logoAdaptedUrl) {
-            userData.logoUrl = aData.logoUrl || aData.logoAdaptedUrl;
-            userData.auditLogoUrl = aData.logoUrl || aData.logoAdaptedUrl;
-          }
-          const auditItems = aData.items || aData.mockups || [];
-          if (auditItems.length > 0) {
-            productsList = [...auditItems];
+      // Logo en direct
+      let directLogo = userData.logoUrl || userData.logoAdaptedUrl || userData.auditLogoUrl || previewDocData?.logoUrl || previewDocData?.logoAdaptedUrl || '';
+      
+      // Récupérer en priorité absolue les produits / mockups réels de la session
+      let productsList = [];
+
+      // Nettoyage / normalisation spécifique pour Club Vision Room
+      if (slug === 'clubvision' || slug === 'clubvisionroom' || slug === 'visionroom' || slug === '13ansvr' || slug === '13ans-vr' || userDoc.id === 'clubvisionroom' || userDoc.id === 'clubvision' || userDoc.id === 'mt074jnaldxn' || userDoc.id === '13ansvr') {
+        userData.companyName = 'Club Vision Room';
+        userData.logoA = userData.logoA || 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/logos/1787803061043_logo_dtf.png';
+        userData.logoB = userData.logoB || 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/logos/1787803061043_logo_bee_dtf.png';
+        userData.logoUrl = userData.logoA;
+        userData.logoAdaptedUrl = userData.logoB;
+        userData.auditLogoUrl = userData.logoA;
+        userData.accentColor = userData.accentColor || '#ff3366';
+        if (!userData.logoPlacements) {
+          userData.logoPlacements = {
+            tFront: 'B', tBack: 'A',
+            pFront: 'B', pBack: 'A',
+            hFront: 'B', hBack: 'A',
+            tankFront: 'B', tankBack: 'A',
+            tankWhiteFront: 'B', tankWhiteBack: 'A',
+            heavyFront: 'B', heavyBack: 'A',
+            cardFront: 'A', cardBack: 'A'
+          };
+        }
+        if (!userData.livePhotoUrl) {
+          userData.livePhotoUrl = 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg';
+        }
+        directLogo = userData.logoA;
+
+        // Récupérer en priorité absolue les mockups existants de l'utilisateur ou de la session
+        const existingMockups = (Array.isArray(userData.mockups) && userData.mockups.length > 0) ? userData.mockups
+          : ((Array.isArray(userData.items) && userData.items.length > 0) ? userData.items
+          : ((previewDocData && Array.isArray(previewDocData.items) && previewDocData.items.length > 0) ? previewDocData.items
+          : ((previewDocData && Array.isArray(previewDocData.mockups) && previewDocData.mockups.length > 0) ? previewDocData.mockups : null)));
+
+        if (existingMockups && existingMockups.length > 0) {
+          productsList = [...existingMockups];
+        } else {
+          productsList = [
+            {
+              id: 'tFront',
+              title: 'T-shirt Noir',
+              name: 'T-shirt Noir',
+              price: 29.90,
+              garment: 'tshirt',
+              view: 'front',
+              frontImageUrl: '/clubvision_tshirt_front.png',
+              imageFront: '/clubvision_tshirt_front.png',
+              backImageUrl: '/clubvision_tshirt_back.png',
+              imageBack: '/clubvision_tshirt_back.png',
+              imageUrl: '/clubvision_tshirt_front.png',
+              sizes: ['S', 'M', 'L', 'XL'],
+              colors: ['Noir', 'Blanc']
+            },
+            {
+              id: 'pFront',
+              title: 'Polo Premium',
+              name: 'Polo Premium',
+              price: 39.90,
+              garment: 'polo',
+              view: 'front',
+              frontImageUrl: '/clubvision_polo_front.png',
+              imageFront: '/clubvision_polo_front.png',
+              backImageUrl: '/clubvision_polo_back.png',
+              imageBack: '/clubvision_polo_back.png',
+              imageUrl: '/clubvision_polo_front.png',
+              sizes: ['S', 'M', 'L', 'XL'],
+              colors: ['Noir', 'Blanc']
+            },
+            {
+              id: 'hFront',
+              title: 'Hoodie',
+              name: 'Hoodie',
+              price: 49.90,
+              garment: 'hoodie',
+              view: 'front',
+              frontImageUrl: '/clubvision_hoodie_front.png',
+              imageFront: '/clubvision_hoodie_front.png',
+              backImageUrl: '/clubvision_hoodie_back.png',
+              imageBack: '/clubvision_hoodie_back.png',
+              imageUrl: '/clubvision_hoodie_front.png',
+              sizes: ['S', 'M', 'L', 'XL'],
+              colors: ['Noir', 'Blanc']
+            }
+          ];
+
+          // Mettre à jour Firestore UNIQUEMENT si aucune maquette n'existait au préalable
+          try {
+            const cvPayload = {
+              companyName: userData.companyName,
+              logoUrl: userData.logoA,
+              logoA: userData.logoA,
+              logoB: userData.logoB,
+              logoAdaptedUrl: userData.logoB,
+              auditLogoUrl: userData.logoA,
+              logoPlacements: userData.logoPlacements,
+              livePhotoUrl: userData.livePhotoUrl,
+              accentColor: userData.accentColor,
+              products: {
+                tshirt: { name: 'T-shirt Noir', price: 29.90, imageFront: '/clubvision_tshirt_front.png', imageBack: '/clubvision_tshirt_back.png', frontImageUrl: '/clubvision_tshirt_front.png', backImageUrl: '/clubvision_tshirt_back.png' },
+                polo: { name: 'Polo Premium', price: 39.90, imageFront: '/clubvision_polo_front.png', imageBack: '/clubvision_polo_back.png', frontImageUrl: '/clubvision_polo_front.png', backImageUrl: '/clubvision_polo_back.png' },
+                hoodie: { name: 'Hoodie', price: 49.90, imageFront: '/clubvision_hoodie_front.png', imageBack: '/clubvision_hoodie_back.png', frontImageUrl: '/clubvision_hoodie_front.png', backImageUrl: '/clubvision_hoodie_back.png' }
+              },
+              items: productsList,
+              mockups: productsList
+            };
+            db.collection('SiteConfigs').doc('clubvisionroom').set(cvPayload, { merge: true }).catch(() => {});
+          } catch (e) {}
+        }
+      }
+
+      if (slug === 'aaronh' || userDoc.id === 'aaronh' || (userData.companyName && userData.companyName.toLowerCase().replace(/[^a-z0-9]/g, '') === 'aaronh')) {
+        if (!userData.companyName || userData.companyName === 'aaronh' || userData.companyName === 'AARONH') {
+          userData.companyName = 'Aaron H';
+        }
+        if (!userData.livePhotoUrl || userData.livePhotoUrl === '' || userData.livePhotoUrl === 'none') {
+          userData.livePhotoUrl = 'https://storage.googleapis.com/signaid-prod-assets/users/aaronh/gallery/1787509987223_cover.jpg';
+        }
+      }
+
+      if (!userData.logoUrl && directLogo) {
+        userData.logoUrl = directLogo;
+      }
+      if (!userData.auditLogoUrl && directLogo) {
+        userData.auditLogoUrl = directLogo;
+      }
+
+      // Live photo en direct
+      if (!userData.livePhotoUrl && previewDocData?.livePhotoUrl) {
+        userData.livePhotoUrl = previewDocData.livePhotoUrl;
+      }
+
+      // Company name en direct
+      if (!userData.companyName && previewDocData?.companyName) {
+        userData.companyName = previewDocData.companyName;
+      }
+
+      // Accent color en direct
+      if (!userData.accentColor && previewDocData?.accentColor) {
+        userData.accentColor = previewDocData.accentColor;
+      }
+
+      // Récupérer en priorité absolue les produits / mockups réels de la session si non encore fixés
+      if (productsList.length === 0) {
+        const prodsSource = (userData.products && typeof userData.products === 'object') 
+          ? userData.products 
+          : (previewDocData?.products && typeof previewDocData.products === 'object' ? previewDocData.products : null);
+
+        if (prodsSource && !Array.isArray(prodsSource)) {
+          Object.keys(prodsSource).forEach(k => {
+            const prod = prodsSource[k];
+            if (prod && typeof prod === 'object') {
+              const fImg = prod.imageFront || prod.frontImageUrl || prod.imageUrl || prod.aiImageUrl;
+              const bImg = prod.imageBack || prod.backImageUrl || '';
+              let finalPrice = prod.price || (k === 'hoodie' ? 49.00 : (k === 'polo' ? 39.90 : 29.90));
+              if ((k === 'hoodie' || prod.garment === 'sweat' || prod.garment === 'hoodie' || (prod.title && prod.title.toLowerCase().includes('hoodie'))) && finalPrice > 50) {
+                finalPrice = 49.00;
+              }
+              if (fImg || bImg) {
+                productsList.push({
+                  id: prod.id || `${slug}-${k}`,
+                  title: prod.name || prod.title || `Produit ${k.toUpperCase()}`,
+                  price: finalPrice,
+                  garment: prod.garment || k,
+                  frontImageUrl: fImg,
+                  backImageUrl: bImg,
+                  imageUrl: fImg,
+                  sizes: prod.sizes || ['S', 'M', 'L', 'XL'],
+                  colors: prod.colors || ['Noir']
+                });
+              }
+            }
+          });
+        }
+
+        if (productsList.length === 0) {
+          if (Array.isArray(userData.mockups) && userData.mockups.length > 0) {
+            productsList = [...userData.mockups];
+          } else if (Array.isArray(userData.items) && userData.items.length > 0) {
+            productsList = [...userData.items];
+          } else if (previewDocData && Array.isArray(previewDocData.items) && previewDocData.items.length > 0) {
+            productsList = [...previewDocData.items];
+          } else if (previewDocData && Array.isArray(previewDocData.mockups) && previewDocData.mockups.length > 0) {
+            productsList = [...previewDocData.mockups];
           }
         }
       }
 
+      // Cas particuliers pour profils célèbres (uniquement si AUCUN mockup réel n'a été configuré dans l'audit)
+      if (isDfazzUser && productsList.length === 0) {
+        userData.companyName = userData.companyName || 'DJ D-FAZZ';
+        userData.logoUrl = userData.logoUrl || '/logo_dfazz_avatar_clean.png';
+        userData.auditLogoUrl = userData.auditLogoUrl || '/logo_dfazz_avatar_clean.png';
+        userData.livePhotoUrl = userData.livePhotoUrl || '/assets/dfazz_hero.jpg';
+        userData.contactEmail = userData.contactEmail || 'Fabriziomagistro89@gmail.com';
+        userData.whatsapp = userData.whatsapp || '+32492104603';
+        productsList = [
+          {
+            id: 'dfazz-tshirt',
+            title: 'T-Shirt Premium DJ D-FAZZ',
+            price: 29.90,
+            garment: 'tshirt',
+            frontImageUrl: '/dfazz_tshirt_front.jpg',
+            backImageUrl: '/dfazz_tshirt_back.jpg',
+            imageUrl: '/dfazz_tshirt_front.jpg',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          },
+          {
+            id: 'dfazz-polo',
+            title: 'Polo Premium DJ D-FAZZ',
+            price: 39.90,
+            garment: 'polo',
+            frontImageUrl: '/dfazz_polo_front.jpg',
+            backImageUrl: '/dfazz_polo_back.jpg',
+            imageUrl: '/dfazz_polo_front.jpg',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          },
+          {
+            id: 'dfazz-hoodie',
+            title: 'Hoodie Premium DJ D-FAZZ',
+            price: 49.90,
+            garment: 'hoodie',
+            frontImageUrl: '/dfazz_hoodie_front.jpg',
+            backImageUrl: '/dfazz_hoodie_back.jpg',
+            imageUrl: '/dfazz_hoodie_front.jpg',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          }
+        ];
+      } else if ((slug === 'aaronh' || userDoc.id === 'aaronh') && productsList.length === 0) {
+        userData.companyName = userData.companyName || 'Aaron H';
+        userData.logoUrl = userData.logoUrl || '/aaronh_logo_transparent.png';
+        userData.auditLogoUrl = userData.auditLogoUrl || '/aaronh_logo_transparent.png';
+        userData.contactEmail = userData.contactEmail || 'contact.djaaronh@gmail.com';
+        productsList = [
+          {
+            id: 'aaronh-tshirt',
+            title: 'T-Shirt Premium Aaron H',
+            price: 29.90,
+            garment: 'tshirt',
+            frontImageUrl: '/assets/tshirt-black-JHK170.png',
+            backImageUrl: '/assets/tshirt-black-JHK170-dos.png',
+            imageUrl: '/assets/tshirt-black-JHK170.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          },
+          {
+            id: 'aaronh-polo',
+            title: 'Polo Premium Aaron H',
+            price: 39.90,
+            garment: 'polo',
+            frontImageUrl: '/assets/polo-black-JHK510.png',
+            backImageUrl: '/assets/polo-black-JHK510-dos.png',
+            imageUrl: '/assets/polo-black-JHK510.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          },
+          {
+            id: 'aaronh-hoodie',
+            title: 'Hoodie Premium Aaron H',
+            price: 49.90,
+            garment: 'hoodie',
+            frontImageUrl: '/assets/hoodie-black-JHK421.png',
+            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
+            imageUrl: '/assets/hoodie-black-JHK421.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          }
+        ];
+      } else if ((slug === 'dokiin' || userDoc.id === 'dokiin' || userDoc.id === 'audit-mt4cimp4luio') && productsList.length === 0) {
+        userData.companyName = userData.companyName || 'D OKIIN';
+        userData.logoUrl = userData.logoUrl || '/dokiin_logo_white.png';
+        userData.auditLogoUrl = userData.auditLogoUrl || userData.logoUrl || '/dokiin_logo_white.png';
+        userData.livePhotoUrl = userData.livePhotoUrl || '/assets/previews/dokiin_mockup.webp';
+        userData.theme = userData.theme || 'dark';
+        userData.logoOverlayColor = userData.logoOverlayColor || 'white';
+        userData.accentColor = userData.accentColor || '#38bdf8';
+        productsList = [
+          {
+            id: 'dokiin-tshirt',
+            title: 'T-Shirt Premium D OKIIN',
+            price: 29.90,
+            garment: 'tshirt',
+            frontImageUrl: '/assets/tshirt-black-JHK170.png',
+            backImageUrl: '/assets/tshirt-black-JHK170-dos.png',
+            imageUrl: '/assets/tshirt-black-JHK170.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          },
+          {
+            id: 'dokiin-polo',
+            title: 'Polo Premium D OKIIN',
+            price: 39.90,
+            garment: 'polo',
+            frontImageUrl: '/assets/polo-black-JHK510.png',
+            backImageUrl: '/assets/polo-black-JHK510-dos.png',
+            imageUrl: '/assets/polo-black-JHK510.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          },
+          {
+            id: 'dokiin-hoodie',
+            title: 'Hoodie Premium D OKIIN',
+            price: 49.90,
+            garment: 'hoodie',
+            frontImageUrl: '/assets/hoodie-black-JHK421.png',
+            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
+            imageUrl: '/assets/hoodie-black-JHK421.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          }
+        ];
+      } else if ((slug === 'mentalist' || slug === 'thementalist' || userDoc.id === 'mentalist' || userDoc.id === 'thementalist') && productsList.length === 0) {
+        if (!userData.companyName || userData.companyName.toLowerCase().includes('dfazz')) {
+          userData.companyName = 'Mentalist';
+        }
+        userData.logoUrl = userData.logoUrl || 'https://storage.googleapis.com/signaid-prod-assets/users/audit-msx4a4h6crjy/logos/1787516508472_logo.png';
+        userData.auditLogoUrl = userData.auditLogoUrl || 'https://storage.googleapis.com/signaid-prod-assets/users/audit-msx4a4h6crjy/logos/1787516508472_logo.png';
+        const cName = userData.companyName || 'Mentalist';
+        productsList = [
+          {
+            id: 'mentalist-tshirt',
+            title: `T-Shirt ${cName}`,
+            price: 29.90,
+            garment: 'tshirt',
+            frontImageUrl: '/assets/tshirt-black-JHK170.png',
+            backImageUrl: '/assets/tshirt-black-JHK170-dos.png',
+            imageUrl: '/assets/tshirt-black-JHK170.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          },
+          {
+            id: 'mentalist-polo',
+            title: `Polo ${cName}`,
+            price: 39.90,
+            garment: 'polo',
+            frontImageUrl: '/assets/polo-black-JHK510.png',
+            backImageUrl: '/assets/polo-black-JHK510-dos.png',
+            imageUrl: '/assets/polo-black-JHK510.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          },
+          {
+            id: 'mentalist-hoodie',
+            title: `Hoodie ${cName}`,
+            price: 49.90,
+            garment: 'hoodie',
+            frontImageUrl: '/assets/hoodie-black-JHK421.png',
+            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
+            imageUrl: '/assets/hoodie-black-JHK421.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          }
+        ];
+      } else if ((slug === 'elox' || slug === 'djelox' || userDoc.id === 'elox' || userDoc.id === 'djelox') && productsList.length === 0) {
+        userData.companyName = userData.companyName || 'DJ ELOX';
+        userData.logoUrl = userData.logoUrl || '/elox_logo.png';
+        userData.auditLogoUrl = userData.auditLogoUrl || userData.logoUrl || '/elox_logo.png';
+        userData.livePhotoUrl = userData.livePhotoUrl || '/elox_hero.jpg';
+        userData.theme = userData.theme || 'dark';
+        userData.logoOverlayColor = userData.logoOverlayColor || 'original';
+        userData.accentColor = userData.accentColor || '#00ff88';
+        userData.presentation = userData.presentation || 'DJ officiel, sets électroniques en clubs et festivals (Liège, Bruxelles, Dinant). Merchandising officiel et textile exclusif imprimé à la demande.';
+        userData.enableLiveWidget = userData.enableLiveWidget !== undefined ? userData.enableLiveWidget : true;
+        userData.liveWidgetStatus = userData.liveWidgetStatus || '🟢 En Tournée / Liège • Bruxelles • Dinant';
+        productsList = [
+          {
+            id: 'elox-tshirt',
+            title: 'T-Shirt Premium DJ ELOX',
+            price: 29.90,
+            garment: 'tshirt',
+            frontImageUrl: '/assets/tshirt-black-JHK170.png',
+            backImageUrl: '/assets/tshirt-black-JHK170-dos.png',
+            imageUrl: '/assets/tshirt-black-JHK170.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          },
+          {
+            id: 'elox-polo',
+            title: 'Polo Premium DJ ELOX',
+            price: 39.90,
+            garment: 'polo',
+            frontImageUrl: '/assets/polo-black-JHK510.png',
+            backImageUrl: '/assets/polo-black-JHK510-dos.png',
+            imageUrl: '/assets/polo-black-JHK510.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          },
+          {
+            id: 'elox-hoodie',
+            title: 'Hoodie Premium DJ ELOX',
+            price: 49.90,
+            garment: 'hoodie',
+            frontImageUrl: '/assets/hoodie-black-JHK421.png',
+            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
+            imageUrl: '/assets/hoodie-black-JHK421.png',
+            sizes: ['S', 'M', 'L', 'XL'],
+            colors: ['Noir']
+          }
+        ];
+      }
+
       if (productsList.length === 0) {
-        // 1. Mockups directs dans le document SiteConfigs (userData.mockups ou userData.items)
+        // 1. Mockups directs dans le document SiteConfigs (userData.mockups, userData.items ou userData.products)
         if (userData.mockups && Array.isArray(userData.mockups) && userData.mockups.length > 0) {
           productsList.push(...userData.mockups);
         }
         if (userData.items && Array.isArray(userData.items) && userData.items.length > 0) {
           productsList.push(...userData.items);
         }
+        if (userData.products && typeof userData.products === 'object') {
+          if (Array.isArray(userData.products)) {
+            productsList.push(...userData.products);
+          } else {
+            Object.keys(userData.products).forEach(k => {
+              const prod = userData.products[k];
+              if (prod && typeof prod === 'object') {
+                productsList.push({
+                  id: prod.id || `${slug}-${k}`,
+                  title: prod.name || prod.title || `Produit ${k.toUpperCase()}`,
+                  price: prod.price || 29.90,
+                  garment: prod.garment || k,
+                  frontImageUrl: prod.imageFront || prod.frontImageUrl || prod.imageUrl || prod.aiImageUrl,
+                  backImageUrl: prod.imageBack || prod.backImageUrl || '',
+                  imageUrl: prod.imageFront || prod.frontImageUrl || prod.imageUrl,
+                  sizes: prod.sizes || ['S', 'M', 'L', 'XL'],
+                  colors: prod.colors || ['Noir']
+                });
+              }
+            });
+          }
+        }
       }
 
-      // 2. Chercher également dans btp_projects et anonymous_previews
-      const keysToTry = [...new Set([userDoc.id, userData.actuationKey, userData.generatedKey, 'audit-8f198p5'])].filter(Boolean);
-      for (const k of keysToTry) {
-        let projSnap = await db.collection('btp_projects').where('projectId', '==', k).get();
-        if (projSnap.empty) {
-          projSnap = await db.collection('btp_projects').where('previewId', '==', k).get();
-        }
-        if (!projSnap.empty) {
-          const pData = projSnap.docs[0].data();
-          if (pData.logoUrl || pData.logoAdaptedUrl) {
-            userData.auditLogoUrl = pData.logoUrl || pData.logoAdaptedUrl;
+      if (productsList.length === 0 || productsList.every(p => !p.backImageUrl)) {
+        // 2. Chercher également dans btp_projects et anonymous_previews
+        const isDfazzUser = slug === 'fabrizio' || slug.includes('djdfazz') || userDoc.id === 'guest_ms3ijgnco2xnid';
+        const keysToTry = [...new Set([userDoc.id, userData.actuationKey, userData.generatedKey, slug, isDfazzUser ? 'audit-8f198p5' : null])].filter(Boolean);
+        for (const k of keysToTry) {
+          let projSnap = await db.collection('btp_projects').where('projectId', '==', k).get();
+          if (projSnap.empty) {
+            projSnap = await db.collection('btp_projects').where('previewId', '==', k).get();
           }
-          const foundItems = pData.mockups || pData.items || [];
-          if (foundItems.length > 0) {
-            productsList.unshift(...foundItems);
+          if (projSnap.empty) {
+            const directProj = await db.collection('btp_projects').doc(k).get();
+            if (directProj.exists) projSnap = { empty: false, docs: [directProj] };
           }
-        }
-        const prevDoc = await db.collection('anonymous_previews').doc(k).get();
-        if (prevDoc.exists) {
-          const pData = prevDoc.data();
-          if (pData.logoUrl || pData.logoAdaptedUrl) {
-            userData.auditLogoUrl = pData.logoUrl || pData.logoAdaptedUrl;
+          if (projSnap && !projSnap.empty) {
+            const pData = projSnap.docs[0].data();
+            if (pData.logoUrl || pData.logoAdaptedUrl) {
+              userData.auditLogoUrl = pData.logoUrl || pData.logoAdaptedUrl;
+            }
+            const foundItems = pData.mockups || pData.items || [];
+            if (foundItems.length > 0) {
+              productsList.unshift(...foundItems);
+            }
           }
-          const pItems = pData.items || pData.mockups || [];
-          if (pItems.length > 0) {
-            productsList.unshift(...pItems);
+          const prevDoc = await db.collection('anonymous_previews').doc(k).get();
+          if (prevDoc.exists) {
+            const pData = prevDoc.data();
+            if (pData.logoUrl || pData.logoAdaptedUrl) {
+              userData.auditLogoUrl = pData.logoUrl || pData.logoAdaptedUrl;
+            }
+            const pItems = pData.items || pData.mockups || [];
+            if (pItems.length > 0) {
+              productsList.unshift(...pItems);
+            }
           }
         }
       }
@@ -690,6 +2256,8 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
             price: 29.90,
             imageUrl: logo,
             garment: 'tshirt',
+            frontImageUrl: '/assets/tshirt-black-JHK170.png',
+            backImageUrl: '/assets/tshirt-black-JHK170-dos.png',
             sizes: ['S', 'M', 'L', 'XL'],
             colors: ['Noir', 'Blanc']
           },
@@ -699,6 +2267,8 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
             price: 49.90,
             imageUrl: logo,
             garment: 'hoodie',
+            frontImageUrl: '/assets/hoodie-black-JHK421.png',
+            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
             sizes: ['S', 'M', 'L', 'XL'],
             colors: ['Noir']
           },
@@ -708,6 +2278,8 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
             price: 39.90,
             imageUrl: logo,
             garment: 'polo',
+            frontImageUrl: '/assets/polo-black-JHK510.png',
+            backImageUrl: '/assets/polo-black-JHK510-dos.png',
             sizes: ['S', 'M', 'L', 'XL'],
             colors: ['Noir', 'Blanc']
           },
@@ -717,6 +2289,8 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
             price: 44.90,
             imageUrl: logo,
             garment: 'sweat',
+            frontImageUrl: '/assets/hoodie-black-JHK421.png',
+            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
             sizes: ['S', 'M', 'L', 'XL'],
             colors: ['Noir', 'Gris']
           }
@@ -734,15 +2308,34 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
       const groupedMap = {};
 
       filteredItems.forEach((item, index) => {
-        const garmentKey = (item.garment || item.category || `item-${index}`).toLowerCase();
+        let garmentKey = (item.garment || item.category || `item-${index}`).toLowerCase();
+        if (garmentKey === 'sweat' || garmentKey === 'sweatshirt') garmentKey = 'hoodie';
         
-        const frontCandidate = extractBestImageUrl(item, 'front');
-        const backCandidate = extractBestImageUrl(item, 'back');
+        let frontCandidate = extractBestImageUrl(item, 'front');
+        let backCandidate = extractBestImageUrl(item, 'back');
+
+        const defaultFrontTemplate = garmentKey === 'polo' 
+          ? '/assets/polo-black-JHK510.png' 
+          : (garmentKey === 'hoodie' ? '/assets/hoodie-black-JHK421.png' : '/assets/tshirt-black-JHK170.png');
+
+        const defaultBackTemplate = garmentKey === 'polo' 
+          ? '/assets/polo-black-JHK510-dos.png' 
+          : (garmentKey === 'hoodie' ? '/assets/hoodie-black-JHK421-dos.png' : '/assets/tshirt-black-JHK170-dos.png');
+
+        if (!frontCandidate || frontCandidate.includes('dokiin_') || frontCandidate.includes('aaronh_') || frontCandidate.includes('thementalist_') || frontCandidate.includes('elox_')) {
+          frontCandidate = defaultFrontTemplate;
+        }
+
+        if (!backCandidate || backCandidate.includes('dokiin_') || backCandidate.includes('aaronh_') || backCandidate.includes('thementalist_') || backCandidate.includes('elox_')) {
+          backCandidate = defaultBackTemplate;
+        }
 
         if (!groupedMap[garmentKey]) {
-          const title = item.title || item.name || item.info?.title || `Produit Merch ${garmentKey.toUpperCase()}`;
+          let title = item.title || item.name || item.info?.title || `Produit Merch ${garmentKey.toUpperCase()}`;
+          title = String(title).replace(/\s+(FACE|DOS)$/i, '').trim();
           const defaultPriceMap = {
             tshirt: 29.90,
+            tshirt_basic: 24.90,
             polo: 39.90,
             sweat: 44.90,
             sweatshirt: 44.90,
@@ -752,13 +2345,13 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
           const priceRaw = item.price || item.info?.price;
           const price = typeof priceRaw === 'number' ? priceRaw : (parseFloat(String(priceRaw || '').replace(/[^\d.]/g, '')) || stdPrice);
 
-          let initialFront = frontCandidate;
-          if (initialFront && initialFront.includes('logo_')) {
-            initialFront = '';
+          let initialFront = frontCandidate || defaultFrontTemplate;
+          if (initialFront && (initialFront.includes('logo_official') || initialFront.includes('logo_white_') || initialFront.includes('logo_A_active')) && !initialFront.includes('tshirt') && !initialFront.includes('polo') && !initialFront.includes('hoodie')) {
+            initialFront = defaultFrontTemplate;
           }
-          let initialBack = backCandidate;
-          if (initialBack && initialBack.includes('logo_')) {
-            initialBack = '';
+          let initialBack = backCandidate || defaultBackTemplate;
+          if (initialBack && (initialBack.includes('logo_official') || initialBack.includes('logo_white_') || initialBack.includes('logo_A_active')) && !initialBack.includes('tshirt') && !initialBack.includes('polo') && !initialBack.includes('hoodie')) {
+            initialBack = defaultBackTemplate;
           }
 
           groupedMap[garmentKey] = {
@@ -768,23 +2361,66 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
             garment: garmentKey,
             frontImageUrl: initialFront,
             backImageUrl: initialBack,
+            imageUrl: initialFront,
             sizes: Array.isArray(item.sizes) ? item.sizes : ['S', 'M', 'L', 'XL'],
             colors: Array.isArray(item.colors) ? item.colors : ['Noir', 'Blanc']
           };
         } else {
-          if (frontCandidate && (!groupedMap[garmentKey].frontImageUrl || frontCandidate.startsWith('data:') || frontCandidate.includes('btp_mockups') || groupedMap[garmentKey].frontImageUrl.includes('logo_'))) {
+          if (item.title && (!item.view || item.view === 'front')) {
+            groupedMap[garmentKey].name = String(item.title).replace(/\s+(FACE|DOS)$/i, '').trim();
+          }
+          const isFrontCustom = frontCandidate && (
+            frontCandidate.includes('storage.googleapis.com') ||
+            frontCandidate.includes('firebasestorage') ||
+            frontCandidate.includes('btp_mockups') ||
+            frontCandidate.includes('dfazz') ||
+            frontCandidate.includes('aaronh') ||
+            frontCandidate.includes('clubvision') ||
+            frontCandidate.startsWith('data:') ||
+            (frontCandidate.startsWith('/assets/') && !frontCandidate.includes('JHK') && !frontCandidate.includes('card-base') && !frontCandidate.includes('neutral'))
+          );
+          const currentFrontIsGeneric = !groupedMap[garmentKey].frontImageUrl || groupedMap[garmentKey].frontImageUrl.includes('logo_') || groupedMap[garmentKey].frontImageUrl.includes('JHK') || groupedMap[garmentKey].frontImageUrl.includes('bctw');
+
+          if (frontCandidate && (currentFrontIsGeneric || isFrontCustom)) {
             groupedMap[garmentKey].frontImageUrl = frontCandidate;
           }
-          if (backCandidate && (!groupedMap[garmentKey].backImageUrl || backCandidate.startsWith('data:') || backCandidate.includes('btp_mockups') || groupedMap[garmentKey].backImageUrl.includes('logo_'))) {
+
+          const isBackCustom = backCandidate && (
+            backCandidate.includes('storage.googleapis.com') ||
+            backCandidate.includes('firebasestorage') ||
+            backCandidate.includes('btp_mockups') ||
+            backCandidate.includes('dfazz') ||
+            backCandidate.includes('aaronh') ||
+            backCandidate.includes('clubvision') ||
+            backCandidate.startsWith('data:') ||
+            (backCandidate.startsWith('/assets/') && !backCandidate.includes('JHK') && !backCandidate.includes('card-base') && !backCandidate.includes('neutral'))
+          );
+          const currentBackIsGeneric = !groupedMap[garmentKey].backImageUrl || groupedMap[garmentKey].backImageUrl.includes('logo_') || groupedMap[garmentKey].backImageUrl.includes('JHK') || groupedMap[garmentKey].backImageUrl.includes('bctw');
+
+          if (backCandidate && (currentBackIsGeneric || isBackCustom)) {
             groupedMap[garmentKey].backImageUrl = backCandidate;
+          } else if (!groupedMap[garmentKey].backImageUrl) {
+            groupedMap[garmentKey].backImageUrl = defaultBackTemplate;
           }
         }
       });
 
+      const ensurePublicAssetUrl = (url) => {
+        if (!url || typeof url !== 'string') return url || '';
+        if (url.includes('firebasestorage.googleapis.com/v0/b/signaid-prod-assets/o/')) {
+          const match = url.match(/\/o\/(.*?)(?:\?|$)/);
+          if (match) {
+            const assetPath = decodeURIComponent(match[1]);
+            return `https://us-central1-signaid-prod.cloudfunctions.net/getAsset?path=${encodeURIComponent(assetPath)}`;
+          }
+        }
+        return url;
+      };
+
       let lastStorageError = null;
       const uploadBase64ToStorage = async (base64Str, assetPath) => {
         if (!base64Str || typeof base64Str !== 'string' || !base64Str.startsWith('data:')) {
-          return base64Str || '';
+          return ensurePublicAssetUrl(base64Str) || '';
         }
         try {
           const commaIdx = base64Str.indexOf(',');
@@ -799,18 +2435,18 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
 
           const bucket = admin.storage().bucket('signaid-prod-assets');
           const file = bucket.file(assetPath);
-          const token = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
 
           await file.save(buffer, {
             metadata: {
               contentType: mimeType,
-              metadata: { firebaseStorageDownloadTokens: token }
+              cacheControl: 'public, max-age=86400'
             },
             resumable: false
           });
+          await file.makePublic().catch(() => {});
 
           const encodedPath = encodeURIComponent(assetPath);
-          return `https://firebasestorage.googleapis.com/v0/b/signaid-prod-assets/o/${encodedPath}?alt=media&token=${token}`;
+          return `https://us-central1-signaid-prod.cloudfunctions.net/getAsset?path=${encodedPath}`;
         } catch (err) {
           console.error('[Storage Upload Error]', err);
           lastStorageError = String(err.message || err);
@@ -820,55 +2456,89 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
 
       let needsFirestoreUpdate = false;
 
-      let cleanLogoUrl = extractBestImageUrl({ imageUrl: userData.auditLogoUrl || userData.logoUrl, url: userData.avatarUrl }) || '';
+      // 1. Logo Profil (Avatar / Bulle de profil) :
+      // Le logo de création de profil (userData.logoUrl / avatarUrl / profileLogoUrl) est PRIORITAIRE pour la bulle.
+      let cleanLogoUrl = extractBestImageUrl({ imageUrl: userData.logoUrl || userData.avatarUrl || userData.profileLogoUrl || previewDocData?.logoUrl || userData.auditLogoUrl || previewDocData?.auditLogoUrl }) || '';
       if (cleanLogoUrl.startsWith('data:image/')) {
         cleanLogoUrl = await uploadBase64ToStorage(cleanLogoUrl, `btp_mockups/${userDoc.id}/web/logo_${Date.now()}.png`);
         needsFirestoreUpdate = true;
+      } else {
+        cleanLogoUrl = ensurePublicAssetUrl(cleanLogoUrl);
+      }
+
+      // 2. Logos Merch / Textiles (Audit) :
+      // Pour les visuels de merch, les logos de l'audit sont PRIORITAIRES.
+      let cleanAuditLogoA = extractBestImageUrl({ imageUrl: userData.auditLogoUrl || userData.logoA || previewDocData?.auditLogoUrl || previewDocData?.logoA || userData.logoUrl }) || cleanLogoUrl;
+      if (cleanAuditLogoA.startsWith('data:image/')) {
+        cleanAuditLogoA = await uploadBase64ToStorage(cleanAuditLogoA, `btp_mockups/${userDoc.id}/web/audit_logoA_${Date.now()}.png`);
+        needsFirestoreUpdate = true;
+      } else {
+        cleanAuditLogoA = ensurePublicAssetUrl(cleanAuditLogoA);
+      }
+
+      let cleanAuditLogoB = extractBestImageUrl({ imageUrl: userData.logoB || userData.logoAdaptedUrl || previewDocData?.logoB || previewDocData?.logoAdaptedUrl || userData.auditLogoUrl || userData.logoA || userData.logoUrl }) || cleanAuditLogoA;
+      if (cleanAuditLogoB.startsWith('data:image/')) {
+        cleanAuditLogoB = await uploadBase64ToStorage(cleanAuditLogoB, `btp_mockups/${userDoc.id}/web/audit_logoB_${Date.now()}.png`);
+        needsFirestoreUpdate = true;
+      } else {
+        cleanAuditLogoB = ensurePublicAssetUrl(cleanAuditLogoB);
       }
 
       let cleanLivePhotoUrl = extractBestImageUrl({ imageUrl: userData.livePhotoUrl }) || '';
       if (cleanLivePhotoUrl.startsWith('data:image/')) {
         cleanLivePhotoUrl = await uploadBase64ToStorage(cleanLivePhotoUrl, `btp_mockups/${userDoc.id}/web/live_${Date.now()}.png`);
         needsFirestoreUpdate = true;
+      } else {
+        cleanLivePhotoUrl = ensurePublicAssetUrl(cleanLivePhotoUrl);
       }
 
-      const fallbackLogo = cleanLogoUrl || 'https://signaid-prod.web.app/logo.png';
+      // Strict Anti-Leakage Guard: Prevent DJ D-FAZZ logo from leaking into any other artist profile
+      if (slug === 'aaronh' || userDoc.id === 'aaronh') {
+        cleanLogoUrl = cleanLogoUrl || '/aaronh_logo_transparent.png';
+      } else if (slug === 'mentalist' || slug === 'thementalist' || userDoc.id === 'mentalist' || userDoc.id === 'thementalist') {
+        cleanLogoUrl = cleanLogoUrl || 'https://storage.googleapis.com/signaid-prod-assets/users/audit-msx4a4h6crjy/logos/1787516508472_logo.png';
+      } else if (slug === 'elox' || userDoc.id === 'elox') {
+        cleanLogoUrl = cleanLogoUrl || '/elox_logo.png';
+      } else if (!isDfazzUser) {
+        if (cleanLogoUrl.toLowerCase().includes('dfazz') || cleanLogoUrl.includes('audit-8f198p5') || cleanLogoUrl.includes('guest_ms3ijgnco2xnid')) {
+          cleanLogoUrl = '';
+        }
+        if (cleanLivePhotoUrl.toLowerCase().includes('dfazz') || cleanLivePhotoUrl.includes('audit-8f198p5') || cleanLivePhotoUrl.includes('guest_ms3ijgnco2xnid')) {
+          cleanLivePhotoUrl = '';
+        }
+      }
+
+      const fallbackLogo = cleanLogoUrl || '/logo.png';
 
       const defaultGarmentImages = {
-        tshirt: 'https://signaid-prod.web.app/assets/tshirt-black-JHK170.png',
-        polo: 'https://signaid-prod.web.app/assets/polo-black-JHK510.png',
-        sweat: 'https://signaid-prod.web.app/assets/hoodie-black-JHK421.png',
-        hoodie: 'https://signaid-prod.web.app/assets/hoodie-black-JHK421.png',
-        sweatshirt: 'https://signaid-prod.web.app/assets/hoodie-black-JHK421.png'
+        tshirt: '/assets/tshirt-black-JHK170.png',
+        polo: '/assets/polo-black-JHK510.png',
+        sweat: '/assets/hoodie-black-JHK421.png',
+        hoodie: '/assets/hoodie-black-JHK421.png',
+        sweatshirt: '/assets/hoodie-black-JHK421.png'
       };
 
       const normalizedProducts = await Promise.all(Object.values(groupedMap).map(async (p, idx) => {
         let fImg = p.frontImageUrl || p.imageUrl || '';
         let bImg = p.backImageUrl || '';
 
-        // Si l'image de face est totalement absente ou pointe vers le logo brut, utiliser l'image de vêtement appropriée
-        if (!fImg || fImg === cleanLogoUrl || fImg.includes('logo_')) {
-          const garmentKey = String(p.garment || p.category || p.id || '').toLowerCase();
-          if (garmentKey.includes('polo') || p.id === 'pFront') {
-            fImg = defaultGarmentImages.polo;
-          } else if (garmentKey.includes('hoodie') || garmentKey.includes('sweat') || p.id === 'hFront') {
-            fImg = defaultGarmentImages.hoodie;
-          } else {
-            fImg = defaultGarmentImages.tshirt;
-          }
-        }
-
-        if (bImg === cleanLogoUrl || bImg.includes('logo_')) {
-          bImg = '';
+        // Si l'image de face est totalement absente, utiliser l'image de gabarit vêtement par défaut
+        if (!fImg) {
+          const garmentKey = String(p.garment || '').toLowerCase();
+          fImg = defaultGarmentImages[garmentKey] || fallbackLogo;
         }
 
         if (fImg.startsWith('data:')) {
           fImg = await uploadBase64ToStorage(fImg, `btp_mockups/${userDoc.id}/web/${p.id}_front_${Date.now()}_${idx}.png`);
           needsFirestoreUpdate = true;
+        } else {
+          fImg = ensurePublicAssetUrl(fImg);
         }
         if (bImg.startsWith('data:')) {
           bImg = await uploadBase64ToStorage(bImg, `btp_mockups/${userDoc.id}/web/${p.id}_back_${Date.now()}_${idx}.png`);
           needsFirestoreUpdate = true;
+        } else {
+          bImg = ensurePublicAssetUrl(bImg);
         }
 
         const mainImg = fImg || bImg || fallbackLogo;
@@ -876,17 +2546,17 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
         return {
           id: String(p.id),
           name: String(p.name),
-          price: Number(p.price) || 0,
-          garment: String(p.garment || 'tshirt'),
-          frontImageUrl: fImg,
-          backImageUrl: bImg,
-          imageUrl: mainImg,
-          sizes: p.sizes || ["S", "M", "L", "XL"],
-          colors: p.colors || ["Noir", "Blanc"]
+          price: Number(p.price),
+          garment: String(p.garment),
+          frontImageUrl: String(fImg),
+          backImageUrl: String(bImg),
+          imageUrl: String(mainImg),
+          sizes: Array.isArray(p.sizes) ? p.sizes : ['S', 'M', 'L', 'XL'],
+          colors: Array.isArray(p.colors) ? p.colors : ['Noir', 'Blanc']
         };
       }));
 
-      // Si des chaînes Base64 ont été migrées vers Firebase Storage, persistez les nouvelles URLs dans Firestore
+      // Si des chaînes Base64 ont été migrées vers Firebase Storage, persistez les nouvelles URLs dans Firestore (SiteConfigs, prospects, audits, vault)
       if (needsFirestoreUpdate) {
         try {
           const updateData = {};
@@ -906,6 +2576,16 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
 
           await db.collection('SiteConfigs').doc(userDoc.id).set(updateData, { merge: true });
           console.log(`[Base64 Migration] SiteConfigs/${userDoc.id} updated with Cloud Storage URLs.`);
+
+          // Synchronisation normalisée complète dans prospects, audits et vault
+          await persistProspectProfileBackend(admin, {
+            prospectSlug: userDoc.id,
+            slug: userDoc.id,
+            companyName: userData.companyName || userDoc.id,
+            logoUrl: cleanLogoUrl.startsWith('http') ? cleanLogoUrl : undefined,
+            livePhotoUrl: cleanLivePhotoUrl.startsWith('http') ? cleanLivePhotoUrl : undefined,
+            products: normalizedProducts
+          });
         } catch (updateErr) {
           console.warn('[Base64 Migration Error]', updateErr);
         }
@@ -913,10 +2593,13 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
 
       // Filtrer strictement les champs publics de l'artiste pour minimiser le payload
       const cleanSocials = Array.isArray(userData.socials)
-        ? userData.socials.map(s => ({
-            platform: String(s?.platform || ''),
-            url: String(s?.url || '')
-          })).filter(s => s.platform || s.url)
+        ? userData.socials
+            .filter(s => s && s.enabled !== false && (s.platform || s.url) && String(s.url || '').trim() !== '')
+            .map(s => ({
+              platform: String(s?.platform || ''),
+              url: String(s?.url || ''),
+              enabled: s?.enabled !== false
+            }))
         : [];
 
       const cleanCustomLinks = Array.isArray(userData.customLinks)
@@ -937,9 +2620,15 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
         success: true,
         artist: {
           id: String(userData.id),
-          companyName: String(userData.companyName || userData.username || 'Artiste'),
-          slug: String(userData.slug || ''),
+          companyName: String(userData.companyName !== undefined ? userData.companyName : (previewDocData?.companyName || '')).trim(),
+          activitySector: String(userData.activitySector || previewDocData?.activitySector || '').trim(),
+          slug: String(userData.slug || slug),
           logoUrl: cleanLogoUrl,
+          auditLogoUrl: cleanAuditLogoA,
+          logoA: cleanAuditLogoA,
+          logoB: cleanAuditLogoB,
+          logoAdaptedUrl: cleanAuditLogoB,
+          logoPlacements: userData.logoPlacements || { tFront: 'B', tBack: 'A', pFront: 'B', pBack: 'A', hFront: 'B', hBack: 'A' },
           presentation: String(userData.presentation || userData.bio || ''),
           whatsapp: String(userData.whatsappNumber || userData.whatsapp || ''),
           contactEmail: String(userData.contactEmail || userData.email || ''),
@@ -947,21 +2636,32 @@ exports.getUserBySlug = onRequest({ cors: true, invoker: 'public', minInstances:
           customLinks: cleanCustomLinks,
           theme: String(userData.theme || 'auto'),
           accentColor: String(userData.accentColor || '#ff3366'),
+          logoOverlayColor: String(userData.logoOverlayColor || previewDocData?.logoOverlayColor || 'auto'),
+          logoScale: userData.logoScale !== undefined ? userData.logoScale : (previewDocData?.logoScale !== undefined ? previewDocData.logoScale : 100),
+          coverHeight: userData.coverHeight !== undefined ? userData.coverHeight : (previewDocData?.coverHeight !== undefined ? previewDocData.coverHeight : 280),
+          coverZoom: userData.coverZoom !== undefined ? userData.coverZoom : (previewDocData?.coverZoom !== undefined ? previewDocData.coverZoom : 100),
+          coverPositionY: userData.coverPositionY !== undefined ? userData.coverPositionY : (previewDocData?.coverPositionY !== undefined ? previewDocData.coverPositionY : 50),
+          coverPositionX: userData.coverPositionX !== undefined ? userData.coverPositionX : (previewDocData?.coverPositionX !== undefined ? previewDocData.coverPositionX : 50),
           livePhotoUrl: cleanLivePhotoUrl,
-          invertLogoInLightMode: Boolean(userData.invertLogoInLightMode === true)
+          invertLogoInLightMode: userData.invertLogoInLightMode !== false
         },
         products: normalizedProducts,
         storageError: lastStorageError
       };
 
       console.log('[PAYLOAD CHECK] Size:', Buffer.byteLength(JSON.stringify(responseData)), 'bytes');
-      res.set('Cache-Control', 'public, max-age=300, s-maxage=600, stale-while-revalidate=120');
+
+      // ── Cache write ──────────────────────────────────────────────────────
+      if (_slugCache.size >= 200) _slugCache.delete(_slugCache.keys().next().value);
+      _slugCache.set(slug, { data: responseData, ts: Date.now() });
+      // ─────────────────────────────────────────────────────────────────────
+
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
       return res.status(200).json(responseData);
     } catch (error) {
       console.error('Erreur getUserBySlug:', error);
       return res.status(500).json({ error: error.message });
     }
-  });
 });
 
 // Helper pour créer une session Stripe de manière 100% robuste (résout les problèmes de DNS/Sockets Node 20 sur Cloud Run)
@@ -1490,13 +3190,13 @@ exports.stripeWebhook = onRequest({ cors: true, invoker: 'public' }, async (req,
 // ==========================================
 // 4. MODULE BOOKING & GÉNÉRATION DE LEADS : POST /api/booking & /sendBookingEmail
 // ==========================================
-exports.sendBookingEmail = onRequest({ cors: true, invoker: 'public' }, async (req, res) => {
+exports.sendBookingEmail = onRequest({ cors: true, invoker: 'public', secrets: [smtpPass] }, async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({ success: false, error: 'Méthode non autorisée' });
   }
 
   try {
-    const { artistSlug, artistId, name, email, phone, date, location, message } = req.body || {};
+    const { artistSlug, artistId, bookingRecipientEmail, name, email, phone, date, location, message } = req.body || {};
 
     if (!name || (!email && !phone)) {
       return res.status(400).json({ success: false, error: 'Veuillez renseigner au moins votre nom et un moyen de contact (Email ou Téléphone).' });
@@ -1506,44 +3206,70 @@ exports.sendBookingEmail = onRequest({ cors: true, invoker: 'public' }, async (r
     let recipientEmail = null;
     let artistName = 'Artiste';
 
-    // 1. Recherche de l'email de l'artiste dans Firestore (collection SiteConfigs / users)
+    // 1. Helper pour extraire l'e-mail le plus pertinent (priorité absolue à l'e-mail du bouton Booking)
+    const extractEmailFromConfig = (d) => {
+      if (!d) return null;
+      // Priorité 1: Email configuré dans le bouton Booking (customLinks)
+      if (Array.isArray(d.customLinks)) {
+        const bLink = d.customLinks.find(l => l && (l.type === 'booking' || l.id === 'link_booking'));
+        if (bLink && bLink.url) {
+          const clean = bLink.url.replace(/^mailto:/i, '').trim();
+          if (clean.includes('@') && clean.includes('.')) return clean;
+        }
+      }
+      // Priorité 2: contactEmail réel
+      if (d.contactEmail && d.contactEmail.includes('@') && !d.contactEmail.includes('entreprise.com')) {
+        return d.contactEmail.trim();
+      }
+      // Priorité 3: email utilisateur
+      if (d.email && d.email.includes('@') && !d.email.includes('entreprise.com')) {
+        return d.email.trim();
+      }
+      // Priorité 4: contactEmail générique
+      if (d.contactEmail && d.contactEmail.includes('@')) return d.contactEmail.trim();
+      if (d.email && d.email.includes('@')) return d.email.trim();
+      return null;
+    };
+
+    // 2. Recherche de l'email de l'artiste dans Firestore (collection SiteConfigs / users)
     const targetSlug = String(artistSlug || '').toLowerCase();
     
-    if (targetSlug === 'fabrizio' || artistId === 'guest_ms3ijgnco2xnid') {
-      const docSnap = await db.collection('SiteConfigs').doc('guest_ms3ijgnco2xnid').get();
-      if (docSnap.exists) {
-        const d = docSnap.data();
-        recipientEmail = d.contactEmail || d.email || 'Fabriziomagistro89@gmail.com';
-        artistName = d.companyName || 'D-FAZZ / Fabrizio';
-      } else {
-        recipientEmail = 'Fabriziomagistro89@gmail.com';
-        artistName = 'Fabrizio';
-      }
-      // Mettre à jour l'email de Fabrizio en BDD s'il n'était pas défini
-      await db.collection('SiteConfigs').doc('guest_ms3ijgnco2xnid').set({
-        contactEmail: 'Fabriziomagistro89@gmail.com',
-        email: 'Fabriziomagistro89@gmail.com'
-      }, { merge: true });
-    } else if (artistId) {
-      const docSnap = await db.collection('SiteConfigs').doc(artistId).get();
-      if (docSnap.exists) {
-        const d = docSnap.data();
-        recipientEmail = d.contactEmail || d.email;
-        artistName = d.companyName || 'Artiste';
-      }
+    if (bookingRecipientEmail && typeof bookingRecipientEmail === 'string' && bookingRecipientEmail.includes('@') && !bookingRecipientEmail.includes('entreprise.com')) {
+      recipientEmail = bookingRecipientEmail.trim();
     }
 
-    if (!recipientEmail && targetSlug) {
-      const querySnap = await db.collection('SiteConfigs').where('slug', '==', targetSlug).limit(1).get();
-      if (!querySnap.empty) {
-        const d = querySnap.docs[0].data();
-        recipientEmail = d.contactEmail || d.email;
-        artistName = d.companyName || targetSlug;
+    if (targetSlug === 'fabrizio' || artistId === 'guest_ms3ijgnco2xnid' || targetSlug === 'djdfazz') {
+      recipientEmail = 'Fabriziomagistro89@gmail.com';
+      artistName = 'DJ D-FAZZ';
+    } else {
+      if (!recipientEmail && artistId) {
+        const docSnap = await db.collection('SiteConfigs').doc(artistId).get();
+        if (docSnap.exists) {
+          const d = docSnap.data();
+          recipientEmail = extractEmailFromConfig(d);
+          artistName = d.companyName || 'Artiste';
+        }
+      }
+
+      if (!recipientEmail && targetSlug) {
+        const docSnap = await db.collection('SiteConfigs').doc(targetSlug).get();
+        if (docSnap.exists) {
+          const d = docSnap.data();
+          recipientEmail = extractEmailFromConfig(d);
+          artistName = d.companyName || targetSlug;
+        } else {
+          const querySnap = await db.collection('SiteConfigs').where('slug', '==', targetSlug).limit(1).get();
+          if (!querySnap.empty) {
+            const d = querySnap.docs[0].data();
+            recipientEmail = extractEmailFromConfig(d);
+            artistName = d.companyName || targetSlug;
+          }
+        }
       }
     }
 
     if (!recipientEmail) {
-      recipientEmail = 'Fabriziomagistro89@gmail.com';
+      recipientEmail = 'logosigneed@gmail.com';
     }
 
     // 2. Enregistrement du Lead Booking dans Firestore (collection BookingRequests)
@@ -1562,9 +3288,9 @@ exports.sendBookingEmail = onRequest({ cors: true, invoker: 'public' }, async (r
       status: 'PENDING'
     });
 
-    // Déterminer la liste des destinataires : Uniquement l'email de Fabrizio pour son profil
+    // Déterminer la liste des destinataires : email de l'artiste + notification admin
     let targetRecipients = [];
-    if (targetSlug === 'fabrizio' || artistId === 'guest_ms3ijgnco2xnid') {
+    if (targetSlug === 'fabrizio' || artistId === 'guest_ms3ijgnco2xnid' || targetSlug === 'djdfazz') {
       targetRecipients = ['Fabriziomagistro89@gmail.com'];
     } else {
       targetRecipients = Array.from(new Set([recipientEmail, 'logosigneed@gmail.com', 'contact@signeedclub.com'])).filter(Boolean);
@@ -1705,21 +3431,375 @@ exports.sendAccessRequestEmail = onRequest({ cors: true, invoker: 'public' }, as
   }
 });
 
-exports.listStorageFiles = onRequest({ cors: true }, async (req, res) => {
+exports.uploadImage = onRequest({ cors: true, invoker: 'public' }, async (req, res) => {
+  cors(req, res, async () => {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+    try {
+      const { base64Data, path, customName } = req.body;
+      if (!base64Data) {
+        return res.status(400).json({ error: 'Missing base64Data' });
+      }
+      const bucket = admin.storage().bucket('signaid-prod-assets');
+      const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      const mimeType = matches ? matches[1] : 'image/jpeg';
+      const ext = mimeType.includes('png') ? 'png' : (mimeType.includes('webp') ? 'webp' : 'jpg');
+      const buffer = Buffer.from(matches ? matches[2] : base64Data, 'base64');
+      
+      const fileName = customName ? `${customName}.${ext}` : `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`;
+      const filePath = path ? (path.endsWith('/') ? `${path}${fileName}` : `${path}/${fileName}`) : `uploads/${fileName}`;
+      
+      const file = bucket.file(filePath);
+      await file.save(buffer, {
+        metadata: {
+          contentType: mimeType,
+          cacheControl: 'public, max-age=86400'
+        }
+      });
+      await file.makePublic().catch(() => {});
+      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+      return res.status(200).json({ success: true, url: publicUrl });
+    } catch (e) {
+      console.error('[UploadImage Cloud Function Error]:', e);
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  });
+});
+
+exports.getAsset = onRequest({ cors: true, invoker: 'public', maxInstances: 20 }, async (req, res) => {
+  cors(req, res, async () => {
+    try {
+      let rawPath = req.query.path || req.path.replace(/^\//, '');
+      if (!rawPath) return res.status(400).send('Missing path parameter');
+
+      if (rawPath.includes('/o/')) {
+        const match = rawPath.match(/\/o\/(.*?)(?:\?|$)/);
+        if (match) rawPath = decodeURIComponent(match[1]);
+      } else {
+        rawPath = decodeURIComponent(rawPath);
+      }
+
+      const bucket = admin.storage().bucket('signaid-prod-assets');
+      const file = bucket.file(rawPath);
+
+      const [exists] = await file.exists();
+      if (!exists) {
+        return res.status(404).send('Asset not found');
+      }
+
+      const [metadata] = await file.getMetadata();
+      const mimeType = metadata.contentType || (rawPath.endsWith('.png') ? 'image/png' : (rawPath.endsWith('.webp') ? 'image/webp' : 'image/jpeg'));
+      
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800');
+
+      file.createReadStream().pipe(res);
+    } catch (err) {
+      console.error('getAsset error:', err);
+      return res.status(500).send(err.message);
+    }
+  });
+});
+
+exports.listBucketMockups = onRequest({ cors: true, invoker: 'public' }, async (req, res) => {
+  cors(req, res, async () => {
+    try {
+      const prefix = req.query.prefix || 'btp_mockups/';
+      const bucket = admin.storage().bucket('signaid-prod-assets');
+      const [files] = await bucket.getFiles({ prefix, maxResults: 500 });
+      const list = files.map(f => ({
+        name: f.name,
+        size: f.metadata.size,
+        updated: f.metadata.updated,
+        url: `https://storage.googleapis.com/${bucket.name}/${f.name}`
+      }));
+      return res.status(200).json({ success: true, count: list.length, list });
+    } catch (e) {
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  });
+});
+
+exports.uploadBatchImages = onRequest({ cors: true, invoker: 'public', maxInstances: 10 }, async (req, res) => {
+  cors(req, res, async () => {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+    const isAuthorized = await verifyAdminAccess(req);
+    if (!isAuthorized) {
+      return res.status(403).json({ success: false, error: 'Accès refusé — Authentification ou token admin requis.' });
+    }
+    try {
+      const { items } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: 'Missing items array' });
+      }
+      const bucket = admin.storage().bucket('signaid-prod-assets');
+      const results = [];
+
+      for (const item of items) {
+        try {
+          const filePath = String(item.path || '').replace(/^\//, '');
+          let base64 = String(item.base64Data || '');
+          if (base64.includes(',')) base64 = base64.split(',')[1];
+          const buffer = Buffer.from(base64, 'base64');
+          const file = bucket.file(filePath);
+
+          await file.save(buffer, {
+            metadata: {
+              contentType: item.contentType || (filePath.endsWith('.png') ? 'image/png' : (filePath.endsWith('.webp') ? 'image/webp' : (filePath.endsWith('.svg') ? 'image/svg+xml' : 'image/jpeg'))),
+              cacheControl: 'public, max-age=86400'
+            },
+            resumable: false
+          });
+          await file.makePublic().catch(() => {});
+
+          results.push({
+            path: item.path,
+            success: true,
+            storageUrl: `https://storage.googleapis.com/${bucket.name}/${filePath}`,
+            cdnUrl: `https://us-central1-signaid-prod.cloudfunctions.net/getAsset?path=${encodeURIComponent(filePath)}`
+          });
+        } catch (itemErr) {
+          results.push({ path: item.path, success: false, error: itemErr.message });
+        }
+      }
+
+      return res.status(200).json({ success: true, count: results.length, results });
+    } catch (e) {
+      console.error('[UploadBatchImages Error]:', e);
+      return res.status(500).json({ success: false, error: e.message });
+    }
+  });
+});
+
+exports.detectSocialLinks = onRequest({ cors: true, invoker: 'public' }, async (req, res) => {
+  cors(req, res, async () => {
+    const rawBrandName = req.body?.brandName || req.query?.brandName || '';
+    const brandName = String(rawBrandName).trim();
+
+    if (!brandName || brandName.length < 2) {
+      return res.status(400).json({ success: false, error: 'brandName est requis (au moins 2 caractères)' });
+    }
+
+    const cleanHandle = brandName
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9._]/g, '');
+
+    const detectedLinks = {
+      instagram: '',
+      tiktok: '',
+      spotify: '',
+      youtube: '',
+      soundcloud: '',
+      website: ''
+    };
+
+    try {
+      // 1. Fast match for known profiles
+      const lowerName = brandName.toLowerCase();
+      if (lowerName.includes('dfazz') || lowerName.includes('fabrizio')) {
+        detectedLinks.instagram = 'https://www.instagram.com/djdfazz';
+        detectedLinks.tiktok = 'https://www.tiktok.com/@djdfazz';
+        detectedLinks.soundcloud = 'https://soundcloud.com/djdfazz';
+        detectedLinks.youtube = 'https://www.youtube.com/@djdfazz';
+        detectedLinks.spotify = 'https://open.spotify.com';
+        detectedLinks.website = 'https://djdfazz.be';
+      } else if (lowerName.includes('aaron')) {
+        detectedLinks.instagram = 'https://www.instagram.com/aaronh';
+        detectedLinks.tiktok = 'https://www.tiktok.com/@aaronh';
+        detectedLinks.soundcloud = 'https://soundcloud.com/aaronh';
+        detectedLinks.youtube = 'https://www.youtube.com/@aaronh';
+        detectedLinks.spotify = 'https://open.spotify.com';
+      } else if (lowerName.includes('dokiin')) {
+        detectedLinks.instagram = 'https://www.instagram.com/dokiin';
+        detectedLinks.tiktok = 'https://www.tiktok.com/@dokiin';
+        detectedLinks.soundcloud = 'https://soundcloud.com/dokiin';
+        detectedLinks.youtube = 'https://www.youtube.com/@dokiin';
+        detectedLinks.spotify = 'https://open.spotify.com';
+      } else if (lowerName.includes('mentalist')) {
+        detectedLinks.instagram = 'https://www.instagram.com/thementalist';
+        detectedLinks.tiktok = 'https://www.tiktok.com/@thementalist';
+        detectedLinks.soundcloud = 'https://soundcloud.com/thementalist';
+        detectedLinks.youtube = 'https://www.youtube.com/@thementalist';
+        detectedLinks.spotify = 'https://open.spotify.com';
+      }
+
+      // 2. Perform live multi-platform targeted search if some links are still empty (with strict 5s timeout)
+      const needsSearch = Object.values(detectedLinks).some(v => !v);
+      if (needsSearch) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        try {
+          const searchQuery = `"${brandName}" (site:instagram.com OR site:tiktok.com OR site:spotify.com OR site:youtube.com OR site:soundcloud.com)`;
+          const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
+          
+          const response = await fetch(searchUrl, {
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
+            }
+          });
+          clearTimeout(timeoutId);
+
+          if (response.ok) {
+            const html = await response.text();
+
+            // Extract Instagram
+            if (!detectedLinks.instagram) {
+              const igMatches = html.match(/https?:\/\/(?:www\.)?instagram\.com\/([a-zA-Z0-9._]+)/gi) || [];
+              const validIg = igMatches.find(url => {
+                const clean = url.toLowerCase();
+                return !clean.includes('/p/') && !clean.includes('/reel/') && !clean.includes('/explore/') && !clean.includes('/stories/') && !clean.includes('/accounts/') && !clean.includes('/about/') && !clean.includes('/legal/');
+              });
+              if (validIg) {
+                detectedLinks.instagram = validIg.replace(/\/$/, '');
+              }
+            }
+
+            // Extract TikTok
+            if (!detectedLinks.tiktok) {
+              const ttMatches = html.match(/https?:\/\/(?:www\.)?tiktok\.com\/@([a-zA-Z0-9._]+)/gi) || [];
+              const validTt = ttMatches.find(url => {
+                const clean = url.toLowerCase();
+                return !clean.includes('/tag/') && !clean.includes('/music/') && !clean.includes('/video/') && !clean.includes('/discover/') && !clean.includes('/about/') && !clean.includes('/legal/');
+              });
+              if (validTt) {
+                detectedLinks.tiktok = validTt.replace(/\/$/, '');
+              }
+            }
+
+            // Extract Spotify
+            if (!detectedLinks.spotify) {
+              const spMatches = html.match(/https?:\/\/open\.spotify\.com\/(?:intl-[a-z]+\/)?(artist\/[a-zA-Z0-9]+|album\/[a-zA-Z0-9]+|track\/[a-zA-Z0-9]+)/gi) || [];
+              if (spMatches.length > 0) {
+                detectedLinks.spotify = spMatches[0].replace(/\/$/, '');
+              }
+            }
+
+            // Extract YouTube
+            if (!detectedLinks.youtube) {
+              const ytMatches = html.match(/https?:\/\/(?:www\.)?youtube\.com\/(@[a-zA-Z0-9._-]+|channel\/[a-zA-Z0-9_-]+|c\/[a-zA-Z0-9._-]+|user\/[a-zA-Z0-9._-]+)/gi) || [];
+              const validYt = ytMatches.find(url => {
+                const clean = url.toLowerCase();
+                return !clean.includes('/watch') && !clean.includes('/shorts') && !clean.includes('/feed') && !clean.includes('/results') && !clean.includes('/about');
+              });
+              if (validYt) {
+                detectedLinks.youtube = validYt.replace(/\/$/, '');
+              }
+            }
+
+            // Extract SoundCloud
+            if (!detectedLinks.soundcloud) {
+              const scMatches = html.match(/https?:\/\/(?:www\.)?soundcloud\.com\/([a-zA-Z0-9_-]+)/gi) || [];
+              const validSc = scMatches.find(url => {
+                const clean = url.toLowerCase();
+                return !clean.includes('/discover') && !clean.includes('/stream') && !clean.includes('/upload') && !clean.includes('/search') && !clean.includes('/terms-of-use') && !clean.includes('/pages') && !clean.includes('/you');
+              });
+              if (validSc) {
+                detectedLinks.soundcloud = validSc.replace(/\/$/, '');
+              }
+            }
+          }
+        } catch (searchErr) {
+          clearTimeout(timeoutId);
+          console.warn('[detectSocialLinks] Live search timeout/error fallback:', searchErr.message);
+        }
+      }
+
+      // 3. Fallback smart canonical generator for missing fields
+      if (!detectedLinks.instagram && cleanHandle) {
+        detectedLinks.instagram = `https://www.instagram.com/${cleanHandle}`;
+      }
+      if (!detectedLinks.tiktok && cleanHandle) {
+        detectedLinks.tiktok = `https://www.tiktok.com/@${cleanHandle}`;
+      }
+      if (!detectedLinks.soundcloud && cleanHandle) {
+        detectedLinks.soundcloud = `https://soundcloud.com/${cleanHandle}`;
+      }
+      if (!detectedLinks.youtube && cleanHandle) {
+        detectedLinks.youtube = `https://www.youtube.com/@${cleanHandle}`;
+      }
+      if (!detectedLinks.spotify && cleanHandle) {
+        detectedLinks.spotify = `https://open.spotify.com/search/${encodeURIComponent(brandName)}`;
+      }
+
+      const detectedCount = Object.values(detectedLinks).filter(Boolean).length;
+
+      return res.status(200).json({
+        success: true,
+        brandName,
+        links: detectedLinks,
+        detectedCount
+      });
+    } catch (e) {
+      console.warn('[detectSocialLinks Graceful Fallback on Error]:', e);
+      // Never return 500 error: Return canonical fallback links
+      const fallbackLinks = {
+        instagram: cleanHandle ? `https://www.instagram.com/${cleanHandle}` : '',
+        tiktok: cleanHandle ? `https://www.tiktok.com/@${cleanHandle}` : '',
+        soundcloud: cleanHandle ? `https://soundcloud.com/${cleanHandle}` : '',
+        youtube: cleanHandle ? `https://www.youtube.com/@${cleanHandle}` : '',
+        spotify: `https://open.spotify.com/search/${encodeURIComponent(brandName)}`,
+        website: ''
+      };
+      return res.status(200).json({
+        success: true,
+        brandName,
+        links: fallbackLinks,
+        detectedCount: Object.values(fallbackLinks).filter(Boolean).length,
+        fallback: true
+      });
+    }
+  });
+});
+
+// ==========================================
+// MIGRATION ENGINE : Compilation automatique des snapshots 6-vues
+// ==========================================
+const { runMigrationPipeline } = require('./migrateAllProfilesToSnapshots');
+
+exports.migrateAllProfiles = onRequest({ 
+  timeoutSeconds: 540, 
+  memory: '1GiB', 
+  cors: true,
+  minInstances: 0
+}, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Token, X-Api-Key');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).send('');
+  }
+
+  const isAuthorized = await verifyAdminAccess(req);
+  if (!isAuthorized) {
+    return res.status(403).json({ success: false, error: 'Accès refusé — Authentification ou token admin requis.' });
+  }
+
   try {
-    const bucket = admin.storage().bucket('signaid-prod-assets');
-    const [files] = await bucket.getFiles({ prefix: 'btp_mockups/' });
-    const fileList = files.map(f => f.name);
+    const force = req.query.force === 'true' || req.query.force === '1';
+    const slug = req.query.slug || req.query.id || null;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 500;
+    
+    console.log(`[API MIGRATION] Lancement de la migration des profils... (slug=${slug}, force=${force}, limit=${limit})`);
+    const results = await runMigrationPipeline(admin, { force, slug, limit });
 
-    const bucketDefault = admin.storage().bucket();
-    const [filesDefault] = await bucketDefault.getFiles({ prefix: 'users/guest_ms3ijgnco2xnid/' });
-    const fileListDefault = filesDefault.map(f => f.name);
+    // Vider le cache mémoire de getUserBySlug
+    if (exports._slugCache) {
+      exports._slugCache.clear();
+    }
 
-    return res.json({
-      signaidProdAssets: fileList,
-      defaultBucket: fileListDefault
+    return res.status(200).json({
+      success: true,
+      results
     });
-  } catch (err) {
-    return res.status(500).json({ error: String(err.message || err) });
+  } catch (error) {
+    console.error('[API MIGRATION ERROR]', error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 });

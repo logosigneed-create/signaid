@@ -36,7 +36,7 @@ const Footer: React.FC = () => {
     };
 
     return (
-        <footer className="bg-zinc-900 text-white pt-12 pb-24 lg:pt-16 lg:pb-8 border-t border-zinc-800">
+        <footer className="bg-zinc-900 text-white pt-12 border-t border-zinc-800 relative z-10" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom, 24px))' }}>
             <div className="max-w-6xl mx-auto px-4 lg:px-6">
                 
                 {/* DESKTOP GRID & MOBILE ACCORDIONS CONTAINER */}
@@ -54,8 +54,8 @@ const Footer: React.FC = () => {
                         
                         {/* SOCIAL LINKS - Kept as they are not in the main menu */}
                         <div className="flex gap-4 mb-10 lg:mb-0">
-                            <a href="https://www.instagram.com/nico_signaid/" target="_blank" rel="noopener noreferrer" className="w-10 h-10 flex items-center justify-center bg-zinc-800 rounded-full hover:bg-orange-600 transition-all shadow-lg active:scale-90"><InstagramIcon size={20} /></a>
-                            <a href="https://www.linkedin.com/in/nicolasdlogosigneed/" target="_blank" rel="noopener noreferrer" className="w-10 h-10 flex items-center justify-center bg-zinc-800 rounded-full hover:bg-orange-600 transition-all shadow-lg active:scale-90"><LinkedinIcon size={20} /></a>
+                            <a href="https://www.instagram.com/nico_signaid/" target="_blank" rel="noopener noreferrer" className="w-11 h-11 flex items-center justify-center bg-zinc-800 rounded-full hover:bg-orange-600 transition-all shadow-lg active:scale-90 touch-manipulation"><InstagramIcon size={20} /></a>
+                            <a href="https://www.linkedin.com/in/nicolasdlogosigneed/" target="_blank" rel="noopener noreferrer" className="w-11 h-11 flex items-center justify-center bg-zinc-800 rounded-full hover:bg-orange-600 transition-all shadow-lg active:scale-90 touch-manipulation"><LinkedinIcon size={20} /></a>
                         </div>
                     </div>
 
@@ -63,7 +63,7 @@ const Footer: React.FC = () => {
                     <div>
                         <button 
                             onClick={() => toggleSection('nav')}
-                            className="w-full flex items-center justify-between lg:block lg:cursor-default py-4 lg:py-0 border-b border-zinc-800 lg:border-none group"
+                            className="w-full flex items-center justify-between lg:block lg:cursor-default py-4 lg:py-0 border-b border-zinc-800 lg:border-none group touch-manipulation"
                         >
                             <h4 className="font-black text-lg lg:mb-4 uppercase tracking-wider group-active:text-orange-500 transition-colors">Navigation</h4>
                             <span className="lg:hidden">
@@ -71,11 +71,11 @@ const Footer: React.FC = () => {
                             </span>
                         </button>
                         
-                        <ul className={`mt-4 lg:mt-0 space-y-3 text-gray-400 transition-all duration-300 overflow-hidden ${openSection === 'nav' ? 'max-h-60 opacity-100 mb-6' : 'max-h-0 lg:max-h-none opacity-0 lg:opacity-100'}`}>
-                            <li><Link to="/creation" className="hover:text-white transition-colors block py-1">Le Studio</Link></li>
-                            <li><Link to="/galerie" className="hover:text-white transition-colors block py-1">Nos Produits</Link></li>
-                            <li><a href="/#guide" onClick={scrollToGuide} className="hover:text-white transition-colors block py-1">Guide d'utilisation</a></li>
-                            <li><Link to="/contact" className="hover:text-white transition-colors block py-1">FAQ & Contact</Link></li>
+                        <ul className={`mt-4 lg:mt-0 space-y-2 text-gray-400 transition-all duration-300 overflow-hidden ${openSection === 'nav' ? 'max-h-60 opacity-100 mb-6' : 'max-h-0 lg:max-h-none opacity-0 lg:opacity-100'}`}>
+                            <li><Link to="/creation" className="hover:text-white transition-colors flex items-center min-h-[40px] py-1.5 touch-manipulation">Le Studio</Link></li>
+                            <li><Link to="/galerie" className="hover:text-white transition-colors flex items-center min-h-[40px] py-1.5 touch-manipulation">Nos Produits</Link></li>
+                            <li><a href="/#guide" onClick={scrollToGuide} className="hover:text-white transition-colors flex items-center min-h-[40px] py-1.5 touch-manipulation">Guide d'utilisation</a></li>
+                            <li><Link to="/contact" className="hover:text-white transition-colors flex items-center min-h-[40px] py-1.5 touch-manipulation">FAQ & Contact</Link></li>
                         </ul>
                     </div>
 
@@ -83,7 +83,7 @@ const Footer: React.FC = () => {
                     <div>
                         <button 
                             onClick={() => toggleSection('legal')}
-                            className="w-full flex items-center justify-between lg:block lg:cursor-default py-4 lg:py-0 border-b border-zinc-800 lg:border-none group"
+                            className="w-full flex items-center justify-between lg:block lg:cursor-default py-4 lg:py-0 border-b border-zinc-800 lg:border-none group touch-manipulation"
                         >
                             <h4 className="font-black text-lg lg:mb-4 uppercase tracking-wider group-active:text-orange-500 transition-colors">Légal</h4>
                             <span className="lg:hidden">
@@ -91,10 +91,10 @@ const Footer: React.FC = () => {
                             </span>
                         </button>
                         
-                        <ul className={`mt-4 lg:mt-0 space-y-3 text-gray-400 transition-all duration-300 overflow-hidden ${openSection === 'legal' ? 'max-h-60 opacity-100 mb-6' : 'max-h-0 lg:max-h-none opacity-0 lg:opacity-100'}`}>
-                            <li><Link to="/conditions-generales" className="hover:text-white transition-colors block py-1">Conditions Générales</Link></li>
-                            <li><Link to="/confidentialite" className="hover:text-white transition-colors block py-1">Confidentialité</Link></li>
-                            <li><Link to="/cookies" className="hover:text-white transition-colors block py-1">Cookies</Link></li>
+                        <ul className={`mt-4 lg:mt-0 space-y-2 text-gray-400 transition-all duration-300 overflow-hidden ${openSection === 'legal' ? 'max-h-60 opacity-100 mb-6' : 'max-h-0 lg:max-h-none opacity-0 lg:opacity-100'}`}>
+                            <li><Link to="/conditions-generales" className="hover:text-white transition-colors flex items-center min-h-[40px] py-1.5 touch-manipulation">Conditions Générales</Link></li>
+                            <li><Link to="/confidentialite" className="hover:text-white transition-colors flex items-center min-h-[40px] py-1.5 touch-manipulation">Confidentialité</Link></li>
+                            <li><Link to="/cookies" className="hover:text-white transition-colors flex items-center min-h-[40px] py-1.5 touch-manipulation">Cookies</Link></li>
                         </ul>
                     </div>
                 </div>

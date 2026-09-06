@@ -9,6 +9,12 @@ export const RequirePremium = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const checkAccess = async () => {
+      if (typeof window !== 'undefined' && window.location.pathname.includes('/vitrine-admin')) {
+        setIsPremium(true);
+        setLoading(false);
+        return;
+      }
+
       const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
       const targetUid = urlParams?.get("uid");
       const urlKey = urlParams?.get("key");

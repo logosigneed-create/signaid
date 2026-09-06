@@ -1,9 +1,11 @@
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../firebaseConfig";
+import { sanitizeForFirestore } from "../utils/firestoreSanitizer";
 
 export type Social = {
   platform: string;
   url: string;
+  enabled?: boolean;
 };
 
 export type ProfileLink = {
@@ -35,9 +37,18 @@ export type SiteConfig = {
     service: string;
   };
   logoUrl: string;
+  logoAdaptedUrl?: string;
+  avatar?: string;
+  logoA?: string;
+  logoB?: string;
+  logoPlacements?: Record<string, 'A' | 'B'>;
+  auditLogoUrl?: string;
+  logo?: string;
+  visualLogoUrl?: string;
   address: string;
   contactEmail: string;
   whatsappNumber: string;
+  whatsapp?: string;
   merchUrl: string;
   videoUrl: string;
   socials: Social[];
@@ -53,6 +64,8 @@ export type SiteConfig = {
   createdAt?: any;
   livePhotoUrl?: string;
   livePhotoUrls?: string[];
+  coverUrl?: string;
+  coverImage?: string;
   totalMarginAvailable?: number;
   totalSales?: number;
   revenue?: number;
@@ -60,6 +73,22 @@ export type SiteConfig = {
   isPremium?: boolean;
   isGuest?: boolean;
   invertLogoInLightMode?: boolean;
+  logoOverlayColor?: 'auto' | 'white' | 'black' | 'original';
+  logoScale?: number; // 50 - 200 (percentage, default 100)
+  coverHeight?: number; // 160 - 500 (height in px, default 280)
+  coverZoom?: number; // 100 - 250 (percentage, default 100)
+  coverPositionY?: number; // 0 - 100 (vertical position percentage, default 50)
+  coverPositionX?: number; // 0 - 100 (horizontal position percentage, default 50)
+  enableLiveWidget?: boolean;
+  liveWidgetStatus?: string;
+  mockups?: any[];
+  items?: any[];
+  products?: {
+    tshirt?: { aiImageUrl?: string | null; imageFront?: string | null; name?: string; price?: number; [key: string]: any };
+    polo?: { aiImageUrl?: string | null; imageFront?: string | null; name?: string; price?: number; [key: string]: any };
+    hoodie?: { aiImageUrl?: string | null; imageFront?: string | null; name?: string; price?: number; [key: string]: any };
+    [key: string]: any;
+  };
 };
 
 export const defaultConfig: SiteConfig = {
@@ -91,70 +120,187 @@ export const defaultConfig: SiteConfig = {
   livePhotoUrl: "",
   livePhotoUrls: [],
   totalMarginAvailable: 0,
-  invertLogoInLightMode: true
+  invertLogoInLightMode: true,
+  logoOverlayColor: 'auto',
+  logoScale: 100,
+  coverHeight: 280,
+  coverZoom: 100,
+  coverPositionY: 50,
+  coverPositionX: 50,
+  enableLiveWidget: false,
+  liveWidgetStatus: "🟢 En Live au Bar Le Club VIP"
 };
 
-export function getCanonicalSlug(id?: string): string {
-  if (!id) return 'guest_ms3ijgnco2xnid';
-  const clean = id.toLowerCase().trim().replace(/https?:\/\//, '').replace(/\/.*$/, '').replace('www.', '');
-  if (clean === 'fabrizio' || clean === 'djdfazz' || clean === 'djdfazz.be' || clean === 'audit-8f198p5' || clean === 'guest_ms3ijgnco2xnid') {
-    return 'guest_ms3ijgnco2xnid';
-  }
-  return id;
-}
+const DOC_ID = 'single_config';
 
 export async function getStoredConfig(uid?: string): Promise<SiteConfig> {
-  const parseDoc = (data: any): SiteConfig => ({
-    ...defaultConfig,
-    ...data,
-    companyName: data.companyName || data.name || data.userData?.companyName || '',
-    contactEmail: data.email || data.contactEmail || data.userData?.email || defaultConfig.contactEmail,
-    generatedKey: data.actuationKey || data.generatedKey || data.projectId || '',
-    activitySector: data.sector || data.activitySector || data.userData?.activity || defaultConfig.activitySector,
-    socials: data.socials || defaultConfig.socials,
-    customLinks: data.customLinks || [],
-    customSections: data.customSections || [],
-    sectionOrder: data.sectionOrder || defaultConfig.sectionOrder,
-    livePhotoUrl: data.livePhotoUrl || '',
-    livePhotoUrls: data.livePhotoUrls || (data.livePhotoUrl ? [data.livePhotoUrl] : []),
-    totalMarginAvailable: data.totalMarginAvailable || 0,
-    invertLogoInLightMode: data.invertLogoInLightMode !== false
-  });
+  const actualUid = uid || 'uVRasbs3TlgpX80koVHBlJpJLd92';
+  const cleanUid = actualUid.replace(/^audit-/, '');
+  const isDfazzUser = actualUid === 'fabrizio' || 
+                      actualUid === 'djdfazz' || 
+                      actualUid === 'guest_ms3ijgnco2xnid' || 
+                      actualUid === 'audit-8f198p5' || 
+                      actualUid === '4eckgu2' || 
+                      actualUid === '3j0f5kl';
+  const isEloxUser = actualUid === 'elox' || actualUid === 'djelox' || cleanUid === 'elox' || cleanUid === 'djelox';
+  const isDokiinUser = actualUid === 'dokiin' || cleanUid === 'dokiin' || actualUid === 'audit-mt4cimp4luio';
+  const cleanUidNoHyphen = cleanUid.toLowerCase().replace(/[-_\s]/g, '');
+  const isVisionUser = actualUid === 'clubvisionroom' || 
+                       actualUid === 'mt074jnaldxn' || 
+                       actualUid === 'clubvision' || 
+                       actualUid === 'audit-mt074jnaldxn' || 
+                       cleanUidNoHyphen.includes('vision');
 
-  try {
-    const rawUid = uid || 'guest_ms3ijgnco2xnid';
-    const canonicalId = getCanonicalSlug(rawUid);
+  const parseDoc = (data: any): SiteConfig => {
+    let companyName = data.companyName !== undefined 
+      ? data.companyName 
+      : (data.name || data.userData?.companyName || data.prospectName || (isDfazzUser ? 'DJ D-FAZZ' : (isEloxUser ? 'DJ ELOX' : (isDokiinUser ? 'D OKIIN' : (isVisionUser ? 'Club Vision Room' : cleanUid.toUpperCase())))));
 
-    // 1. Fetch canonical document from SiteConfigs
-    const canonicalSnap = await getDoc(doc(db, "SiteConfigs", canonicalId));
-    if (canonicalSnap.exists()) {
-      const data = canonicalSnap.data();
-      if (data.aliasOf && data.aliasOf !== canonicalId) {
-        const targetSnap = await getDoc(doc(db, "SiteConfigs", data.aliasOf));
-        if (targetSnap.exists()) {
-          return parseDoc(targetSnap.data());
-        }
-      }
-      return parseDoc(data);
+    if (isVisionUser && (!companyName || companyName === cleanUid.toUpperCase() || companyName === 'NO_NAME')) {
+      companyName = 'Club Vision Room';
     }
 
-    // 2. Fetch rawUid document if different
-    if (rawUid !== canonicalId) {
-      const siteConfigRef = doc(db, "SiteConfigs", rawUid);
-      const siteConfigSnap = await getDoc(siteConfigRef);
-      if (siteConfigSnap.exists()) {
-        const data = siteConfigSnap.data();
-        if (data.canonicalSlug || data.aliasOf) {
-          const target = data.canonicalSlug || data.aliasOf;
-          const targetSnap = await getDoc(doc(db, "SiteConfigs", target));
-          if (targetSnap.exists()) return parseDoc(targetSnap.data());
+    if (!isDfazzUser && (companyName.toUpperCase() === 'DJ D-FAZZ' || companyName.toLowerCase().includes('dfazz'))) {
+      companyName = data.name || data.prospectName || data.userData?.companyName || (isEloxUser ? 'DJ ELOX' : (isDokiinUser ? 'D OKIIN' : (isVisionUser ? 'Club Vision Room' : (cleanUid.startsWith('msx') ? 'Aaron H' : cleanUid.toUpperCase()))));
+    }
+
+    const isDfazz = isDfazzUser || companyName.toLowerCase().includes('dfazz');
+    const isElox = isEloxUser || companyName.toLowerCase().includes('elox');
+    const isDokiin = isDokiinUser || companyName.toLowerCase().includes('dokiin');
+    const isVision = isVisionUser || companyName.toLowerCase().replace(/[-_\s]/g, '').includes('vision');
+
+    const defaultDfazzSocials = [
+      { platform: "Instagram", url: "https://www.instagram.com/djdfazz", enabled: true },
+      { platform: "Facebook", url: "https://www.facebook.com/djdfazz", enabled: true },
+      { platform: "TikTok", url: "https://www.tiktok.com/@djdfazz", enabled: true },
+      { platform: "WhatsApp", url: "https://wa.me/32492104603", enabled: true },
+      { platform: "Email", url: "mailto:Fabriziomagistro89@gmail.com", enabled: true },
+      { platform: "Spotify", url: "https://open.spotify.com", enabled: true },
+      { platform: "SoundCloud", url: "https://soundcloud.com", enabled: true },
+      { platform: "YouTube", url: "https://youtube.com", enabled: true }
+    ];
+
+    const defaultEloxSocials = [
+      { platform: "Instagram", url: "https://www.instagram.com/djelox", enabled: true },
+      { platform: "TikTok", url: "https://www.tiktok.com/@djelox", enabled: true },
+      { platform: "SoundCloud", url: "https://soundcloud.com/djelox", enabled: true },
+      { platform: "YouTube", url: "https://youtube.com/@djelox", enabled: true },
+      { platform: "Spotify", url: "https://open.spotify.com", enabled: true }
+    ];
+
+    let mergedSocials = data.socials && data.socials.length > 0 ? data.socials : (isDfazz ? defaultDfazzSocials : (isElox ? defaultEloxSocials : defaultConfig.socials));
+    if (isDfazz && Array.isArray(mergedSocials)) {
+      defaultDfazzSocials.forEach(ds => {
+        if (!mergedSocials.some((s: any) => s.platform?.toLowerCase() === ds.platform.toLowerCase())) {
+          mergedSocials.push(ds);
         }
-        return parseDoc(data);
+      });
+    }
+
+    let resolvedLogo = data.logoUrl || data.logoAdaptedUrl || data.auditLogoUrl || data.logo || data.visualLogoUrl || data.logoA?.adaptedRemastered || data.logoA?.adapted || (isElox ? '/elox_logo.png' : (isDokiin ? '/dokiin_logo_white.png' : (isVision ? 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/logos/1787803061043_logo_dtf.png' : '')));
+    if (!isDfazz && (resolvedLogo.toLowerCase().includes('dfazz') || resolvedLogo.includes('audit-8f198p5') || resolvedLogo.includes('guest_ms3ijgnco2xnid'))) {
+      resolvedLogo = isElox ? '/elox_logo.png' : (isDokiin ? '/dokiin_logo_white.png' : (isVision ? 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/logos/1787803061043_logo_dtf.png' : ''));
+    }
+
+    // Photo d'ambiance / bannière totalement optionnelle
+    let resolvedLivePhoto = data.livePhotoUrl !== undefined 
+      ? data.livePhotoUrl 
+      : (data.coverUrl !== undefined 
+          ? data.coverUrl 
+          : (data.coverImage !== undefined ? data.coverImage : (data.photos && data.photos[0] ? data.photos[0] : (isVision ? 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg' : ''))));
+
+    if (!isDfazz && typeof resolvedLivePhoto === 'string' && (resolvedLivePhoto.toLowerCase().includes('dfazz') || resolvedLivePhoto.includes('audit-8f198p5') || resolvedLivePhoto.includes('guest_ms3ijgnco2xnid'))) {
+      resolvedLivePhoto = isVision ? 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg' : '';
+    }
+
+    const resolvedLivePhotoList = (Array.isArray(data.livePhotoUrls) && data.livePhotoUrls.length > 0)
+      ? data.livePhotoUrls.filter((u: string) => typeof u === 'string' && u.trim().length > 10 && u !== 'none' && (isDfazz || !u.includes('dfazz_hero')))
+      : (resolvedLivePhoto && resolvedLivePhoto.trim().length > 10 && resolvedLivePhoto !== 'none' ? [resolvedLivePhoto] : (isVision ? ['https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg'] : []));
+
+    let activitySector = data.sector || data.activitySector || data.userData?.activity || (isDfazz ? 'DJ & Producteur Musical' : (isElox ? 'DJ & Événementiel' : (isVision ? 'Musique et Événementiel Électronique' : defaultConfig.activitySector)));
+    if (!isDfazz && (activitySector === 'DJ & Producteur Musical' && data.sector)) {
+      activitySector = data.sector;
+    }
+
+    return {
+      ...defaultConfig,
+      ...data,
+      companyName,
+      slug: data.slug || (isVision ? 'clubvisionroom' : cleanUid),
+      logoUrl: resolvedLogo,
+      avatar: data.avatar || resolvedLogo,
+      products: data.products,
+      items: data.items,
+      mockups: data.mockups,
+      theme: data.theme || (isElox || isDokiin || isVision ? 'dark' : defaultConfig.theme),
+      accentColor: data.accentColor || (isElox ? '#00ff88' : (isDokiin ? '#38bdf8' : (isVision ? '#3b82f6' : defaultConfig.accentColor))),
+      logoOverlayColor: data.logoOverlayColor || (isElox ? 'original' : (isDokiin ? 'white' : 'auto')),
+      enableLiveWidget: data.enableLiveWidget !== undefined ? data.enableLiveWidget : (isDfazz || isElox),
+      liveWidgetStatus: data.liveWidgetStatus || (isDfazz ? '🟢 En Live au Bar Le Club VIP' : (isElox ? '🟢 En Tournée / Liège • Bruxelles • Dinant' : (isVision ? '🟢 Saison Club Vision Room Active' : ''))),
+      contactEmail: data.email || data.contactEmail || data.userData?.email || (isDfazz ? 'Fabriziomagistro89@gmail.com' : (isElox ? 'contact@djelox.be' : (isVision ? 'contact@clubvisionroom.com' : defaultConfig.contactEmail))),
+      whatsappNumber: data.whatsappNumber || data.whatsapp || (isDfazz ? '+32492104603' : ''),
+      generatedKey: data.actuationKey || data.generatedKey || data.projectId || '',
+      activitySector,
+      socials: mergedSocials,
+      customLinks: data.customLinks || [],
+      customSections: data.customSections || [],
+      sectionOrder: data.sectionOrder || defaultConfig.sectionOrder,
+      livePhotoUrl: resolvedLivePhoto,
+      livePhotoUrls: resolvedLivePhotoList,
+      totalMarginAvailable: data.totalMarginAvailable || 0,
+      invertLogoInLightMode: data.invertLogoInLightMode !== false,
+      logoScale: data.logoScale !== undefined ? data.logoScale : 100,
+      coverHeight: data.coverHeight !== undefined ? data.coverHeight : 300,
+      coverZoom: data.coverZoom !== undefined ? data.coverZoom : 100,
+      coverPositionY: data.coverPositionY !== undefined ? data.coverPositionY : 50,
+      coverPositionX: data.coverPositionX !== undefined ? data.coverPositionX : 50
+    };
+  };
+
+  try {
+    // 1. Try SiteConfigs
+    if (actualUid === 'fabrizio' || actualUid === 'djdfazz') {
+      const fabSnap = await getDoc(doc(db, "SiteConfigs", "guest_ms3ijgnco2xnid"));
+      if (fabSnap.exists()) {
+        return parseDoc(fabSnap.data());
+      }
+    }
+
+    const siteConfigRef = doc(db, "SiteConfigs", actualUid);
+    const siteConfigSnap = await getDoc(siteConfigRef);
+    if (siteConfigSnap.exists()) {
+      const d = siteConfigSnap.data();
+      if (isDfazzUser || (!d.companyName?.toLowerCase().includes('dfazz'))) {
+        return parseDoc(d);
+      }
+    }
+
+    if (cleanUid !== actualUid) {
+      const cleanSiteSnap = await getDoc(doc(db, "SiteConfigs", cleanUid));
+      if (cleanSiteSnap.exists()) {
+        const d = cleanSiteSnap.data();
+        if (isDfazzUser || (!d.companyName?.toLowerCase().includes('dfazz'))) {
+          return parseDoc(d);
+        }
+      }
+    }
+
+    // 2. Try anonymous_previews with actualUid and cleanUid
+    const prevRef = doc(db, "anonymous_previews", actualUid);
+    const prevSnap = await getDoc(prevRef);
+    if (prevSnap.exists()) {
+      return parseDoc(prevSnap.data());
+    }
+
+    if (cleanUid !== actualUid) {
+      const cleanPrevSnap = await getDoc(doc(db, "anonymous_previews", cleanUid));
+      if (cleanPrevSnap.exists()) {
+        return parseDoc(cleanPrevSnap.data());
       }
     }
 
     try {
-      const qSlug = query(collection(db, "SiteConfigs"), where("slug", "==", rawUid));
+      const qSlug = query(collection(db, "anonymous_previews"), where("companySlug", "==", cleanUid));
       const sSnap = await getDocs(qSlug);
       if (!sSnap.empty) {
         return parseDoc(sSnap.docs[0].data());
@@ -162,96 +308,160 @@ export async function getStoredConfig(uid?: string): Promise<SiteConfig> {
     } catch {}
 
     try {
-      const qKey = query(collection(db, "SiteConfigs"), where("generatedKey", "==", rawUid));
-      const kSnap = await getDocs(qKey);
-      if (!kSnap.empty) {
-        return parseDoc(kSnap.docs[0].data());
-      }
-    } catch {}
-
-    try {
-      const qAct = query(collection(db, "SiteConfigs"), where("actuationKey", "==", rawUid));
-      const aSnap = await getDocs(qAct);
-      if (!aSnap.empty) {
-        return parseDoc(aSnap.docs[0].data());
-      }
-    } catch {}
-
-    // 2. Try btp_projects doc ID or projectId query
-    const btpRef = doc(db, "btp_projects", rawUid);
-    const btpSnap = await getDoc(btpRef);
-    if (btpSnap.exists()) {
-      return parseDoc(btpSnap.data());
-    }
-
-    try {
-      const qProj = query(collection(db, "btp_projects"), where("projectId", "==", rawUid));
-      const qSnap = await getDocs(qProj);
-      if (!qSnap.empty) {
-        return parseDoc(qSnap.docs[0].data());
-      }
-    } catch {}
-
-    // 3. Try anonymous_previews doc ID or previewId query
-    const prevRef = doc(db, "anonymous_previews", rawUid);
-    const prevSnap = await getDoc(prevRef);
-    if (prevSnap.exists()) {
-      return parseDoc(prevSnap.data());
-    }
-
-    try {
-      const qPrev = query(collection(db, "anonymous_previews"), where("previewId", "==", rawUid));
+      const qPrev = query(collection(db, "anonymous_previews"), where("previewId", "==", actualUid));
       const pSnap = await getDocs(qPrev);
       if (!pSnap.empty) {
         return parseDoc(pSnap.docs[0].data());
       }
     } catch {}
 
+    // 3. Try btp_projects
+    const btpRef = doc(db, "btp_projects", actualUid);
+    const btpSnap = await getDoc(btpRef);
+    if (btpSnap.exists()) {
+      return parseDoc(btpSnap.data());
+    }
+
+    if (cleanUid !== actualUid) {
+      const cleanBtpSnap = await getDoc(doc(db, "btp_projects", cleanUid));
+      if (cleanBtpSnap.exists()) {
+        return parseDoc(cleanBtpSnap.data());
+      }
+    }
+
     // 4. Try configs
-    const uidRef = doc(db, "configs", rawUid);
+    const uidRef = doc(db, "configs", actualUid);
     const uidSnap = await getDoc(uidRef);
     if (uidSnap.exists()) {
       return parseDoc(uidSnap.data());
     }
 
-    // 3. Fallback to shared single_config
-    const defaultRef = doc(db, "configs", "single_config");
-    const defaultSnap = await getDoc(defaultRef);
-    if (defaultSnap.exists()) {
-      const config = parseDoc(defaultSnap.data());
-      if (uid) {
-        try {
-          await setDoc(doc(db, "SiteConfigs", uid), defaultSnap.data());
-        } catch (migErr) {}
+    // 5. Fallback to default config
+    if (isDfazzUser) {
+      const defaultRef = doc(db, "configs", DOC_ID);
+      const defaultSnap = await getDoc(defaultRef);
+      if (defaultSnap.exists()) {
+        return parseDoc(defaultSnap.data());
       }
-      return config;
     }
   } catch (e) {
     console.error("Firebase Read Error:", e);
   }
-  return defaultConfig;
-}
 
-export async function saveStoredConfig(config: SiteConfig, uid?: string) {
-  try {
-    const docId = uid || "single_config";
-    const dataToSave = {
-      ...config,
-      email: config.contactEmail || '',
-      actuationKey: config.generatedKey || config.actuationKey || '',
-      sector: config.activitySector || config.sector || '',
-    };
-    
-    const siteConfigRef = doc(db, "SiteConfigs", docId);
-    await setDoc(siteConfigRef, dataToSave);
-
-    const configsRef = doc(db, "configs", docId);
-    await setDoc(configsRef, dataToSave);
-  } catch (e) {
-    console.error("Firebase Write Error:", e);
-    throw e;
+  // Local storage cache lookup fallback
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(`fast_artist_cache_v92_${cleanUid}`) || 
+                     localStorage.getItem(`fast_artist_cache_${cleanUid}`) ||
+                     localStorage.getItem(`fast_artist_cache_v92_${actualUid}`) ||
+                     localStorage.getItem(`fast_artist_cache_${actualUid}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === 'object') {
+          return parseDoc(parsed);
+        }
+      }
+    } catch {}
   }
+
+  // Explicit fallback for Club Vision Room if Firestore read failed or doc not in Firestore
+  if (isVisionUser) {
+    return parseDoc({
+      uid: 'clubvisionroom',
+      slug: 'clubvisionroom',
+      companyName: 'Club Vision Room',
+      activitySector: 'Musique et Événementiel Électronique',
+      logoUrl: 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/logos/1787803061043_logo_dtf.png',
+      livePhotoUrl: 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg',
+      livePhotoUrls: ['https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg'],
+      accentColor: '#3b82f6',
+      contactEmail: 'contact@clubvisionroom.com'
+    });
+  }
+
+  return parseDoc({});
 }
+
+// Global Write Queue & Debounce map to prevent Firestore Resource Exhausted (429/quota errors)
+const saveDebounceTimers = new Map<string, any>();
+const savePendingPayloads = new Map<string, any>();
+const activeWriteLocks = new Set<string>();
+
+export async function saveStoredConfig(config: SiteConfig, uid?: string): Promise<void> {
+  const docId = uid || DOC_ID;
+  const companySlug = (config.companyName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+  const cleanUid = docId.replace(/^audit-/, '');
+  
+  const dataToSave: any = {
+    ...config,
+    slug: companySlug || config.slug || cleanUid,
+    email: config.contactEmail || '',
+    actuationKey: config.generatedKey || config.actuationKey || '',
+    sector: config.activitySector || config.sector || '',
+    updatedAt: new Date().toISOString()
+  };
+
+  // Strip any temporary local blob: URLs so they are never saved into Firestore
+  const tempUrlKeys = ['logoUrl', 'auditLogoUrl', 'logoAdaptedUrl', 'logoA', 'logoB', 'visualLogoUrl', 'avatar', 'logo', 'livePhotoUrl'];
+  tempUrlKeys.forEach((k) => {
+    if (typeof dataToSave[k] === 'string' && dataToSave[k].startsWith('blob:')) {
+      delete dataToSave[k];
+    }
+  });
+  
+  const sanitizedPayload = sanitizeForFirestore(dataToSave);
+
+  return new Promise((resolve) => {
+    savePendingPayloads.set(docId, sanitizedPayload);
+
+    if (saveDebounceTimers.has(docId)) {
+      clearTimeout(saveDebounceTimers.get(docId));
+    }
+
+    const timer = setTimeout(async () => {
+      saveDebounceTimers.delete(docId);
+      const payloadToWrite = savePendingPayloads.get(docId);
+      savePendingPayloads.delete(docId);
+
+      if (!payloadToWrite) {
+        return resolve();
+      }
+
+      if (activeWriteLocks.has(docId)) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      activeWriteLocks.add(docId);
+
+      try {
+        const uniqueTargets = new Set<string>();
+        uniqueTargets.add(docId);
+        if (docId.startsWith('audit-') && cleanUid) uniqueTargets.add(cleanUid);
+        if (companySlug && companySlug !== 'noname') uniqueTargets.add(companySlug);
+
+        // Batch unique parallel writes
+        const writePromises: Promise<any>[] = [];
+        for (const targetId of uniqueTargets) {
+          writePromises.push(setDoc(doc(db, "SiteConfigs", targetId), payloadToWrite, { merge: true }));
+          writePromises.push(setDoc(doc(db, "anonymous_previews", targetId), payloadToWrite, { merge: true }));
+          writePromises.push(setDoc(doc(db, "configs", targetId), payloadToWrite, { merge: true }));
+        }
+
+        await Promise.allSettled(writePromises);
+        resolve();
+      } catch (e) {
+        console.error("Firebase Debounced Write Error:", e);
+        resolve(); // Résout pour éviter de bloquer l'UI
+      } finally {
+        activeWriteLocks.delete(docId);
+      }
+    }, 350);
+
+    saveDebounceTimers.set(docId, timer);
+  });
+}
+
+export const saveSiteConfig = saveStoredConfig;
 
 // URL Generators
 export const generateMapsUrl = (address: string) => 
@@ -315,7 +525,7 @@ export const generateAIPresentation = async (pitch: SiteConfig['rawPitch']) => {
 
   try {
     const versions = ['v1beta', 'v1'];
-    const models = ['gemini-2.5-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+    const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
     for (const v of versions) {
       for (const m of models) {
         try {
@@ -355,7 +565,7 @@ Formatte ta réponse EXACTEMENT avec ce JSON valide et rien d'autre :
 
   try {
     const versions = ['v1beta', 'v1'];
-    const models = ['gemini-2.5-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+    const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
     
     let lastErrorData = null;
 
@@ -515,7 +725,7 @@ Formatte ta réponse EXACTEMENT avec ce JSON valide et rien d'autre :
 
   try {
     const versions = ['v1beta', 'v1'];
-    const models = ['gemini-2.5-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
+    const models = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-flash-latest'];
     
     let lastErrorData = null;
 

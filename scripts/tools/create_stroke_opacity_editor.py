@@ -569,7 +569,7 @@ html_content = f'''<!DOCTYPE html>
 </html>
 '''
 
-output_path = r'c:\Partage\Projet\Signaid V24\vector_editor.html'
+output_path = r'c:\Partage\Projet\signaid-studio\vector_editor.html'
 with open(output_path, 'w', encoding='utf-8') as f:
     f.write(html_content)
 

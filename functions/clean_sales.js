@@ -3,7 +3,7 @@ const admin = require('firebase-admin');
 // Initialize admin with default credentials
 if (!admin.apps.length) {
     admin.initializeApp({
-        projectId: "signaid-d2d08"
+        projectId: "signaid-prod"
     });
 }
 const db = admin.firestore();
