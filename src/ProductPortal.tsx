@@ -588,7 +588,7 @@ const ProductPortal: React.FC = () => {
                         'hoodie_front', 'hoodie_back', 'hoodie',
                         'sweat_front', 'sweat_back', 'sweat',
                         'tank_front', 'tank_back', 'tank_white_front', 'tank_white_back',
-                        'heavy_front', 'heavy_back'
+                        'heavy_front', 'heavy_back', 'heavy_white_front', 'heavy_white_back'
                     ];
                     for (const k of directGarmentKeys) {
                         if (!mergedGarmentMockups[k]) {
@@ -829,7 +829,10 @@ const ProductPortal: React.FC = () => {
                                 ? (view === 'front' ? mergedGMs.tank_white_front || mergedGMs.tankWhiteFront : mergedGMs.tank_white_back || mergedGMs.tankWhiteBack)
                                 : (view === 'front' ? mergedGMs.tank_front || mergedGMs.tank_top || mergedGMs.tankFront : mergedGMs.tank_back || mergedGMs.tankBack);
                         } else if (isHeavy) {
-                            gmUrl = view === 'front' ? (mergedGMs.heavy_front || mergedGMs.tshirt_oversize || mergedGMs.heavyFront) : (mergedGMs.heavy_back || mergedGMs.heavyBack);
+                            const isWhite = m.id?.toLowerCase().includes('white');
+                            gmUrl = isWhite
+                                ? (view === 'front' ? mergedGMs.heavy_white_front || mergedGMs.heavyWhiteFront : mergedGMs.heavy_white_back || mergedGMs.heavyWhiteBack)
+                                : (view === 'front' ? mergedGMs.heavy_front || mergedGMs.tshirt_oversize || mergedGMs.heavyFront : mergedGMs.heavy_back || mergedGMs.heavyBack);
                         } else if (isCard) {
                             gmUrl = view === 'front' ? (mergedGMs.card_front || mergedGMs.business_card || mergedGMs.cardFront) : (mergedGMs.card_back || mergedGMs.cardBack);
                         } else if (m.id && mergedGMs[m.id]) {
@@ -1818,16 +1821,28 @@ const ProductPortal: React.FC = () => {
             icon: <Shirt className="text-gray-300" size={20} />,
             quantities: ['S', 'M', 'L', 'XL', 'XXL']
         }] : []),
-        ...(dynamicMockups.some(m => m.garment === 'tshirt_oversize' || m.id?.toLowerCase().includes('heavy')) ? [{
+        ...(dynamicMockups.some(m => (m.garment === 'tshirt_oversize' && !m.id?.toLowerCase().includes('white')) || m.id === 'heavyFront' || m.id === 'heavyBack') ? [{
             id: 'tshirt_oversize',
             category: 'clothing',
             type: 'tshirt_oversize',
-            name: 'Pack T-Shirt Heavyweight Oversize',
-            description: 'T-Shirt Heavyweight 230g/m² - Coupe Streetwear Boxy',
+            name: 'Pack T-Shirt Heavyweight Oversize Noir',
+            description: 'T-Shirt Heavyweight 230g/m² Noir - Coupe Streetwear Boxy',
             pricePublic: 35,
             priceSub: 35,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tshirt_oversize', view, mode, view === 'front' ? '/merch/visionroom/oversize-front.png' : '/merch/visionroom/oversize-back.png'),
+            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tshirt_oversize', view, mode, view === 'front' ? '/merch/visionroom/oversize-front.png' : '/merch/visionroom/oversize-back.png', 'heavyFront', 'heavyBack'),
             icon: <Sun className="text-amber-500" size={20} />,
+            quantities: ['S', 'M', 'L', 'XL', 'XXL']
+        }] : []),
+        ...(dynamicMockups.some(m => m.id?.toLowerCase().includes('heavywhite') || (m.garment === 'tshirt_oversize' && m.id?.toLowerCase().includes('white'))) ? [{
+            id: 'tshirt_oversize_white',
+            category: 'clothing',
+            type: 'tshirt_oversize',
+            name: 'Pack T-Shirt Heavyweight Oversize Blanc',
+            description: 'T-Shirt Heavyweight 230g/m² Blanc - Coupe Streetwear Boxy',
+            pricePublic: 35,
+            priceSub: 35,
+            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tshirt_oversize_white', view, mode, view === 'front' ? '/assets/tshirt-white-NX7200.png' : '/assets/tshirt-white-NX7200-dos.png', 'heavyWhiteFront', 'heavyWhiteBack'),
+            icon: <Sun className="text-gray-300" size={20} />,
             quantities: ['S', 'M', 'L', 'XL', 'XXL']
         }] : []),
         {
@@ -1891,16 +1906,28 @@ const ProductPortal: React.FC = () => {
             icon: <Shirt className="text-orange-500" size={20} />,
             quantities: ['S', 'M', 'L', 'XL', 'XXL']
         }] : []),
-        ...(dynamicMockups.some(m => m.garment === 'tshirt_oversize' || m.id?.toLowerCase().includes('heavy')) ? [{
+        ...(dynamicMockups.some(m => (m.garment === 'tshirt_oversize' && !m.id?.toLowerCase().includes('white')) || m.id === 'heavyFront' || m.id === 'heavyBack') ? [{
             id: 'tshirt_oversize',
             category: 'clothing',
             type: 'tshirt_oversize',
-            name: 'Pack T-Shirt Heavyweight Oversize',
-            description: 'T-Shirt Heavyweight 230g/m² - Coupe Streetwear Boxy',
+            name: 'Pack T-Shirt Heavyweight Oversize Noir',
+            description: 'T-Shirt Heavyweight 230g/m² Noir - Coupe Streetwear Boxy',
             pricePublic: 35,
             priceSub: 35,
             getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tshirt_oversize', view, mode, view === 'front' ? '/merch/visionroom/oversize-front.png' : '/merch/visionroom/oversize-back.png'),
             icon: <Sun className="text-amber-500" size={20} />,
+            quantities: ['S', 'M', 'L', 'XL', 'XXL']
+        }] : []),
+        ...(dynamicMockups.some(m => m.id?.toLowerCase().includes('heavywhite') || (m.garment === 'tshirt_oversize' && m.id?.toLowerCase().includes('white'))) ? [{
+            id: 'tshirt_oversize_white',
+            category: 'clothing',
+            type: 'tshirt_oversize',
+            name: 'Pack T-Shirt Heavyweight Oversize Blanc',
+            description: 'T-Shirt Heavyweight 230g/m² Blanc - Coupe Streetwear Boxy',
+            pricePublic: 35,
+            priceSub: 35,
+            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tshirt_oversize_white', view, mode, view === 'front' ? '/assets/tshirt-white-NX7200.png' : '/assets/tshirt-white-NX7200-dos.png'),
+            icon: <Sun className="text-gray-300" size={20} />,
             quantities: ['S', 'M', 'L', 'XL', 'XXL']
         }] : [])
     ];
@@ -2405,7 +2432,9 @@ const ProductPortal: React.FC = () => {
                                                    : pack.id === 'polo' ? (view === 'front' ? 'pFront' : 'pBack') 
                                                    : pack.id === 'hoodie' ? (view === 'front' ? 'hFront' : 'hBack') 
                                                    : pack.id === 'tank_top' ? (view === 'front' ? 'tankFront' : 'tankBack')
+                                                   : pack.id === 'tank_top_white' ? (view === 'front' ? 'tankWhiteFront' : 'tankWhiteBack')
                                                    : pack.id === 'tshirt_oversize' ? (view === 'front' ? 'heavyFront' : 'heavyBack')
+                                                   : pack.id === 'tshirt_oversize_white' ? (view === 'front' ? 'heavyWhiteFront' : 'heavyWhiteBack')
                                                    : pack.id === 'business_card' ? (view === 'front' ? 'cardFront' : 'cardBack') : '';
                                     const mockup = dynamicMockups.find(m => (m.garment === pack.type || (pack.type === 'tshirt_basic' && m.garment === 'tshirt')) && m.view === view)
                                         || dynamicMockups.find(m => m.id === mockupId);

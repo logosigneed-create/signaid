@@ -4,7 +4,7 @@ import {
     Sparkles, Upload, ArrowLeft, Download, Layers, Palette, RefreshCw, 
     Wand2, Check, AlertCircle, ShoppingBag, Eye, EyeOff, Plus, Trash2, Copy, 
     ExternalLink, FileText, CheckCircle2, Shield, Settings2, Box, Tag, Euro,
-    Key, X, Sliders
+    Key, X, Sliders, Shirt, Maximize2, RotateCw
 } from 'lucide-react';
 import { 
     generateProductAidImage, refinePromptWithAI, extractDominantColor, 
@@ -13,7 +13,8 @@ import {
 } from '../services/productAidService';
 import { 
     saveProductToAuditPortal, fetchCustomAuditProducts, 
-    deleteProductFromAuditPortal, getMergedAuditCatalog, formatCatalogAsTsCode 
+    deleteProductFromAuditPortal, getMergedAuditCatalog, formatCatalogAsTsCode,
+    sanitizeAuditProductEntry
 } from '../services/auditCatalogService';
 import { AuditProductEntry, AUDIT_PORTAIL_CONFIG } from '../config/audit-portail';
 
@@ -144,6 +145,11 @@ export const ProductAidView: React.FC = () => {
     // === Catalog Management States ===
     const [activeCatalog, setActiveCatalog] = useState<AuditProductEntry[]>([]);
     const [isLoadingCatalog, setIsLoadingCatalog] = useState<boolean>(false);
+
+    // === Visualizer & Interactive Preview States ===
+    const [cardPreviewViews, setCardPreviewViews] = useState<Record<string, 'front' | 'back'>>({});
+    const [selectedVisualizerProduct, setSelectedVisualizerProduct] = useState<AuditProductEntry | null>(null);
+    const [visualizerView, setVisualizerView] = useState<'front' | 'back'>('front');
 
     const loadCatalog = useCallback(async () => {
         setIsLoadingCatalog(true);
@@ -290,17 +296,66 @@ export const ProductAidView: React.FC = () => {
         setIsSavingProduct(true);
         setError(null);
         try {
-            const productId = formProduct.id || `prod_${formProduct.sku.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString(36)}`;
-            const finalProduct: AuditProductEntry = {
+            const isWhiteNx7200 = formProduct.sku === 'NX7200-WHT' || formProduct.id === 'visionroom-heavyweight-tee-white';
+
+            let front = (formProduct.mockups?.front || formProduct.frontImageUrl || '').trim();
+            let back = (formProduct.mockups?.back || formProduct.backImageUrl || '').trim();
+            let preview = (formProduct.mockups?.preview || '').trim();
+
+            if (isWhiteNx7200) {
+                // DONNÉES CIBLES À RESTAURER POUR NX7200-WHT :
+                // - Vue Face (front) : "/assets/tshirt-white-NX7200.png"
+                // - Vue Dos (back) : "/assets/tshirt-white-NX7200-dos.png"
+                // - Preview catalogue : "/assets/tshirt-white-NX7200.png"
+                front = '/assets/tshirt-white-NX7200.png';
+                back = '/assets/tshirt-white-NX7200-dos.png';
+                preview = '/assets/tshirt-white-NX7200.png';
+            } else {
+                const normalizePath = (p: string, fallback: string = ''): string => {
+                    if (!p) return fallback;
+                    const clean = p.trim();
+                    if (!clean || clean.startsWith('blob:')) return fallback;
+                    if (clean.startsWith('data:') || clean.startsWith('http://') || clean.startsWith('https://')) return clean;
+                    return clean.startsWith('/') ? clean : '/' + clean;
+                };
+
+                front = normalizePath(front, '/assets/tshirt-white-NX7200.png');
+                back = normalizePath(back, '/assets/tshirt-white-NX7200-dos.png');
+                preview = normalizePath(preview, front) || front;
+
+                // Correction automatique d'inversion Face / Dos si le formulaire avait permuté les deux slots
+                const isBack = (s: string) => /[-_](dos|back)\b|\bback\b/i.test(s);
+                const isFront = (s: string) => /[-_](face|front)\b|\bfront\b/i.test(s);
+
+                if (isBack(front) && (isFront(back) || !isBack(back))) {
+                    const tmp = front;
+                    front = back;
+                    back = tmp;
+                    if (preview === tmp) preview = front;
+                }
+            }
+
+            const productId = isWhiteNx7200
+                ? 'visionroom-heavyweight-tee-white'
+                : (formProduct.id || `prod_${formProduct.sku.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now().toString(36)}`);
+
+            const finalProduct: AuditProductEntry = sanitizeAuditProductEntry({
                 ...formProduct,
                 id: productId,
+                mockups: {
+                    front,
+                    back,
+                    preview
+                },
+                frontImageUrl: front,
+                backImageUrl: back,
                 pricing: {
                     costPriceHt: Number(formProduct.pricing.costPriceHt) || 0,
                     retailPriceTtc: Number(formProduct.pricing.retailPriceTtc) || 0,
                     currency: formProduct.pricing.currency || 'EUR',
                     marginEstimated: Math.max(0, Number(((Number(formProduct.pricing.retailPriceTtc) || 0) / 1.2 - (Number(formProduct.pricing.costPriceHt) || 0)).toFixed(2)))
                 }
-            };
+            });
 
             await saveProductToAuditPortal(finalProduct);
             await loadCatalog();
@@ -577,6 +632,41 @@ export const ProductAidView: React.FC = () => {
                                 <p className="text-xs text-neutral-400 mb-3">
                                     Collez ici la description brute, le tableau de caractéristiques ou le texte de la page produit fournisseur. Gemini remplira instantanément la fiche technique ci-dessous.
                                 </p>
+                                <div className="flex flex-wrap items-center gap-2 mb-3">
+                                    <span className="text-[11px] text-neutral-400 font-medium">Gabarits rapides :</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const whitePreset = AUDIT_PORTAIL_CONFIG.catalog.find(p => p.sku === 'NX7200-WHT');
+                                            if (whitePreset) {
+                                                setFormProduct({
+                                                    ...whitePreset,
+                                                    mockups: {
+                                                        front: '/assets/tshirt-white-NX7200.png',
+                                                        back: '/assets/tshirt-white-NX7200-dos.png',
+                                                        preview: '/assets/tshirt-white-NX7200.png'
+                                                    },
+                                                    frontImageUrl: '/assets/tshirt-white-NX7200.png',
+                                                    backImageUrl: '/assets/tshirt-white-NX7200-dos.png'
+                                                });
+                                            }
+                                        }}
+                                        className="text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-2.5 py-1 rounded-lg border border-neutral-700 font-medium transition-colors"
+                                    >
+                                        ⚪ NX7200 Blanc (Heavyweight)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const blackPreset = AUDIT_PORTAIL_CONFIG.catalog.find(p => p.sku === 'NX7200-BLK');
+                                            if (blackPreset) setFormProduct(blackPreset);
+                                        }}
+                                        className="text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-200 px-2.5 py-1 rounded-lg border border-neutral-700 font-medium transition-colors"
+                                    >
+                                        ⚫ NX7200 Noir (Heavyweight)
+                                    </button>
+                                </div>
+
                                 <textarea 
                                     value={supplierRawText}
                                     onChange={(e) => setSupplierRawText(e.target.value)}
@@ -769,13 +859,60 @@ export const ProductAidView: React.FC = () => {
                             
                             {/* Card 3: Mockups Images (Front & Back) */}
                             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl space-y-4">
-                                <h3 className="font-bold text-sm text-neutral-200 flex items-center gap-2 border-b border-neutral-800 pb-3">
-                                    <Layers className="w-4 h-4 text-orange-400" />
-                                    Mockups Gabarits (Face & Dos)
-                                </h3>
+                                <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+                                    <h3 className="font-bold text-sm text-neutral-200 flex items-center gap-2">
+                                        <Layers className="w-4 h-4 text-orange-400" />
+                                        Mockups Gabarits (Face & Dos)
+                                    </h3>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setFormProduct(prev => ({
+                                                ...prev,
+                                                mockups: {
+                                                    ...prev.mockups,
+                                                    front: prev.mockups.back,
+                                                    back: prev.mockups.front
+                                                },
+                                                frontImageUrl: prev.backImageUrl,
+                                                backImageUrl: prev.frontImageUrl
+                                            }));
+                                        }}
+                                        className="text-[11px] bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white px-2.5 py-1 rounded-lg border border-neutral-700 font-medium transition-colors flex items-center gap-1.5"
+                                        title="Permuter l'image de Face et l'image de Dos"
+                                    >
+                                        <RotateCw className="w-3 h-3 text-orange-400" />
+                                        ⇄ Inverser Face / Dos
+                                    </button>
+                                </div>
                                 <p className="text-xs text-neutral-400">
                                     Définissez les images sources du textile vierge détouré. Elles serviront de support direct pour la projection du logo.
                                 </p>
+
+                                {formProduct.sku === 'NX7200-WHT' && (
+                                    <div className="flex items-center justify-between bg-neutral-950 p-2.5 rounded-xl border border-neutral-800 text-[11px]">
+                                        <span className="text-neutral-400">Chemins officiels NX7200 Blanc :</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setFormProduct(prev => ({
+                                                    ...prev,
+                                                    mockups: {
+                                                        ...prev.mockups,
+                                                        front: '/assets/tshirt-white-NX7200.png',
+                                                        back: '/assets/tshirt-white-NX7200-dos.png',
+                                                        preview: '/assets/tshirt-white-NX7200.png'
+                                                    },
+                                                    frontImageUrl: '/assets/tshirt-white-NX7200.png',
+                                                    backImageUrl: '/assets/tshirt-white-NX7200-dos.png'
+                                                }));
+                                            }}
+                                            className="text-orange-400 hover:text-orange-300 font-medium underline"
+                                        >
+                                            Rétablir chemins physiques
+                                        </button>
+                                    </div>
+                                )}
 
                                 {/* Front Mockup */}
                                 <div>
@@ -784,11 +921,26 @@ export const ProductAidView: React.FC = () => {
                                         <input 
                                             type="text"
                                             value={formProduct.mockups.front}
-                                            onChange={(e) => setFormProduct({
-                                                ...formProduct,
-                                                mockups: { ...formProduct.mockups, front: e.target.value }
-                                            })}
-                                            placeholder="/merch/visionroom/tank-front.png"
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setFormProduct({
+                                                    ...formProduct,
+                                                    mockups: { ...formProduct.mockups, front: val },
+                                                    frontImageUrl: val
+                                                });
+                                            }}
+                                            onBlur={(e) => {
+                                                const trimmed = e.target.value.trim();
+                                                const clean = (trimmed.startsWith('assets/') || trimmed.startsWith('merch/')) ? '/' + trimmed : trimmed;
+                                                if (clean !== e.target.value) {
+                                                    setFormProduct(prev => ({
+                                                        ...prev,
+                                                        mockups: { ...prev.mockups, front: clean },
+                                                        frontImageUrl: clean
+                                                    }));
+                                                }
+                                            }}
+                                            placeholder="/assets/tshirt-white-NX7200.png"
                                             className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl p-2 text-xs text-neutral-200 font-mono focus:border-orange-500 focus:outline-none"
                                         />
                                         <button 
@@ -807,7 +959,16 @@ export const ProductAidView: React.FC = () => {
                                     </div>
                                     {formProduct.mockups.front && (
                                         <div className="mt-2 h-24 bg-neutral-950 rounded-xl border border-neutral-800 flex items-center justify-center p-2">
-                                            <img src={formProduct.mockups.front} alt="Mockup Face" className="max-h-full max-w-full object-contain" />
+                                            <img 
+                                                src={formProduct.mockups.front} 
+                                                alt="Mockup Face" 
+                                                className="max-h-full max-w-full object-contain"
+                                                onError={(e) => {
+                                                    if (formProduct.sku === 'NX7200-WHT') {
+                                                        e.currentTarget.src = '/assets/tshirt-white-NX7200.png';
+                                                    }
+                                                }}
+                                            />
                                         </div>
                                     )}
                                 </div>
@@ -819,11 +980,26 @@ export const ProductAidView: React.FC = () => {
                                         <input 
                                             type="text"
                                             value={formProduct.mockups.back}
-                                            onChange={(e) => setFormProduct({
-                                                ...formProduct,
-                                                mockups: { ...formProduct.mockups, back: e.target.value }
-                                            })}
-                                            placeholder="/merch/visionroom/tank-back.png"
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setFormProduct({
+                                                    ...formProduct,
+                                                    mockups: { ...formProduct.mockups, back: val },
+                                                    backImageUrl: val
+                                                });
+                                            }}
+                                            onBlur={(e) => {
+                                                const trimmed = e.target.value.trim();
+                                                const clean = (trimmed.startsWith('assets/') || trimmed.startsWith('merch/')) ? '/' + trimmed : trimmed;
+                                                if (clean !== e.target.value) {
+                                                    setFormProduct(prev => ({
+                                                        ...prev,
+                                                        mockups: { ...prev.mockups, back: clean },
+                                                        backImageUrl: clean
+                                                    }));
+                                                }
+                                            }}
+                                            placeholder="/assets/tshirt-white-NX7200-dos.png"
                                             className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl p-2 text-xs text-neutral-200 font-mono focus:border-orange-500 focus:outline-none"
                                         />
                                         <button 
@@ -842,7 +1018,16 @@ export const ProductAidView: React.FC = () => {
                                     </div>
                                     {formProduct.mockups.back && (
                                         <div className="mt-2 h-24 bg-neutral-950 rounded-xl border border-neutral-800 flex items-center justify-center p-2">
-                                            <img src={formProduct.mockups.back} alt="Mockup Dos" className="max-h-full max-w-full object-contain" />
+                                            <img 
+                                                src={formProduct.mockups.back} 
+                                                alt="Mockup Dos" 
+                                                className="max-h-full max-w-full object-contain"
+                                                onError={(e) => {
+                                                    if (formProduct.sku === 'NX7200-WHT') {
+                                                        e.currentTarget.src = '/assets/tshirt-white-NX7200-dos.png';
+                                                    }
+                                                }}
+                                            />
                                         </div>
                                     )}
                                 </div>
@@ -1167,6 +1352,87 @@ export const ProductAidView: React.FC = () => {
                             </div>
                         </div>
 
+                        {/* Visualizer Studio Module (Face / Dos) */}
+                        {selectedVisualizerProduct && (
+                            <div className="bg-neutral-900 border border-orange-500/40 rounded-2xl p-6 shadow-2xl mb-6">
+                                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-3 mb-4">
+                                    <div>
+                                        <span className="text-xs font-mono text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
+                                            {selectedVisualizerProduct.sku}
+                                        </span>
+                                        <h3 className="font-bold text-lg text-white mt-1">{selectedVisualizerProduct.title}</h3>
+                                        <p className="text-xs text-neutral-400">{selectedVisualizerProduct.brand} • {selectedVisualizerProduct.weightGsm} g/m²</p>
+                                    </div>
+                                    <div className="flex items-center gap-2 bg-neutral-950 p-1 rounded-xl border border-neutral-800">
+                                        <button
+                                            type="button"
+                                            onClick={() => setVisualizerView('front')}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                                visualizerView === 'front' ? 'bg-orange-600 text-white' : 'text-neutral-400 hover:text-white'
+                                            }`}
+                                        >
+                                            Vue FACE
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setVisualizerView('back')}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                                visualizerView === 'back' ? 'bg-orange-600 text-white' : 'text-neutral-400 hover:text-white'
+                                            }`}
+                                        >
+                                            Vue DOS
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedVisualizerProduct(null)}
+                                            className="p-1.5 text-neutral-500 hover:text-white rounded-lg"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                                    <div className="relative aspect-square max-w-sm mx-auto w-full bg-neutral-950 rounded-xl border border-neutral-800 flex items-center justify-center p-4">
+                                        <img 
+                                            src={visualizerView === 'front' ? selectedVisualizerProduct.mockups?.front : selectedVisualizerProduct.mockups?.back} 
+                                            alt="Mockup Visualizer"
+                                            className="max-h-full max-w-full object-contain"
+                                            onError={(e) => {
+                                                if (selectedVisualizerProduct.sku === 'NX7200-WHT') {
+                                                    e.currentTarget.src = visualizerView === 'back'
+                                                        ? '/assets/tshirt-white-NX7200-dos.png'
+                                                        : '/assets/tshirt-white-NX7200.png';
+                                                }
+                                            }}
+                                        />
+                                        <span className="absolute bottom-2 left-2 text-[10px] bg-black/80 px-2 py-0.5 rounded text-orange-400 font-mono">
+                                            {visualizerView === 'front' ? 'FACE 1024x1024' : 'DOS 1024x1024'}
+                                        </span>
+                                    </div>
+                                    <div className="space-y-3 text-xs">
+                                        <div className="bg-neutral-950 p-4 rounded-xl space-y-2 border border-neutral-800">
+                                            <p className="text-neutral-300 font-medium">{selectedVisualizerProduct.composition}</p>
+                                            <div className="flex flex-wrap gap-1 pt-1">
+                                                {selectedVisualizerProduct.sizes?.map(sz => (
+                                                    <span key={sz} className="px-2 py-0.5 bg-neutral-800 text-neutral-200 rounded font-mono text-[11px]">{sz}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setFormProduct(selectedVisualizerProduct);
+                                                setActiveTab('audit-form');
+                                            }}
+                                            className="w-full bg-orange-600 hover:bg-orange-500 text-white py-2 rounded-xl font-bold"
+                                        >
+                                            Modifier ce produit
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Catalog Cards Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {activeCatalog.map((prod) => (
@@ -1174,23 +1440,71 @@ export const ProductAidView: React.FC = () => {
                                     key={prod.id} 
                                     className="bg-neutral-900 border border-neutral-800 hover:border-neutral-700 rounded-2xl overflow-hidden shadow-xl flex flex-col transition-all"
                                 >
-                                    {/* Mockup Previews */}
-                                    <div className="bg-neutral-950 p-4 border-b border-neutral-800 grid grid-cols-2 gap-2 h-44">
-                                        <div className="h-full flex items-center justify-center bg-neutral-900/50 rounded-xl p-2 relative">
-                                            {prod.mockups?.front ? (
-                                                <img src={prod.mockups.front} alt="Face" className="max-h-full max-w-full object-contain" />
-                                            ) : (
-                                                <span className="text-[10px] text-neutral-600">Pas de vue Face</span>
-                                            )}
-                                            <span className="absolute bottom-1 left-1.5 text-[9px] bg-black/70 px-1.5 py-0.5 rounded text-neutral-400">FACE</span>
+                                    {/* Mockup Previews with Face/Back Toggle */}
+                                    <div className="bg-neutral-950 p-3 border-b border-neutral-800 relative">
+                                        <div 
+                                            className="h-44 flex items-center justify-center bg-neutral-900/50 rounded-xl p-2 cursor-pointer relative group"
+                                            onClick={() => {
+                                                setSelectedVisualizerProduct(prod);
+                                                setVisualizerView(cardPreviewViews[prod.id] || 'front');
+                                            }}
+                                            title="Cliquer pour inspecter dans le Visualiseur"
+                                        >
+                                            <img 
+                                                src={(cardPreviewViews[prod.id] === 'back' ? prod.mockups?.back : prod.mockups?.front) || prod.mockups?.front} 
+                                                alt={prod.title} 
+                                                className="max-h-full max-w-full object-contain filter drop-shadow-md" 
+                                                onError={(e) => {
+                                                    if (prod.sku === 'NX7200-WHT') {
+                                                        e.currentTarget.src = cardPreviewViews[prod.id] === 'back'
+                                                            ? '/assets/tshirt-white-NX7200-dos.png'
+                                                            : '/assets/tshirt-white-NX7200.png';
+                                                    }
+                                                }}
+                                            />
+                                            <span className="absolute bottom-1.5 left-2 text-[9px] bg-black/80 px-1.5 py-0.5 rounded text-neutral-400 font-mono">
+                                                {cardPreviewViews[prod.id] === 'back' ? 'DOS' : 'FACE'}
+                                            </span>
                                         </div>
-                                        <div className="h-full flex items-center justify-center bg-neutral-900/50 rounded-xl p-2 relative">
-                                            {prod.mockups?.back ? (
-                                                <img src={prod.mockups.back} alt="Dos" className="max-h-full max-w-full object-contain" />
-                                            ) : (
-                                                <span className="text-[10px] text-neutral-600">Pas de vue Dos</span>
-                                            )}
-                                            <span className="absolute bottom-1 left-1.5 text-[9px] bg-black/70 px-1.5 py-0.5 rounded text-neutral-400">DOS</span>
+
+                                        <div className="flex items-center justify-between mt-2 px-1">
+                                            <div className="flex items-center gap-1 bg-neutral-900 p-0.5 rounded-lg border border-neutral-800">
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setCardPreviewViews(prev => ({ ...prev, [prod.id]: 'front' }));
+                                                    }}
+                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                        (cardPreviewViews[prod.id] || 'front') === 'front' ? 'bg-orange-500 text-white' : 'text-neutral-400 hover:text-white'
+                                                    }`}
+                                                >
+                                                    FACE
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setCardPreviewViews(prev => ({ ...prev, [prod.id]: 'back' }));
+                                                    }}
+                                                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                        cardPreviewViews[prod.id] === 'back' ? 'bg-orange-500 text-white' : 'text-neutral-400 hover:text-white'
+                                                    }`}
+                                                >
+                                                    DOS
+                                                </button>
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setSelectedVisualizerProduct(prod);
+                                                    setVisualizerView(cardPreviewViews[prod.id] || 'front');
+                                                }}
+                                                className="text-[10px] text-neutral-400 hover:text-orange-400 flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-neutral-800 transition-colors"
+                                            >
+                                                <Eye className="w-3 h-3" /> Visualiseur
+                                            </button>
                                         </div>
                                     </div>
 

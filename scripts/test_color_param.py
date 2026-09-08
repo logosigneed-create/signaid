@@ -1,0 +1,52 @@
+import urllib.request
+import urllib.parse
+import http.cookiejar
+import json
+
+cj = http.cookiejar.CookieJar()
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/javascript, */*; q=0.01',
+    'X-Requested-With': 'XMLHttpRequest',
+    'Referer': 'https://shop.l-shop-team.be/fr/Assortiment/T-shirts-fashion/col-rond/Unisex-Heavyweight-T-Shirt.html'
+}
+
+# Bypass
+url = 'https://shop.l-shop-team.be/fr/Assortiment/T-shirts-fashion/col-rond/Unisex-Heavyweight-T-Shirt.html'
+req = urllib.request.Request(url, headers=headers)
+with opener.open(req) as resp:
+    html = resp.read().decode('utf-8', errors='ignore')
+
+import re
+token_match = re.search(r'const token = "([^"]+)";', html)
+if token_match:
+    token = token_match.group(1)
+    post_data = urllib.parse.urlencode({'u': token}).encode('utf-8')
+    post_headers = headers.copy()
+    post_headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    post_req = urllib.request.Request('https://shop.l-shop-team.be/validation_token.php', data=post_data, headers=post_headers)
+    opener.open(post_req)
+
+test_params = [
+    {'color': 'White'},
+    {'color': 'White', 'parentid': '2484756'},
+    {'selectedColor': 'White', 'parentid': '2484756'},
+    {'color': 'Blanc', 'parentid': '2484756'},
+    {'fnc': 'getVariants', 'parentid': '2484756', 'color': 'White'},
+]
+
+for p in test_params:
+    qs = urllib.parse.urlencode(p)
+    var_url = f'https://shop.l-shop-team.be/index.php?lang=8&cl=oxpsvariantsfetch&{qs}'
+    req2 = urllib.request.Request(var_url, headers=headers)
+    try:
+        with opener.open(req2) as resp:
+            data = resp.read().decode('utf-8', errors='ignore')
+            res = json.loads(data)
+            pic = res.get('picture', {})
+            variants = res.get('variants', [])
+            print(f"Param {p}: picture={pic}, variants_count={len(variants)}")
+    except Exception as e:
+        print(f"Err {p}: {e}")

@@ -26,7 +26,9 @@ import {
     sanitizeMockupForLocalStorage,
     sanitizeGarmentMockupMap,
     pruneBulkyLocalStorageKeys,
-    safeLocalStorageSetItem
+    safeLocalStorageSetItem,
+    purgeMockupSlotCache,
+    mergeMockupsWithPriority
 } from './services/auditPersistenceService';
 
 const getCanonicalSlug = (slug: string) => slug || '';
@@ -44,6 +46,7 @@ import AdminQuickBar from './components/AdminQuickBar';
 
 import { FlowState, UserData, MockupItem, BtpLogo, LogoColorMode } from './types/audit';
 import GabaritCard from './components/audit/GabaritCard';
+import CropModal from './components/audit/CropModal';
 
 const getBaseMockups = (): MockupItem[] => [
     // 1 & 2: CLASSIC BLACK T-SHIRT (JHK170)
@@ -212,6 +215,36 @@ const getBaseMockups = (): MockupItem[] => [
         mechanical: null,
         model: "/assets/models/male_tshirt_back.png",
         selected: true
+    },
+
+    // 13 & 14: HEAVYWEIGHT OVERSIZE BLANC (NX7200-WHT)
+    {
+        id: 'heavyWhiteFront',
+        title: 'Heavyweight Blanc FACE',
+        base: "/assets/tshirt-white-NX7200.png",
+        ai: null,
+        aiRemastered: null,
+        isGenerating: false,
+        view: 'front',
+        garment: 'tshirt_oversize',
+        color: 'white',
+        mechanical: null,
+        model: "/assets/models/male_tshirt_front.png",
+        selected: true
+    },
+    {
+        id: 'heavyWhiteBack',
+        title: 'Heavyweight Blanc DOS',
+        base: "/assets/tshirt-white-NX7200-dos.png",
+        ai: null,
+        aiRemastered: null,
+        isGenerating: false,
+        view: 'back',
+        garment: 'tshirt_oversize',
+        color: 'white',
+        mechanical: null,
+        model: "/assets/models/male_tshirt_back.png",
+        selected: true
     }
 ];
 
@@ -276,6 +309,14 @@ const DEFAULT_PLACEMENTS = {
     veste: {
         front: { x: 0.50, y: 0.45, scale: 0.15 },
         back: { x: 0.50, y: 0.40, scale: 0.35 }
+    },
+    tank_top: {
+        front: { x: 0.50, y: 0.42, scale: 0.28 },
+        back: { x: 0.50, y: 0.38, scale: 0.35 }
+    },
+    tshirt_oversize: {
+        front: { x: 0.50, y: 0.40, scale: 0.28 },
+        back: { x: 0.50, y: 0.39, scale: 0.36 }
     }
 };
 let PLACEMENTS = DEFAULT_PLACEMENTS;
@@ -504,10 +545,11 @@ const readMockupCacheFromLocal = (candidateKeys: string[]): LocalMockupCacheResu
         'hoodie_front', 'hoodie_back', 'hoodie',
         'sweat_front', 'sweat_back', 'sweat',
         'tank_front', 'tank_back', 'tank_white_front', 'tank_white_back', 'tank_top',
-        'heavy_front', 'heavy_back', 'tshirt_oversize',
+        'heavy_front', 'heavy_back', 'heavy_white_front', 'heavy_white_back', 'tshirt_oversize',
         'business_card_front', 'business_card_back', 'business_card',
         'tFront', 'tBack', 'pFront', 'pBack', 'hFront', 'hBack',
-        'tankFront', 'tankBack', 'tankWhiteFront', 'tankWhiteBack', 'heavyFront', 'heavyBack'
+        'tankFront', 'tankBack', 'tankWhiteFront', 'tankWhiteBack', 'heavyFront', 'heavyBack',
+        'heavyWhiteFront', 'heavyWhiteBack'
     ];
 
     for (const directK of directGarmentKeys) {
@@ -557,7 +599,10 @@ const hydrateMockupsFromCache = (
                     ? (isBack ? (mergedGarmentMockups.tank_white_back || mergedGarmentMockups.tankWhiteBack) : (mergedGarmentMockups.tank_white_front || mergedGarmentMockups.tankWhiteFront))
                     : (isBack ? (mergedGarmentMockups.tank_back || mergedGarmentMockups.tankBack) : (mergedGarmentMockups.tank_front || mergedGarmentMockups.tank_top || mergedGarmentMockups.tankFront));
             } else if (baseM.garment === 'tshirt_oversize') {
-                gmUrl = isBack ? (mergedGarmentMockups.heavy_back || mergedGarmentMockups.heavyBack) : (mergedGarmentMockups.heavy_front || mergedGarmentMockups.tshirt_oversize || mergedGarmentMockups.heavyFront);
+                const isWhite = baseM.id?.toLowerCase().includes('white') || baseM.title?.toLowerCase().includes('blanc');
+                gmUrl = isWhite
+                    ? (isBack ? (mergedGarmentMockups.heavy_white_back || mergedGarmentMockups.heavyWhiteBack) : (mergedGarmentMockups.heavy_white_front || mergedGarmentMockups.heavyWhiteFront))
+                    : (isBack ? (mergedGarmentMockups.heavy_back || mergedGarmentMockups.heavyBack) : (mergedGarmentMockups.heavy_front || mergedGarmentMockups.tshirt_oversize || mergedGarmentMockups.heavyFront));
             } else if (baseM.garment === 'business_card') {
                 gmUrl = isBack ? (mergedGarmentMockups.card_back || mergedGarmentMockups.business_card_back || mergedGarmentMockups.cardBack) : (mergedGarmentMockups.card_front || mergedGarmentMockups.business_card_front || mergedGarmentMockups.business_card || mergedGarmentMockups.cardFront);
             }
@@ -584,6 +629,15 @@ const hydrateMockupsFromCache = (
             imageBack: isBack ? primaryUrl : undefined
         };
     });
+};
+
+const ensureAllBaseMockupsPresent = (currentList: MockupItem[]): MockupItem[] => {
+    const baseList = getBaseMockups();
+    if (!Array.isArray(currentList) || currentList.length === 0) return baseList;
+    const existingIds = new Set(currentList.map(m => m.id?.toLowerCase()));
+    const missingBase = baseList.filter(b => !existingIds.has(b.id?.toLowerCase()));
+    if (missingBase.length === 0) return currentList;
+    return [...currentList, ...missingBase];
 };
 
 const GenericAuditPage: React.FC = () => {
@@ -628,6 +682,8 @@ const GenericAuditPage: React.FC = () => {
         tankWhiteBack: 'A',
         heavyFront: 'B',
         heavyBack: 'A',
+        heavyWhiteFront: 'B',
+        heavyWhiteBack: 'A',
         cardFront: 'A',
         cardBack: 'A'
     });
@@ -640,6 +696,15 @@ const GenericAuditPage: React.FC = () => {
     const [enableStroke, setEnableStroke] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [showCropModal, setShowCropModal] = useState(false);
+    const [cropTargetSlot, setCropTargetSlot] = useState<'A' | 'B'>('A');
+    const [cropInitialMethod, setCropInitialMethod] = useState<'rect' | 'poly' | 'eraser'>('poly');
+
+    const openCropModal = (targetSlot: 'A' | 'B', method: 'rect' | 'poly' | 'eraser' = 'poly') => {
+        setCropTargetSlot(targetSlot);
+        setCropInitialMethod(method);
+        setShowCropModal(true);
+    };
+
     const [logoAnalysis, setLogoAnalysis] = useState<any>(null);
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [previewId, setPreviewId] = useState<string | null>(null);
@@ -882,7 +947,12 @@ const GenericAuditPage: React.FC = () => {
                 if (!isVisualFrozenRef.current && !isSyncingShop) {
                     setMockups(prev => {
                         const hasChanged = JSON.stringify(updated.map(u => u.mechanical)) !== JSON.stringify(prev.map(p => p.mechanical));
-                        return hasChanged ? updated : prev;
+                        if (!hasChanged) return prev;
+                        return prev.map(p => {
+                            const matching = updated.find(u => u.id === p.id);
+                            if (!matching || matching.mechanical === p.mechanical) return p;
+                            return { ...p, mechanical: matching.mechanical };
+                        });
                     });
                 }
             };
@@ -955,7 +1025,12 @@ const GenericAuditPage: React.FC = () => {
             if (!isCancelled && !isVisualFrozenRef.current && !isSyncingShop) {
                 setMockups(prev => {
                     const hasChanged = JSON.stringify(updated.map(u => u.mechanical)) !== JSON.stringify(prev.map(p => p.mechanical));
-                    return hasChanged ? updated : prev;
+                    if (!hasChanged) return prev;
+                    return prev.map(p => {
+                        const matching = updated.find(u => u.id === p.id);
+                        if (!matching || matching.mechanical === p.mechanical) return p;
+                        return { ...p, mechanical: matching.mechanical };
+                    });
                 });
             }
         };
@@ -1280,7 +1355,16 @@ const GenericAuditPage: React.FC = () => {
         await saveSessionLocal(params);
         const res = await syncSessionToCloudService(params);
         if (res.previewId) setPreviewId(res.previewId);
-        if (res.mockups && !isVisualFrozenRef.current && !isSyncingShop) setMockups(res.mockups);
+        if (res.mockups && !isVisualFrozenRef.current && !isSyncingShop) {
+            const current = (mockupsRef.current && mockupsRef.current.length > 0) ? mockupsRef.current : mockups;
+            const merged = ensureAllBaseMockupsPresent(mergeMockupsWithPriority(current, res.mockups));
+            mockupsRef.current = merged;
+            setMockups(merged);
+            const updatedGm = extractGarmentMockupMap(merged);
+            setGarmentMockups(prevGm => ({ ...prevGm, ...updatedGm }));
+            setDynamicMockups(merged);
+            setActiveMockups(merged);
+        }
         return res;
     }, [sessionId, routeSlug, auditId, logoA, logoB, logoPlacements, userData, mockups, logoColorModes, globalLogoColorMode, isSyncingShop]);
 
@@ -1314,7 +1398,16 @@ const GenericAuditPage: React.FC = () => {
         await saveSessionLocal(params);
         const res = await syncSessionToCloudService(params);
         if (res.previewId) setPreviewId(res.previewId);
-        if (res.mockups && !isVisualFrozenRef.current && !isSyncingShop) setMockups(res.mockups);
+        if (res.mockups && !isVisualFrozenRef.current && !isSyncingShop) {
+            const current = (mockupsRef.current && mockupsRef.current.length > 0) ? mockupsRef.current : mockups;
+            const merged = ensureAllBaseMockupsPresent(mergeMockupsWithPriority(current, res.mockups));
+            mockupsRef.current = merged;
+            setMockups(merged);
+            const updatedGm = extractGarmentMockupMap(merged);
+            setGarmentMockups(prevGm => ({ ...prevGm, ...updatedGm }));
+            setDynamicMockups(merged);
+            setActiveMockups(merged);
+        }
         return res;
     }, [sessionId, routeSlug, auditId, logoA, logoB, logoPlacements, userData, mockups, logoColorModes, globalLogoColorMode, isSyncingShop]);
 
@@ -1351,7 +1444,16 @@ const GenericAuditPage: React.FC = () => {
         if (syncCloud) {
             const res = await syncSessionToCloudService(params);
             if (res.previewId) setPreviewId(res.previewId);
-            if (res.mockups && !isVisualFrozenRef.current && !isSyncingShop) setMockups(res.mockups);
+            if (res.mockups && !isVisualFrozenRef.current && !isSyncingShop) {
+                const current = (mockupsRef.current && mockupsRef.current.length > 0) ? mockupsRef.current : mockups;
+                const merged = ensureAllBaseMockupsPresent(mergeMockupsWithPriority(current, res.mockups));
+                mockupsRef.current = merged;
+                setMockups(merged);
+                const updatedGm = extractGarmentMockupMap(merged);
+                setGarmentMockups(prevGm => ({ ...prevGm, ...updatedGm }));
+                setDynamicMockups(merged);
+                setActiveMockups(merged);
+            }
             return res;
         }
     }, [sessionId, routeSlug, auditId, logoA, logoB, logoPlacements, userData, mockups, logoColorModes, globalLogoColorMode, isSyncingShop]);
@@ -1557,7 +1659,14 @@ const GenericAuditPage: React.FC = () => {
                         }));
                     }
 
-                    if (data.logoPlacements) setLogoPlacements(prev => ({ ...prev, ...data.logoPlacements }));
+                    if (data.logoPlacements) {
+                        setLogoPlacements(prev => ({
+                            ...prev,
+                            heavyWhiteFront: 'A',
+                            heavyWhiteBack: 'B',
+                            ...data.logoPlacements
+                        }));
+                    }
 
                     if (data.logoColorModes || cloudDoc?.logoColorModes) {
                         setLogoColorModes(prev => ({ ...prev, ...(data.logoColorModes || cloudDoc?.logoColorModes) }));
@@ -1582,8 +1691,8 @@ const GenericAuditPage: React.FC = () => {
                             const mGarment = m?.garment || m?.type;
                             if (mGarment !== baseM.garment || m?.view !== baseM.view) return false;
                             
-                            // Distinguish black vs white tank top if ID or title specifies white/blanc
-                            if (baseM.garment === 'tank_top') {
+                            // Distinguish black vs white variants if ID or title specifies white/blanc
+                            if (baseM.garment === 'tank_top' || baseM.garment === 'tshirt_oversize') {
                                 const isBaseWhite = baseM.id.toLowerCase().includes('white') || baseM.title.toLowerCase().includes('blanc');
                                 const isMWhite = (m.id && m.id.toLowerCase().includes('white')) || (m.title && m.title.toLowerCase().includes('blanc'));
                                 return isBaseWhite === isMWhite;
@@ -1627,7 +1736,21 @@ const GenericAuditPage: React.FC = () => {
                         const mechVal = idbMech || savedM?.mechanical || cloudM?.mechanical || savedM?.imageBat || cloudM?.imageBat || null;
 
                         const finalAi = isRealImage(aiVal) ? aiVal : (isRealImage(localAi) ? localAi : baseM.ai);
-                        const finalMech = isRealImage(mechVal) ? mechVal : null;
+                        let finalMech = isRealImage(mechVal) ? mechVal : null;
+
+                        // Immediate fallback generation for newly added template slots if logo is present
+                        if (!finalMech && (fallbackLogoA || fallbackLogoB)) {
+                            const effectiveSlot = (data.logoPlacements && data.logoPlacements[baseM.id]) || (baseM.id === 'heavyWhiteBack' ? 'B' : (baseM.id === 'heavyWhiteFront' ? 'A' : (isBack ? 'A' : 'B')));
+                            const logoToRender = effectiveSlot === 'B' ? (fallbackLogoB || fallbackLogoA) : (fallbackLogoA || fallbackLogoB);
+                            if (logoToRender) {
+                                try {
+                                    const scale = baseM.view === 'front' ? logoScaleFront : logoScaleBack;
+                                    const cMode = (data.logoColorModes && data.logoColorModes[baseM.id]) || 'original';
+                                    finalMech = await generateMechanicalMockup(baseM.base, logoToRender, baseM.view, scale, baseM.garment, cMode);
+                                } catch (e) { }
+                            }
+                        }
+
                         const primaryUrl = finalAi || finalMech || baseM.base;
 
                         return {
@@ -1644,18 +1767,21 @@ const GenericAuditPage: React.FC = () => {
                         };
                     }));
 
-                    if (restoredMockups.some(m => isRealImage(m.ai) || isRealImage(m.aiRemastered))) {
-                        setMockups(restoredMockups);
-                        const fullGm = { ...extractGarmentMockupMap(restoredMockups), ...sidCache.mergedGarmentMockups };
+                    const completeMockups = ensureAllBaseMockupsPresent(restoredMockups);
+
+                    if (completeMockups.some(m => isRealImage(m.ai) || isRealImage(m.aiRemastered))) {
+                        setMockups(completeMockups);
+                        const fullGm = { ...extractGarmentMockupMap(completeMockups), ...sidCache.mergedGarmentMockups };
                         setGarmentMockups(fullGm);
-                        setDynamicMockups(restoredMockups);
-                        setActiveMockups(restoredMockups);
+                        setDynamicMockups(completeMockups);
+                        setActiveMockups(completeMockups);
                         setState('RESULT');
                         isHydratedFromLocalRef.current = true;
                     } else if (isHydratedFromLocalRef.current) {
+                        setMockups(prev => ensureAllBaseMockupsPresent(prev));
                         setState('RESULT');
                     } else {
-                        setMockups(restoredMockups);
+                        setMockups(completeMockups);
                         setState('RESULT');
                     }
                 }
@@ -1708,9 +1834,15 @@ const GenericAuditPage: React.FC = () => {
                 }
 
                 if (hasContent) {
-                    const contentWidth = maxX - minX + 1;
-                    const contentHeight = maxY - minY + 1;
-                    const croppedData = tempCtx.getImageData(minX, minY, contentWidth, contentHeight);
+                    // Marge de sécurité (safe padding) de 6px pour préserver la typographie et le sous-texte fin
+                    const pad = 6;
+                    const safeMinX = Math.max(0, minX - pad);
+                    const safeMinY = Math.max(0, minY - pad);
+                    const safeMaxX = Math.min(width - 1, maxX + pad);
+                    const safeMaxY = Math.min(height - 1, maxY + pad);
+                    const contentWidth = safeMaxX - safeMinX + 1;
+                    const contentHeight = safeMaxY - safeMinY + 1;
+                    const croppedData = tempCtx.getImageData(safeMinX, safeMinY, contentWidth, contentHeight);
 
                     // Update dimensions and data for subsequent stages
                     tempCanvas.width = contentWidth;
@@ -1853,7 +1985,7 @@ const GenericAuditPage: React.FC = () => {
                 for (let i = 0; i < d.length; i += 4) {
                     if (d[i + 3] > 0) {
                         const alpha = d[i + 3];
-                        if (alpha < 130) d[i + 3] = 0; // Kill semi-transparent noise
+                        if (alpha < 80) d[i + 3] = 0; // Seuil préservant le texte fin et la typographie
                         else d[i + 3] = 255;          // Snap to solid
                     }
                 }
@@ -2226,6 +2358,7 @@ const GenericAuditPage: React.FC = () => {
             const isPolo = garmentUrl.includes('polo');
             const isTank = garmentUrl.includes('tank') || garmentUrl.includes('debardeur');
             const isOversize = garmentUrl.includes('oversize') || garmentUrl.includes('NX7200');
+            const isHeavyWhite = isOversize && (garmentUrl.includes('white') || garmentUrl.includes('blanc'));
             const rawType = garmentType || (isPolo ? 'polo' : (isSweat ? 'sweat' : (isTank ? 'tank_top' : (isOversize ? 'tshirt_oversize' : 'tshirt'))));
             const typeGroup = PLACEMENTS[rawType as keyof typeof PLACEMENTS] || PLACEMENTS.tshirt;
             const pos = typeGroup[view] || typeGroup.front;
@@ -2241,15 +2374,30 @@ const GenericAuditPage: React.FC = () => {
                 }
             }
 
-            // 3. Positionnement définitif du logo graphique pur
-            const logoW = canvas.width * scale;
-            const logoH = logoW * (imgLogo.height / imgLogo.width);
+            // DÉVERROUILLAGE PRINTABLE AREA / BOUNDING BOX DOS :
+            // Permet d'accueillir le visuel complet vertical (abeille + 2 lignes de texte "CLUB VISION ROOM")
+            // sans crop ni padding excessif qui forcerait un zoom destructeur.
+            const maxBoxW = canvas.width * (isHeavyWhite && view === 'back' ? Math.max(scale, 0.36) : scale);
+            const maxBoxH = canvas.height * (view === 'back' ? Math.min(0.48, scale * 1.35) : scale * 1.25);
+            const logoRatio = imgLogo.width / imgLogo.height;
+
+            let logoW = maxBoxW;
+            let logoH = logoW / logoRatio;
+
+            // Si le visuel est vertical (hauteur > largeur), contraindre par la hauteur max pour garantir l'intégrité du texte
+            if (logoH > maxBoxH) {
+                logoH = maxBoxH;
+                logoW = logoH * logoRatio;
+            }
+
+            const posX = pos.x;
+            const posY = (isHeavyWhite && view === 'back') ? 0.39 : pos.y;
 
             ctx.globalAlpha = 1.0;
             ctx.drawImage(
                 imgLogo,
-                (canvas.width * pos.x) - (logoW / 2),
-                (canvas.height * pos.y) - (logoH / 2),
+                (canvas.width * posX) - (logoW / 2),
+                (canvas.height * posY) - (logoH / 2),
                 logoW,
                 logoH
             );
@@ -2421,45 +2569,62 @@ const GenericAuditPage: React.FC = () => {
         const consistentMannequinDesc = getMannequinProfile();
 
         const updateItem = (id: string, ai: string | null, loading: boolean, mechanical?: string | null) => {
-            setMockups(prev => {
-                const next = prev.map(it => {
-                    if (it.id === id) {
-                        const isFrontItem = it.view === 'front' || (!it.id.toLowerCase().includes('back') && !it.id.toLowerCase().includes('dos') && !it.id.toLowerCase().includes('card'));
-                        const fallbackSlot = (isFrontItem && ((overrideLogoB && overrideLogoB.original) || (logoB && logoB.original))) ? 'B' : 'A';
-                        const slot = logoPlacements[it.id] || fallbackSlot;
-                        const logo = slot === 'A' ? (overrideLogoA || logoA) : (overrideLogoB || logoB);
-                        const isRemastered = logo.mode === 'remastered';
-                        const newAi = isRemastered ? it.ai : (ai !== null ? ai : it.ai);
-                        const newAiRemastered = isRemastered ? (ai !== null ? ai : it.aiRemastered) : it.aiRemastered;
-                        const newMech = mechanical !== undefined ? mechanical : it.mechanical;
-                        const primary = newAiRemastered || newAi || it.imageUrl || newMech || it.base;
-                        const isBack = it.view === 'back' || isBackId(it.id);
+            const currentList = (mockupsRef.current && mockupsRef.current.length > 0) ? mockupsRef.current : mockups;
+            const now = Date.now();
+            const next = currentList.map(it => {
+                if (it.id === id) {
+                    const isBack = it.view === 'back' || isBackId(it.id);
+                    if (loading) {
                         return { 
                             ...it, 
-                            ai: newAi, 
-                            aiRemastered: newAiRemastered,
-                            imageUrl: primary,
-                            frontImageUrl: isBack ? undefined : primary,
-                            backImageUrl: isBack ? primary : undefined,
-                            imageFront: isBack ? undefined : primary,
-                            imageBack: isBack ? primary : undefined,
-                            isGenerating: loading, 
-                            mechanical: newMech
+                            ai: null, 
+                            aiRemastered: null, 
+                            imageUrl: it.base,
+                            frontImageUrl: isBack ? undefined : it.base,
+                            backImageUrl: isBack ? it.base : undefined,
+                            imageFront: isBack ? undefined : it.base,
+                            imageBack: isBack ? it.base : undefined,
+                            isGenerating: true, 
+                            isFresh: false,
+                            mechanical: mechanical !== undefined ? mechanical : it.mechanical
                         };
                     }
-                    return it;
-                });
-                mockupsRef.current = next;
-                const updatedGm = extractGarmentMockupMap(next);
-                setGarmentMockups(prevGm => ({ ...prevGm, ...updatedGm }));
-                setDynamicMockups(next);
-                setActiveMockups(next);
-                if (ai && isRealImage(ai)) {
-                    isHydratedFromLocalRef.current = true;
+
+                    const newMech = mechanical !== undefined ? mechanical : it.mechanical;
+                    const primary = ai || newMech || it.base;
+                    const isFresh = Boolean(ai && isRealImage(ai));
+
+                    return { 
+                        ...it, 
+                        ai: ai, 
+                        aiRemastered: ai,
+                        imageUrl: primary,
+                        frontImageUrl: isBack ? undefined : primary,
+                        backImageUrl: isBack ? primary : undefined,
+                        imageFront: isBack ? undefined : primary,
+                        imageBack: isBack ? primary : undefined,
+                        isGenerating: false, 
+                        isFresh,
+                        timestamp: now,
+                        generatedAt: now,
+                        mechanical: newMech
+                    };
                 }
-                saveSession(overrideLogoA || logoA, overrideLogoB || logoB, logoPlacements, u, next);
-                return next;
+                return it;
             });
+
+            // Immediately update mockupsRef.current and React state synchronously
+            mockupsRef.current = next;
+            setMockups(next);
+            const updatedGm = extractGarmentMockupMap(next);
+            setGarmentMockups(prevGm => ({ ...prevGm, ...updatedGm }));
+            setDynamicMockups(next);
+            setActiveMockups(next);
+            if (ai && isRealImage(ai)) {
+                isHydratedFromLocalRef.current = true;
+            }
+            saveSession(overrideLogoA || logoA, overrideLogoB || logoB, logoPlacements, u, next);
+            return next;
         };
 
         const getLogoToUse = (placementId: string) => {
@@ -2479,6 +2644,18 @@ const GenericAuditPage: React.FC = () => {
 
             if (!targetLogo || !targetLogo.original || targetLogo.original.trim().length === 0) {
                 targetLogo = (baseLogoB && baseLogoB.original && baseLogoB.original.trim().length > 0) ? baseLogoB : baseLogoA;
+            }
+
+            // Pour heavyWhiteBack : S'assurer que si un slot ne contient que l'abeille seule (sans texte)
+            // alors que l'autre slot contient le logo complet avec le sous-texte "CLUB VISION ROOM",
+            // on sélectionne le logo complet afin de préserver l'intégrité de l'icône + texte.
+            if (placementId === 'heavyWhiteBack') {
+                const isTargetBeeOnly = targetLogo?.original && (targetLogo.original.includes('bee') || targetLogo.original.includes('logo_bee'));
+                const otherLogo = targetLogo === baseLogoB ? baseLogoA : baseLogoB;
+                const isOtherComplete = otherLogo?.original && (!otherLogo.original.includes('bee') || otherLogo.original.includes('logo_dtf'));
+                if (isTargetBeeOnly && isOtherComplete) {
+                    targetLogo = otherLogo;
+                }
             }
 
             // Si même l'autre slot est vide ou absent, retourner null
@@ -2537,6 +2714,11 @@ const GenericAuditPage: React.FC = () => {
                 console.log(`[DEBUG_PIPELINE_ITEM] Traitement de l'item: ${it.id}`, it);
                 console.log(`[DEBUG_PIPELINE_FORCING_RUN] Forçage régénération pour ${it.id} (hasAi=${!!it.ai}, hasAiRemastered=${!!it.aiRemastered}, hasImageUrl=${!!it.imageUrl})`);
                 try {
+                    // 1. Purge slot cache across localStorage, sessionStorage, and IndexedDB as generation starts
+                    const currentUrlParams = new URLSearchParams(window.location.search);
+                    const currentSlug = extractRootSlug(currentUrlParams, { slug: routeSlug, auditId }, u, sessionId);
+                    await purgeMockupSlotCache(it.id, sessionId, currentSlug);
+
                     let logoToUse = getLogoToUse(it.id);
                     // Secours universel si le slot n'a pas pu résoudre de logo direct
                     if (!logoToUse) {
@@ -2653,7 +2835,12 @@ const GenericAuditPage: React.FC = () => {
                             ? 'Plain White Sleeveless Muscle Tank Top' 
                             : 'Plain Black Sleeveless Muscle Tank Top';
                     }
-                    else if (it.garment === 'tshirt_oversize') garmentLabel = 'Plain Black Heavyweight Oversize Streetwear T-shirt with boxy cut and drop shoulders';
+                    else if (it.garment === 'tshirt_oversize') {
+                        const isWhiteHeavy = it.id.toLowerCase().includes('white') || it.title.toLowerCase().includes('blanc');
+                        garmentLabel = isWhiteHeavy 
+                            ? 'Plain White Heavyweight Oversize Streetwear T-shirt with boxy cut and drop shoulders'
+                            : 'Plain Black Heavyweight Oversize Streetwear T-shirt with boxy cut and drop shoulders';
+                    }
                     else if (it.garment === 'tshirt_bicolore') garmentLabel = 'High-Visibility Two-Tone Fluorescent Yellow and Black T-shirt with reflective bands';
                     else if (it.garment === 'veste') garmentLabel = 'High-Visibility Fluorescent Safety Vest';
                     
@@ -2712,7 +2899,13 @@ STRICT FRAMING & APPAREL VISIBILITY:
                          Maintain original branding proportions but ensure maximum visibility on the provided garment.
                          STRICT GARMENT FIDELITY: The final garment MUST EXACTLY BE ${garmentLabel}. CRITICAL: YOU MUST EXACTLY MATCH THE GARMENT COLORS OF THE MECHANICAL GABARIT IN INPUT 2. DO NOT LEAVE THE GARMENT BLACK OR DARK GREY UNLESS THE GABARIT IS BLACK.`;
 
-                    contextPrompt += `\nSTRICT LOGO FIDELITY INSTRUCTION: Accurately reproduce ONLY the visual logo graphic provided in Input 3 onto the garment. Do NOT invent, synthesize, or draw any additional brand names, text strings, slogans, or typography above, below, or around the logo. Even if the logo is a standalone symbol or icon (e.g. a symbol or bee icon), render strictly that graphic without adding any company name, text, or typography.`;
+                    const isHeavyWhiteBack = it.id === 'heavyWhiteBack' || (it.garment === 'tshirt_oversize' && it.view === 'back' && (it.id.toLowerCase().includes('white') || it.title?.toLowerCase().includes('blanc')));
+
+                    if (isHeavyWhiteBack) {
+                        contextPrompt += `\nSTRICT LOGO FIDELITY INSTRUCTION: Preserve the FULL complete logo including ALL typography, text, and subtext ('CLUB VISION ROOM') positioned under the central emblem. Do not crop, truncate, or omit the text. The entire visual composition (central bee emblem + typography underneath) MUST be transferred completely and legibly onto the back of the white heavyweight t-shirt.`;
+                    } else {
+                        contextPrompt += `\nSTRICT LOGO FIDELITY INSTRUCTION: Accurately reproduce ONLY the visual logo graphic provided in Input 3 onto the garment. Do NOT invent, synthesize, or draw any additional brand names, text strings, slogans, or typography above, below, or around the logo. Even if the logo is a standalone symbol or icon (e.g. a symbol or bee icon), render strictly that graphic without adding any company name, text, or typography.`;
+                    }
 
                     contextPrompt += colorInstruction;
                     contextPrompt += `\n${sectorPrompt}\n${framingInstruction}`;
@@ -2805,7 +2998,7 @@ STRICT FRAMING & APPAREL VISIBILITY:
             // Auto-push Cloud dans le pipeline dès que le dernier vêtement est généré
             try {
                 addLog("AUTO-PUSH CLOUD : SYNCHRONISATION DU CATALOGUE...");
-                await syncSessionToCloud(true);
+                await syncSessionToCloud(true, mockupsRef.current);
                 console.log("[STORAGE] Auto-push Cloud réussi avec succès à la fin du pipeline.");
                 addLog("AUTO-PUSH CLOUD : BOUTIQUE SYNCHRONISÉE.");
             } catch (saveErr) {
@@ -2896,30 +3089,99 @@ STRICT FRAMING & APPAREL VISIBILITY:
         r.readAsDataURL(blob);
     });
 
-    const handleCropConfirm = async (croppedBase64: string) => {
+    const handleCropConfirm = async (croppedBase64: string, targetSlot: 'A' | 'B' = cropTargetSlot) => {
         setShowCropModal(false);
-        setStatusMessage("TRAITEMENT DU LOGO B (ROGNAGE)...");
+        setStatusMessage(`TRAITEMENT DU LOGO ${targetSlot} (ROGNAGE / GOMMAGE)...`);
         setIsAnalyzing(true);
         try {
             const [original, adapted] = await Promise.all([
                 processLogoDeterministic(croppedBase64, false, true),
                 processLogoDeterministic(croppedBase64, true, true),
             ]);
-            const newLogoB: BtpLogo = { id: 'B', original, adapted, remastered: null, mode: logoA.mode };
-            setLogoB(newLogoB);
 
-            // Align all front garments to Logo B (the cropped icon without text)
-            const updatedPlacements: Record<string, 'A' | 'B'> = {
-                ...logoPlacements,
-                tFront: 'B',
-                pFront: 'B',
-                hFront: 'B',
-                tankFront: 'B',
-                tankWhiteFront: 'B',
-                heavyFront: 'B'
-            };
-            setLogoPlacements(updatedPlacements);
-            saveSession(logoA, newLogoB, updatedPlacements, userData, mockups);
+            if (targetSlot === 'A') {
+                const newLogoA: BtpLogo = {
+                    id: 'A',
+                    original,
+                    adapted,
+                    remastered: null,
+                    mode: logoA.mode || 'original'
+                };
+                setLogoA(newLogoA);
+
+                // Recalculate BATs / mechanical gabarits using Logo A
+                const updatedMockups = await Promise.all(mockups.map(async (m) => {
+                    const isFrontItem = m.view === 'front' || (!m.id.toLowerCase().includes('back') && !m.id.toLowerCase().includes('dos') && !m.id.toLowerCase().includes('card'));
+                    const fallbackSlot = (isFrontItem && logoB?.original && logoB.original.trim().length > 0) ? 'B' : 'A';
+                    const slot = logoPlacements[m.id] || fallbackSlot;
+                    
+                    if (slot === 'A') {
+                        const logoSrc = newLogoA.mode === 'original' ? newLogoA.original : (newLogoA.remastered || newLogoA.adapted);
+                        const scale = m.view === 'front' ? logoScaleFront : logoScaleBack;
+                        const cMode = logoColorModes[m.id] || globalLogoColorMode || 'original';
+                        try {
+                            const mechanical = logoSrc ? await generateMechanicalMockup(m.base, logoSrc, m.view, scale, m.garment, cMode) : m.mechanical;
+                            return { ...m, mechanical, aiRemastered: null };
+                        } catch (e) {
+                            console.error("Gabarit error on Logo A crop:", e);
+                            return { ...m, aiRemastered: null };
+                        }
+                    }
+                    return m;
+                }));
+
+                setMockups(updatedMockups);
+                mockupsRef.current = updatedMockups;
+                await saveSession(newLogoA, logoB, logoPlacements, userData, updatedMockups, true);
+            } else {
+                const newLogoB: BtpLogo = {
+                    id: 'B',
+                    original,
+                    adapted,
+                    remastered: null,
+                    mode: logoB.mode || logoA.mode || 'original'
+                };
+                setLogoB(newLogoB);
+
+                // Align all front garments to Logo B (the cropped icon without text)
+                const updatedPlacements: Record<string, 'A' | 'B'> = {
+                    ...logoPlacements,
+                    tFront: 'B',
+                    pFront: 'B',
+                    hFront: 'B',
+                    tankFront: 'B',
+                    tankWhiteFront: 'B',
+                    heavyFront: 'B',
+                    heavyWhiteFront: logoPlacements.heavyWhiteFront || 'A',
+                    heavyWhiteBack: 'B'
+                };
+                setLogoPlacements(updatedPlacements);
+
+                // Recalculate BATs / mechanical gabarits using Logo B
+                const updatedMockups = await Promise.all(mockups.map(async (m) => {
+                    const isFrontItem = m.view === 'front' || (!m.id.toLowerCase().includes('back') && !m.id.toLowerCase().includes('dos') && !m.id.toLowerCase().includes('card'));
+                    const fallbackSlot = (isFrontItem && newLogoB.original && newLogoB.original.trim().length > 0) ? 'B' : 'A';
+                    const slot = updatedPlacements[m.id] || fallbackSlot;
+                    
+                    if (slot === 'B') {
+                        const logoSrc = newLogoB.mode === 'original' ? newLogoB.original : (newLogoB.remastered || newLogoB.adapted);
+                        const scale = m.view === 'front' ? logoScaleFront : logoScaleBack;
+                        const cMode = logoColorModes[m.id] || globalLogoColorMode || 'original';
+                        try {
+                            const mechanical = logoSrc ? await generateMechanicalMockup(m.base, logoSrc, m.view, scale, m.garment, cMode) : m.mechanical;
+                            return { ...m, mechanical, aiRemastered: null };
+                        } catch (e) {
+                            console.error("Gabarit error on Logo B crop:", e);
+                            return { ...m, aiRemastered: null };
+                        }
+                    }
+                    return m;
+                }));
+
+                setMockups(updatedMockups);
+                mockupsRef.current = updatedMockups;
+                await saveSession(logoA, newLogoB, updatedPlacements, userData, updatedMockups, true);
+            }
         } catch (err) {
             console.error("Crop error:", err);
         } finally {
@@ -3298,13 +3560,23 @@ STRICT FRAMING & APPAREL VISIBILITY:
                                                             >
                                                                 BLANC V24
                                                             </button>
-                                                            {logo.id === 'B' && logoA.original && (
-                                                                <button
-                                                                    onClick={() => setShowCropModal(true)}
-                                                                    className={`px-3 py-1 font-black text-[9px] border border-orange-600 text-orange-600 hover:bg-orange-600 hover:text-black transition-all flex items-center gap-1`}
-                                                                >
-                                                                    <Crop size={10} /> ROGNER / GOMMER
-                                                                </button>
+                                                            {logo.original && (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => openCropModal(logo.id, 'poly')}
+                                                                        className={`px-3 py-1 font-black text-[9px] border border-orange-600 text-orange-600 hover:bg-orange-600 hover:text-black transition-all flex items-center gap-1`}
+                                                                        title={`Rogner / Recadrer la source Logo ${logo.id}`}
+                                                                    >
+                                                                        <Crop size={10} /> ROGNER
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => openCropModal(logo.id, 'eraser')}
+                                                                        className={`px-3 py-1 font-black text-[9px] border border-orange-600 text-orange-600 hover:bg-orange-600 hover:text-black transition-all flex items-center gap-1`}
+                                                                        title={`Gommer des éléments sur le Logo ${logo.id}`}
+                                                                    >
+                                                                        <Crop size={10} /> GOMMER
+                                                                    </button>
+                                                                </>
                                                             )}
                                                         </div>
                                                     )}
@@ -3340,10 +3612,18 @@ STRICT FRAMING & APPAREL VISIBILITY:
                                                         </button>
                                                         {logo.id === 'B' && logoA.original && (
                                                             <button
-                                                                onClick={() => setShowCropModal(true)}
+                                                                onClick={() => openCropModal('B', 'poly')}
                                                                 className="flex items-center gap-2 px-4 py-2 bg-orange-600/10 hover:bg-orange-600 text-orange-600 hover:text-black font-black text-[9px] uppercase italic tracking-tighter transition-all border border-orange-600/30"
                                                             >
                                                                 <Crop size={14} /> Rogner depuis Logo A
+                                                            </button>
+                                                        )}
+                                                        {logo.id === 'A' && logoB.original && (
+                                                            <button
+                                                                onClick={() => openCropModal('A', 'poly')}
+                                                                className="flex items-center gap-2 px-4 py-2 bg-orange-600/10 hover:bg-orange-600 text-orange-600 hover:text-black font-black text-[9px] uppercase italic tracking-tighter transition-all border border-orange-600/30"
+                                                            >
+                                                                <Crop size={14} /> Rogner depuis Logo B
                                                             </button>
                                                         )}
                                                     </div>
@@ -3849,6 +4129,8 @@ STRICT FRAMING & APPAREL VISIBILITY:
                                                     ['tank_white_back', sanitizedGarmentMap.tank_white_back || sanitizedGarmentMap.tankWhiteBack],
                                                     ['heavy_front', sanitizedGarmentMap.heavy_front || sanitizedGarmentMap.heavyFront],
                                                     ['heavy_back', sanitizedGarmentMap.heavy_back || sanitizedGarmentMap.heavyBack],
+                                                    ['heavy_white_front', sanitizedGarmentMap.heavy_white_front || sanitizedGarmentMap.heavyWhiteFront],
+                                                    ['heavy_white_back', sanitizedGarmentMap.heavy_white_back || sanitizedGarmentMap.heavyWhiteBack],
                                                 ];
 
                                                 for (const [gKey, gVal] of directGarmentEntries) {
@@ -4412,582 +4694,15 @@ STRICT FRAMING & APPAREL VISIBILITY:
             `}} />
 
             {/* CROP MODAL */}
-            {showCropModal && logoA.original && (() => {
-                const CropModal = () => {
-                    const containerRef = useRef<HTMLDivElement>(null);
-                    const imgRef = useRef<HTMLImageElement>(null);
-                    const eraserCanvasRef = useRef<HTMLCanvasElement>(null);
-                    const [cropMethod, setCropMethod] = useState<'poly' | 'eraser'>('poly');
-                    const [poly, setPoly] = useState<{x: number, y: number}[]>([]);
-                    const [dragIdx, setDragIdx] = useState<number | null>(null);
-
-                    // Eraser state
-                    const [brushSize, setBrushSize] = useState(24);
-                    const [isErasing, setIsErasing] = useState(false);
-                    const [cursorPos, setCursorPos] = useState<{x: number, y: number} | null>(null);
-
-                    // New states for persistent edits and background options
-                    const [useLogoBAsBase, setUseLogoBAsBase] = useState(true);
-                    
-                    const activeMode = logoB.original ? logoB.mode : logoA.mode;
-                    const defaultBg = (activeMode === 'adapted') ? 'black' : 'white';
-                    const [cropBg, setCropBg] = useState<'transparent' | 'white' | 'black'>(defaultBg);
-
-                    const getLogoASrc = () => {
-                        if (useLogoBAsBase && logoB.original) {
-                            return logoB.mode === 'remastered' ? (logoB.remastered || logoB.adapted!) : (logoB.mode === 'original' ? logoB.original! : logoB.adapted!);
-                        }
-                        if (logoA.mode === 'remastered') return logoA.remastered || logoA.adapted!;
-                        if (logoA.mode === 'original') return logoA.original!;
-                        return logoA.adapted!;
-                    };
-
-                    const initPoly = () => {
-                        if (!imgRef.current || !containerRef.current) return;
-                        const rect = imgRef.current.getBoundingClientRect();
-                        const contRect = containerRef.current.getBoundingClientRect();
-                        const offsetX = rect.left - contRect.left;
-                        const offsetY = rect.top - contRect.top;
-                        const w = rect.width;
-                        const h = rect.height;
-                        const insetX = w * 0.1;
-                        const insetY = h * 0.1;
-                        setPoly([
-                            { x: offsetX + insetX, y: offsetY + insetY },
-                            { x: offsetX + w - insetX, y: offsetY + insetY },
-                            { x: offsetX + w - insetX, y: offsetY + h - insetY },
-                            { x: offsetX + insetX, y: offsetY + h - insetY }
-                        ]);
-                    };
-
-                    const initEraserCanvas = () => {
-                        const canvas = eraserCanvasRef.current;
-                        const img = imgRef.current;
-                        if (!canvas || !img) return;
-                        canvas.width = img.naturalWidth;
-                        canvas.height = img.naturalHeight;
-                        const ctx = canvas.getContext('2d');
-                        if (ctx) {
-                            ctx.clearRect(0, 0, canvas.width, canvas.height);
-                            ctx.drawImage(img, 0, 0);
-                        }
-                    };
-
-                    const getPos = (e: React.MouseEvent | React.TouchEvent) => {
-                        const rect = containerRef.current?.getBoundingClientRect();
-                        if (!rect) return { x: 0, y: 0 };
-                        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-                        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-                        return { x: clientX - rect.left, y: clientY - rect.top };
-                    };
-
-                    // Poly handlers
-                    const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
-                        if (poly.length !== 4) return;
-                        const pos = getPos(e);
-                        let closestIdx = -1;
-                        let minDist = 40;
-                        poly.forEach((p, i) => {
-                            const d = Math.hypot(p.x - pos.x, p.y - pos.y);
-                            if (d < minDist) { minDist = d; closestIdx = i; }
-                        });
-                        if (closestIdx !== -1) {
-                            e.preventDefault();
-                            setDragIdx(closestIdx);
-                        }
-                    };
-
-                    const handleMove = (e: React.MouseEvent | React.TouchEvent) => {
-                        if (dragIdx === null) return;
-                        e.preventDefault();
-                        const pos = getPos(e);
-                        setPoly(prev => {
-                            const next = [...prev];
-                            next[dragIdx] = pos;
-                            return next;
-                        });
-                    };
-
-                    const handleEnd = () => setDragIdx(null);
-
-                    // Eraser handlers
-                    const handleEraserStart = (e: React.MouseEvent | React.TouchEvent) => {
-                        const canvas = eraserCanvasRef.current;
-                        if (!canvas) return;
-                        e.preventDefault();
-                        setIsErasing(true);
-
-                        const rect = canvas.getBoundingClientRect();
-                        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-                        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-                        const scaleX = canvas.width / rect.width;
-                        const scaleY = canvas.height / rect.height;
-                        const x = (clientX - rect.left) * scaleX;
-                        const y = (clientY - rect.top) * scaleY;
-
-                        const ctx = canvas.getContext('2d');
-                        if (ctx) {
-                            ctx.beginPath();
-                            ctx.globalCompositeOperation = 'destination-out';
-                            ctx.lineCap = 'round';
-                            ctx.lineJoin = 'round';
-                            ctx.lineWidth = brushSize * scaleX;
-                            ctx.moveTo(x, y);
-                            ctx.lineTo(x, y);
-                            ctx.stroke();
-                        }
-                    };
-
-                    const handleEraserMove = (e: React.MouseEvent | React.TouchEvent) => {
-                        const canvas = eraserCanvasRef.current;
-                        if (!canvas) return;
-                        e.preventDefault();
-
-                        const rect = canvas.getBoundingClientRect();
-                        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-                        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-                        
-                        // Update cursor preview position
-                        setCursorPos({
-                            x: clientX - rect.left,
-                            y: clientY - rect.top
-                        });
-
-                        if (!isErasing) return;
-
-                        const scaleX = canvas.width / rect.width;
-                        const scaleY = canvas.height / rect.height;
-                        const x = (clientX - rect.left) * scaleX;
-                        const y = (clientY - rect.top) * scaleY;
-
-                        const ctx = canvas.getContext('2d');
-                        if (ctx) {
-                            ctx.globalCompositeOperation = 'destination-out';
-                            ctx.lineTo(x, y);
-                            ctx.stroke();
-                        }
-                    };
-
-                    const handleEraserHover = (e: React.MouseEvent | React.TouchEvent) => {
-                        const canvas = eraserCanvasRef.current;
-                        if (!canvas) return;
-                        const rect = canvas.getBoundingClientRect();
-                        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-                        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-                        setCursorPos({
-                            x: clientX - rect.left,
-                            y: clientY - rect.top
-                        });
-                    };
-
-                    const handleEraserEnd = () => setIsErasing(false);
-
-                    const trimCanvas = (c: HTMLCanvasElement): HTMLCanvasElement => {
-                        const ctx = c.getContext('2d')!;
-                        const width = c.width;
-                        const height = c.height;
-                        const imgData = ctx.getImageData(0, 0, width, height);
-                        const data = imgData.data;
-
-                        let minX = width, minY = height, maxX = 0, maxY = 0;
-
-                        for (let y = 0; y < height; y++) {
-                            for (let x = 0; x < width; x++) {
-                                const alpha = data[(y * width + x) * 4 + 3];
-                                if (alpha > 0) {
-                                    if (x < minX) minX = x;
-                                    if (y < minY) minY = y;
-                                    if (x > maxX) maxX = x;
-                                    if (y > maxY) maxY = y;
-                                }
-                            }
-                        }
-
-                        if (maxX < minX || maxY < minY) {
-                            return c;
-                        }
-
-                        const trimmedWidth = maxX - minX + 1;
-                        const trimmedHeight = maxY - minY + 1;
-                        const trimmedCanvas = document.createElement('canvas');
-                        trimmedCanvas.width = trimmedWidth;
-                        trimmedCanvas.height = trimmedHeight;
-                        const trimmedCtx = trimmedCanvas.getContext('2d')!;
-                        trimmedCtx.drawImage(c, minX, minY, trimmedWidth, trimmedHeight, 0, 0, trimmedWidth, trimmedHeight);
-
-                        return trimmedCanvas;
-                    };
-
-                    const confirmCrop = () => {
-                        if (!imgRef.current || !containerRef.current || poly.length !== 4) return;
-                        const img = imgRef.current;
-                        const rect = img.getBoundingClientRect();
-                        const contRect = containerRef.current.getBoundingClientRect();
-                        
-                        const scaleX = img.naturalWidth / rect.width;
-                        const scaleY = img.naturalHeight / rect.height;
-
-                        const imgPoints = poly.map(p => {
-                            const offsetX = rect.left - contRect.left;
-                            const offsetY = rect.top - contRect.top;
-                            return {
-                                x: (p.x - offsetX) * scaleX,
-                                y: (p.y - offsetY) * scaleY
-                            };
-                        });
-
-                        const minX = Math.max(0, Math.min(...imgPoints.map(p => p.x)));
-                        const minY = Math.max(0, Math.min(...imgPoints.map(p => p.y)));
-                        const maxX = Math.min(img.naturalWidth, Math.max(...imgPoints.map(p => p.x)));
-                        const maxY = Math.min(img.naturalHeight, Math.max(...imgPoints.map(p => p.y)));
-
-                        const canvas = document.createElement('canvas');
-                        canvas.width = maxX - minX;
-                        canvas.height = maxY - minY;
-                        const ctx = canvas.getContext('2d')!;
-
-                        ctx.beginPath();
-                        ctx.moveTo(imgPoints[0].x - minX, imgPoints[0].y - minY);
-                        ctx.lineTo(imgPoints[1].x - minX, imgPoints[1].y - minY);
-                        ctx.lineTo(imgPoints[2].x - minX, imgPoints[2].y - minY);
-                        ctx.lineTo(imgPoints[3].x - minX, imgPoints[3].y - minY);
-                        ctx.closePath();
-                        ctx.clip();
-
-                        ctx.drawImage(img, -minX, -minY);
-                        const croppedBase64 = canvas.toDataURL('image/png');
-                        handleCropConfirm(croppedBase64);
-                    };
-
-                    const resetToLogoA = () => {
-                        setUseLogoBAsBase(false);
-                        const logoASrc = logoA.mode === 'remastered' 
-                            ? (logoA.remastered || logoA.adapted!) 
-                            : (logoA.mode === 'original' ? logoA.original! : logoA.adapted!);
-                        
-                        if (cropMethod === 'eraser') {
-                            const canvas = eraserCanvasRef.current;
-                            if (!canvas) return;
-                            const tempImg = new Image();
-                            tempImg.crossOrigin = "anonymous";
-                            tempImg.src = logoASrc;
-                            tempImg.onload = () => {
-                                canvas.width = tempImg.naturalWidth;
-                                canvas.height = tempImg.naturalHeight;
-                                const ctx = canvas.getContext('2d');
-                                if (ctx) {
-                                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                                    ctx.drawImage(tempImg, 0, 0);
-                                }
-                            };
-                        }
-                    };
-
-                    const confirmEraser = () => {
-                        const canvas = eraserCanvasRef.current;
-                        if (!canvas) return;
-                        const trimmedCanvas = trimCanvas(canvas);
-                        const base64 = trimmedCanvas.toDataURL('image/png');
-                        handleCropConfirm(base64);
-                    };
-
-                    return (
-                        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.92)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-                            {/* Toggle method selector */}
-                            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.2rem', zIndex: 10 }}>
-                                <button
-                                    onClick={() => setCropMethod('poly')}
-                                    style={{
-                                        padding: '0.6rem 1.8rem',
-                                        background: cropMethod === 'poly' ? '#ea580c' : 'rgba(255,255,255,0.06)',
-                                        color: cropMethod === 'poly' ? '#000' : '#fff',
-                                        border: 'none',
-                                        fontWeight: 900,
-                                        fontSize: '0.7rem',
-                                        textTransform: 'uppercase',
-                                        cursor: 'pointer',
-                                        borderRadius: '4px',
-                                        transition: 'all 0.2s'
-                                    }}
-                                >
-                                    Découpe libre (4 points)
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setCropMethod('eraser');
-                                        setTimeout(initEraserCanvas, 100);
-                                    }}
-                                    style={{
-                                        padding: '0.6rem 1.8rem',
-                                        background: cropMethod === 'eraser' ? '#ea580c' : 'rgba(255,255,255,0.06)',
-                                        color: cropMethod === 'eraser' ? '#000' : '#fff',
-                                        border: 'none',
-                                        fontWeight: 900,
-                                        fontSize: '0.7rem',
-                                        textTransform: 'uppercase',
-                                        cursor: 'pointer',
-                                        borderRadius: '4px',
-                                        transition: 'all 0.2s'
-                                    }}
-                                >
-                                    Gomme (Effacer des zones)
-                                </button>
-                            </div>
-
-                            {/* Background and reset options */}
-                            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', marginBottom: '1.2rem', flexWrap: 'wrap', justifyContent: 'center', zIndex: 10 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fff', fontSize: '0.75rem', background: 'rgba(255,255,255,0.04)', padding: '0.4rem 0.8rem', borderRadius: '6px' }}>
-                                    <span style={{ opacity: 0.8 }}>Fond :</span>
-                                    <button 
-                                        onClick={() => setCropBg('white')} 
-                                        style={{
-                                            padding: '0.2rem 0.6rem',
-                                            background: cropBg === 'white' ? '#ea580c' : 'rgba(255,255,255,0.1)',
-                                            color: cropBg === 'white' ? '#000' : '#fff',
-                                            border: 'none',
-                                            borderRadius: '3px',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 850,
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        Blanc
-                                    </button>
-                                    <button 
-                                        onClick={() => setCropBg('black')} 
-                                        style={{
-                                            padding: '0.2rem 0.6rem',
-                                            background: cropBg === 'black' ? '#ea580c' : 'rgba(255,255,255,0.1)',
-                                            color: cropBg === 'black' ? '#000' : '#fff',
-                                            border: 'none',
-                                            borderRadius: '3px',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 850,
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        Noir
-                                    </button>
-                                    <button 
-                                        onClick={() => setCropBg('transparent')} 
-                                        style={{
-                                            padding: '0.2rem 0.6rem',
-                                            background: cropBg === 'transparent' ? '#ea580c' : 'rgba(255,255,255,0.1)',
-                                            color: cropBg === 'transparent' ? '#000' : '#fff',
-                                            border: 'none',
-                                            borderRadius: '3px',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 850,
-                                            cursor: 'pointer'
-                                        }}
-                                    >
-                                        Damier
-                                    </button>
-                                </div>
-
-                                {logoB.original && useLogoBAsBase && (
-                                    <button
-                                        onClick={resetToLogoA}
-                                        style={{
-                                            padding: '0.4rem 0.8rem',
-                                            background: 'rgba(239, 68, 68, 0.1)',
-                                            border: '1px solid rgba(239, 68, 68, 0.2)',
-                                            color: '#ef4444',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 800,
-                                            textTransform: 'uppercase',
-                                            cursor: 'pointer',
-                                            borderRadius: '6px',
-                                            transition: 'all 0.2s'
-                                        }}
-                                        title="Recharger l'image originale du Logo A"
-                                    >
-                                        Recommencer depuis Logo A
-                                    </button>
-                                )}
-                            </div>
-
-                            <div style={{ color: '#fff', fontWeight: 900, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: '1rem', textAlign: 'center' }}>
-                                <Crop size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '8px', color: '#ea580c' }} />
-                                {cropMethod === 'poly' 
-                                    ? 'Déplacez les 4 points pour délimiter la zone à extraire' 
-                                    : 'Glissez pour effacer les éléments indésirables de l\'image'}
-                            </div>
-
-                            {cropMethod === 'eraser' && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: '#fff', fontSize: '0.75rem', marginBottom: '1.2rem', background: 'rgba(255,255,255,0.04)', padding: '0.5rem 1rem', borderRadius: '6px' }}>
-                                    <span>Taille de la gomme :</span>
-                                    <input
-                                        type="range"
-                                        min="5"
-                                        max="100"
-                                        value={brushSize}
-                                        onChange={(e) => setBrushSize(Number(e.target.value))}
-                                        style={{ accentColor: '#ea580c', cursor: 'pointer' }}
-                                    />
-                                    <span style={{ fontWeight: 800, minWidth: '35px' }}>{brushSize}px</span>
-                                    <button
-                                        onClick={initEraserCanvas}
-                                        style={{
-                                            marginLeft: '1rem',
-                                            padding: '0.3rem 0.8rem',
-                                            background: 'rgba(255,255,255,0.1)',
-                                            border: '1px solid rgba(255,255,255,0.15)',
-                                            color: '#fff',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 800,
-                                            textTransform: 'uppercase',
-                                            cursor: 'pointer',
-                                            borderRadius: '3px'
-                                        }}
-                                    >
-                                        Réinitialiser
-                                    </button>
-                                </div>
-                            )}
-
-                            <div
-                                ref={containerRef}
-                                style={{ position: 'relative', width: '90vw', height: '60vh', cursor: dragIdx !== null ? 'grabbing' : 'default', userSelect: 'none', touchAction: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                onMouseDown={cropMethod === 'poly' ? handleStart : undefined}
-                                onMouseMove={cropMethod === 'poly' ? handleMove : undefined}
-                                onMouseUp={cropMethod === 'poly' ? handleEnd : undefined}
-                                onMouseLeave={cropMethod === 'poly' ? handleEnd : undefined}
-                                onTouchStart={cropMethod === 'poly' ? handleStart : undefined}
-                                onTouchMove={cropMethod === 'poly' ? handleMove : undefined}
-                                onTouchEnd={cropMethod === 'poly' ? handleEnd : undefined}
-                            >
-                                <img
-                                    ref={imgRef}
-                                    onLoad={initPoly}
-                                    src={getLogoASrc()}
-                                    crossOrigin="anonymous"
-                                    style={{ 
-                                        maxWidth: '100%', 
-                                        maxHeight: '100%', 
-                                        objectFit: 'contain', 
-                                        display: cropMethod === 'poly' ? 'block' : 'none', 
-                                        background: cropBg === 'transparent' 
-                                            ? 'repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%) 50% / 20px 20px' 
-                                            : cropBg 
-                                    }}
-                                    draggable={false}
-                                />
-                                
-                                {cropMethod === 'poly' && (
-                                    <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}>
-                                        <defs>
-                                            <mask id="poly-mask">
-                                                <rect width="100%" height="100%" fill="white" />
-                                                {poly.length === 4 && <polygon points={poly.map(p => `${p.x},${p.y}`).join(' ')} fill="black" />}
-                                            </mask>
-                                        </defs>
-                                        <rect width="100%" height="100%" fill="rgba(0,0,0,0.8)" mask="url(#poly-mask)" />
-                                        {poly.length === 4 && (
-                                            <>
-                                                <polygon points={poly.map(p => `${p.x},${p.y}`).join(' ')} fill="transparent" stroke="#ea580c" strokeWidth="2" strokeDasharray="4 4" />
-                                                {poly.map((p, i) => (
-                                                    <circle key={i} cx={p.x} cy={p.y} r="12" fill="#ea580c" stroke="white" strokeWidth="3" style={{ pointerEvents: 'all', cursor: 'grab' }} />
-                                                ))}
-                                            </>
-                                        )}
-                                    </svg>
-                                )}
-
-                                {cropMethod === 'eraser' && (
-                                    <div 
-                                        style={{ position: 'relative' }}
-                                        onMouseMove={handleEraserHover}
-                                        onMouseLeave={() => setCursorPos(null)}
-                                    >
-                                        <canvas
-                                            ref={eraserCanvasRef}
-                                            onMouseDown={handleEraserStart}
-                                            onMouseMove={handleEraserMove}
-                                            onMouseUp={handleEraserEnd}
-                                            onMouseLeave={handleEraserEnd}
-                                            onTouchStart={handleEraserStart}
-                                            onTouchMove={handleEraserMove}
-                                            onTouchEnd={handleEraserEnd}
-                                            style={{
-                                                maxWidth: '90vw',
-                                                maxHeight: '60vh',
-                                                objectFit: 'contain',
-                                                display: 'block',
-                                                background: cropBg === 'transparent' 
-                                                    ? 'repeating-conic-gradient(#808080 0% 25%, transparent 0% 50%) 50% / 20px 20px' 
-                                                    : cropBg,
-                                                cursor: 'crosshair',
-                                                touchAction: 'none'
-                                            }}
-                                        />
-                                        {cursorPos && (
-                                            <div style={{
-                                                position: 'absolute',
-                                                left: cursorPos.x - brushSize / 2,
-                                                top: cursorPos.y - brushSize / 2,
-                                                width: brushSize,
-                                                height: brushSize,
-                                                borderRadius: '50%',
-                                                border: '2px solid rgba(234, 88, 12, 0.8)',
-                                                backgroundColor: 'rgba(234, 88, 12, 0.2)',
-                                                pointerEvents: 'none',
-                                                zIndex: 20
-                                            }} />
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
-                                <button
-                                    onClick={() => setShowCropModal(false)}
-                                    style={{ padding: '0.7rem 2rem', background: 'transparent', border: '1px solid #555', color: '#aaa', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.1em' }}
-                                >
-                                    Annuler
-                                </button>
-                                {cropMethod === 'poly' ? (
-                                    <button
-                                        onClick={confirmCrop}
-                                        disabled={poly.length !== 4}
-                                        style={{
-                                            padding: '0.7rem 2rem',
-                                            background: poly.length === 4 ? '#ea580c' : '#333',
-                                            border: 'none',
-                                            color: poly.length === 4 ? '#000' : '#666',
-                                            fontWeight: 900,
-                                            fontSize: '0.75rem',
-                                            cursor: poly.length === 4 ? 'pointer' : 'not-allowed',
-                                            textTransform: 'uppercase',
-                                            letterSpacing: '0.1em'
-                                        }}
-                                    >
-                                        ✓ Valider la découpe libre
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={confirmEraser}
-                                        style={{
-                                            padding: '0.7rem 2rem',
-                                            background: '#ea580c',
-                                            border: 'none',
-                                            color: '#000',
-                                            fontWeight: 900,
-                                            fontSize: '0.75rem',
-                                            cursor: 'pointer',
-                                            textTransform: 'uppercase',
-                                            letterSpacing: '0.1em'
-                                        }}
-                                    >
-                                        ✓ Valider le gommage
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    );
-                };
-                return <CropModal />;
-            })()}
+            <CropModal
+                isOpen={showCropModal}
+                targetSlot={cropTargetSlot}
+                logoA={logoA}
+                logoB={logoB}
+                initialMethod={cropInitialMethod}
+                onConfirm={handleCropConfirm}
+                onClose={() => setShowCropModal(false)}
+            />
             <div className="pointer-events-none">
                 <AdminQuickBar 
                     uid={sessionId || new URLSearchParams(window.location.search).get('uid') || ''} 

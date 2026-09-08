@@ -104,15 +104,15 @@ export interface ProductItem {
 export const isBackViewUrl = (u?: string | null) => {
   if (!u || typeof u !== 'string') return false;
   const l = u.toLowerCase();
-  if (l.includes('front') || l.includes('face') || l.includes('recto') || l.includes('tfront') || l.includes('pfront') || l.includes('hfront') || l.includes('tankfront') || l.includes('heavyfront')) return false;
-  return /(back|dos|verso|tback|pback|hback|tankback|heavyback)/i.test(l);
+  if (l.includes('front') || l.includes('face') || l.includes('recto') || l.includes('tfront') || l.includes('pfront') || l.includes('hfront') || l.includes('tankfront') || l.includes('heavyfront') || l.includes('heavywhitefront')) return false;
+  return /(back|dos|verso|tback|pback|hback|tankback|heavyback|heavywhiteback)/i.test(l);
 };
 
 export const isAiRenderUrl = (u?: string | null) => {
   if (!u || typeof u !== 'string') return false;
   const l = u.toLowerCase();
   if (l.includes('jhk') || l.includes('bybb011.png') || l.includes('nx7200.png') || l.includes('card-base') || l.includes('neutral') || l.includes('snapshot')) return false;
-  return l.includes('_ai_') || l.includes('/ai/') || l.includes('studio') || l.includes('pfront_ai') || l.includes('tankfront_ai') || l.includes('heavyfront_ai') || l.includes('tankwhitefront_ai') || l.includes('firebasestorage') || l.includes('btp_mockups');
+  return l.includes('_ai_') || l.includes('/ai/') || l.includes('studio') || l.includes('pfront_ai') || l.includes('tankfront_ai') || l.includes('heavyfront_ai') || l.includes('heavywhitefront_ai') || l.includes('tankwhitefront_ai') || l.includes('firebasestorage') || l.includes('btp_mockups');
 };
 
 export const VISION_CLOUD_MOCKUPS = [
@@ -127,7 +127,9 @@ export const VISION_CLOUD_MOCKUPS = [
   { id: 'heavyFront', garment: 'tshirt_oversize', color: 'Noir', view: 'front', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront_1788693827695.png?alt=media&token=65d0698f-0070-4fc8-a827-0861153b2113' },
   { id: 'heavyBack', garment: 'tshirt_oversize', color: 'Noir', view: 'back', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyBack_1788693827696.png?alt=media&token=5645a2aa-48ba-43ba-ad68-1916f9d238e3' },
   { id: 'tankWhiteFront', garment: 'tank_top', color: 'Blanc', view: 'front', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteFront_1788693827692.png?alt=media&token=3602273b-ef06-4dbd-8dae-809894d7e147' },
-  { id: 'tankWhiteBack', garment: 'tank_top', color: 'Blanc', view: 'back', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteBack_1788693827694.png?alt=media&token=0e6b5a90-6ffe-499d-9a91-71043c6cb636' }
+  { id: 'tankWhiteBack', garment: 'tank_top', color: 'Blanc', view: 'back', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteBack_1788693827694.png?alt=media&token=0e6b5a90-6ffe-499d-9a91-71043c6cb636' },
+  { id: 'heavyWhiteFront', garment: 'tshirt_oversize', color: 'Blanc', view: 'front', url: '/assets/tshirt-white-NX7200.png' },
+  { id: 'heavyWhiteBack', garment: 'tshirt_oversize', color: 'Blanc', view: 'back', url: '/assets/tshirt-white-NX7200-dos.png' }
 ];
 export const extractSessionMockups = (targetId: string) => {
   const isVision = targetId === 'clubvisionroom' || targetId === 'visionroom' || targetId === '13ansvr' || targetId.toLowerCase().includes('vision');
@@ -138,13 +140,14 @@ export const extractSessionMockups = (targetId: string) => {
   if (seedData && Array.isArray(seedData.previewUrls)) {
     seedData.previewUrls.forEach((url: string, idx: number) => {
       const isTW = url.includes('tankWhiteFront') || url.includes('tankWhiteBack');
+      const isHW = url.includes('heavyWhiteFront') || url.includes('heavyWhiteBack');
       const isT = !isTW && (url.includes('tankFront') || url.includes('tankBack') || url.includes('tank'));
-      const isH = url.includes('heavyFront') || url.includes('heavyBack') || url.includes('heavy');
+      const isH = !isHW && (url.includes('heavyFront') || url.includes('heavyBack') || url.includes('heavy'));
       const isB = isBackViewUrl(url);
-      const id = isTW ? (isB ? 'tankWhiteBack' : 'tankWhiteFront') : (isT ? (isB ? 'tankBack' : 'tankFront') : (isH ? (isB ? 'heavyBack' : 'heavyFront') : (url.includes('hFront') || url.includes('hBack') ? (isB ? 'hBack' : 'hFront') : (url.includes('pFront') || url.includes('pBack') ? (isB ? 'pBack' : 'pFront') : (isB ? 'tBack' : 'tFront')))));
-      const garment = (isTW || isT) ? 'tank_top' : (isH ? 'tshirt_oversize' : (url.includes('hFront') || url.includes('hBack') ? 'sweat' : (url.includes('pFront') || url.includes('pBack') ? 'polo' : 'tshirt')));
+      const id = isTW ? (isB ? 'tankWhiteBack' : 'tankWhiteFront') : (isHW ? (isB ? 'heavyWhiteBack' : 'heavyWhiteFront') : (isT ? (isB ? 'tankBack' : 'tankFront') : (isH ? (isB ? 'heavyBack' : 'heavyFront') : (url.includes('hFront') || url.includes('hBack') ? (isB ? 'hBack' : 'hFront') : (url.includes('pFront') || url.includes('pBack') ? (isB ? 'pBack' : 'pFront') : (isB ? 'tBack' : 'tFront'))))));
+      const garment = (isTW || isT) ? 'tank_top' : ((isHW || isH) ? 'tshirt_oversize' : (url.includes('hFront') || url.includes('hBack') ? 'sweat' : (url.includes('pFront') || url.includes('pBack') ? 'polo' : 'tshirt')));
       sessionMockups.push({
-        id, garment, color: isTW ? 'Blanc' : 'Noir', view: isB ? 'back' : 'front',
+        id, garment, color: (isTW || isHW) ? 'Blanc' : 'Noir', view: isB ? 'back' : 'front',
         frontImageUrl: !isB ? url : undefined, backImageUrl: isB ? url : undefined,
         imageUrl: url, ai: url, aiRemastered: url, hasAi: true
       });

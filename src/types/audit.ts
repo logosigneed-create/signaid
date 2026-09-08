@@ -32,6 +32,9 @@ export interface MockupItem {
     imageUrl?: string | null;
     frontImageUrl?: string | null;
     backImageUrl?: string | null;
+    isFresh?: boolean;
+    timestamp?: number;
+    generatedAt?: number;
     [key: string]: any;
 }
 

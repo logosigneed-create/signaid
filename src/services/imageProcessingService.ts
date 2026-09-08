@@ -40,7 +40,7 @@ export const DEFAULT_PLACEMENTS = {
     },
     tshirt_oversize: {
         front: { x: 0.50, y: 0.40, scale: 0.28 },
-        back: { x: 0.50, y: 0.38, scale: 0.35 }
+        back: { x: 0.50, y: 0.39, scale: 0.36 }
     }
 };
 export let PLACEMENTS = DEFAULT_PLACEMENTS;
@@ -147,9 +147,15 @@ export const processLogoDeterministic = (base64: string, shouldInvert: boolean |
                 }
 
                 if (hasContent) {
-                    const contentWidth = maxX - minX + 1;
-                    const contentHeight = maxY - minY + 1;
-                    const croppedData = tempCtx.getImageData(minX, minY, contentWidth, contentHeight);
+                    // Marge de sécurité (safe padding) de 6px pour éviter tout rognage au ras du texte/sous-titres fins
+                    const pad = 6;
+                    const safeMinX = Math.max(0, minX - pad);
+                    const safeMinY = Math.max(0, minY - pad);
+                    const safeMaxX = Math.min(width - 1, maxX + pad);
+                    const safeMaxY = Math.min(height - 1, maxY + pad);
+                    const contentWidth = safeMaxX - safeMinX + 1;
+                    const contentHeight = safeMaxY - safeMinY + 1;
+                    const croppedData = tempCtx.getImageData(safeMinX, safeMinY, contentWidth, contentHeight);
 
                     // Update dimensions and data for subsequent stages
                     tempCanvas.width = contentWidth;
@@ -306,7 +312,7 @@ export const processLogoDeterministic = (base64: string, shouldInvert: boolean |
                 for (let i = 0; i < d.length; i += 4) {
                     if (d[i + 3] > 0) {
                         const alpha = d[i + 3];
-                        if (alpha < 130) d[i + 3] = 0; // Kill semi-transparent noise
+                        if (alpha < 80) d[i + 3] = 0; // Seuil préservant le texte fin et la typographie
                         else d[i + 3] = 255;          // Snap to solid
                     }
                 }
@@ -726,6 +732,7 @@ export const generateMechanicalMockup = async (garmentUrl: string, logoUrl: stri
             const isPolo = garmentUrl.includes('polo');
             const isTank = garmentUrl.includes('tank') || garmentUrl.includes('debardeur');
             const isOversize = garmentUrl.includes('oversize') || garmentUrl.includes('NX7200');
+            const isHeavyWhite = isOversize && (garmentUrl.includes('white') || garmentUrl.includes('blanc'));
             const rawType = garmentType || (isPolo ? 'polo' : (isSweat ? 'sweat' : (isTank ? 'tank_top' : (isOversize ? 'tshirt_oversize' : 'tshirt'))));
             const typeGroup = PLACEMENTS[rawType as keyof typeof PLACEMENTS] || PLACEMENTS.tshirt;
             const pos = typeGroup[view] || typeGroup.front;
@@ -741,15 +748,30 @@ export const generateMechanicalMockup = async (garmentUrl: string, logoUrl: stri
                 }
             }
 
-            // 3. Positionnement définitif du logo graphique pur
-            const logoW = canvas.width * scale;
-            const logoH = logoW * (imgLogo.height / imgLogo.width);
+            // DÉVERROUILLAGE PRINTABLE AREA / BOUNDING BOX DOS :
+            // Permet d'accueillir le visuel complet vertical (abeille + 2 lignes de texte "CLUB VISION ROOM")
+            // sans crop ni padding excessif qui forcerait un zoom destructeur.
+            const maxBoxW = canvas.width * (isHeavyWhite && view === 'back' ? Math.max(scale, 0.36) : scale);
+            const maxBoxH = canvas.height * (view === 'back' ? Math.min(0.48, scale * 1.35) : scale * 1.25);
+            const logoRatio = imgLogo.width / imgLogo.height;
+
+            let logoW = maxBoxW;
+            let logoH = logoW / logoRatio;
+
+            // Si le visuel est vertical (hauteur > largeur), contraindre par la hauteur max pour garantir l'intégrité du texte
+            if (logoH > maxBoxH) {
+                logoH = maxBoxH;
+                logoW = logoH * logoRatio;
+            }
+
+            const posX = pos.x;
+            const posY = (isHeavyWhite && view === 'back') ? 0.39 : pos.y;
 
             ctx.globalAlpha = 1.0;
             ctx.drawImage(
                 imgLogo,
-                (canvas.width * pos.x) - (logoW / 2),
-                (canvas.height * pos.y) - (logoH / 2),
+                (canvas.width * posX) - (logoW / 2),
+                (canvas.height * posY) - (logoH / 2),
                 logoW,
                 logoH
             );

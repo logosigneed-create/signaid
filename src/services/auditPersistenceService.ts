@@ -60,6 +60,18 @@ export const dbGetAllKeys = async (): Promise<string[]> => {
     } catch (e) {
         return [];
     }
+};export const dbDelete = async (key: string): Promise<boolean> => {
+    try {
+        const database = await openDB();
+        return new Promise((resolve) => {
+            const tx = database.transaction(STORAGE_CONFIG.store, 'readwrite');
+            tx.objectStore(STORAGE_CONFIG.store).delete(key);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => resolve(false);
+        });
+    } catch (e) {
+        return false;
+    }
 };
 
 /**
@@ -247,6 +259,8 @@ export interface GarmentMockupMap {
     tshirt_oversize?: string | null;
     heavy_front?: string | null;
     heavy_back?: string | null;
+    heavy_white_front?: string | null;
+    heavy_white_back?: string | null;
     business_card?: string | null;
     business_card_front?: string | null;
     business_card_back?: string | null;
@@ -302,10 +316,15 @@ export const extractGarmentMockupMap = (mockups: (MockupItem | any)[]): GarmentM
                 }
             }
         } else if (g === 'tshirt_oversize' || id.includes('heavy') || id.includes('oversize')) {
-            if (isBack) map.heavy_back = img;
-            else {
-                map.heavy_front = img;
-                map.tshirt_oversize = img;
+            if (id.includes('white') || id.includes('blanc')) {
+                if (isBack) map.heavy_white_back = img;
+                else map.heavy_white_front = img;
+            } else {
+                if (isBack) map.heavy_back = img;
+                else {
+                    map.heavy_front = img;
+                    map.tshirt_oversize = img;
+                }
             }
         } else if (g === 'business_card' || id.includes('card')) {
             if (isBack) map.business_card_back = img;
@@ -482,6 +501,311 @@ export const safeLocalStorageSetItem = (key: string, value: string): boolean => 
         }
     }
 };
+export const safeLocalStorageRemoveItem = (key: string): void => {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.removeItem(key);
+    } catch (e) { }
+};
+
+/**
+ * Explicitly invalidates and removes any cached mockup URLs and images for a given slot
+ * across localStorage, sessionStorage, and IndexedDB.
+ */
+export const purgeMockupSlotCache = async (
+    slotId: string,
+    sessionId?: string | null,
+    slug?: string | null
+): Promise<void> => {
+    try {
+        const cleanSid = sessionId ? sessionId.replace(/^audit-/, '') : null;
+        const candidateKeys = Array.from(new Set([
+            sessionId,
+            cleanSid,
+            slug,
+            cleanSid ? `audit-${cleanSid}` : null,
+            slug ? `audit-${slug}` : null
+        ].filter(Boolean) as string[]));
+
+        const isHoodieBack = slotId === 'hBack' || slotId === 'hoodie_back' || slotId === 'sweat_back' || slotId === 'hoodieBack';
+        
+        // Target slot names / aliases
+        const slotAliases = [slotId];
+        if (isHoodieBack) {
+            slotAliases.push('hBack', 'hoodie_back', 'sweat_back', 'hoodieBack');
+        } else if (slotId === 'hFront' || slotId === 'hoodie_front' || slotId === 'sweat_front' || slotId === 'hoodieFront') {
+            slotAliases.push('hFront', 'hoodie_front', 'sweat_front', 'hoodieFront', 'hoodie');
+        } else if (slotId === 'tFront' || slotId === 'tshirt_front' || slotId === 'tshirtFront') {
+            slotAliases.push('tFront', 'tshirt_front', 'tshirtFront', 'tshirt');
+        } else if (slotId === 'tBack' || slotId === 'tshirt_back' || slotId === 'tshirtBack') {
+            slotAliases.push('tBack', 'tshirt_back', 'tshirtBack');
+        } else if (slotId === 'pFront' || slotId === 'polo_front' || slotId === 'poloFront') {
+            slotAliases.push('pFront', 'polo_front', 'poloFront', 'polo');
+        } else if (slotId === 'pBack' || slotId === 'polo_back' || slotId === 'poloBack') {
+            slotAliases.push('pBack', 'polo_back', 'poloBack');
+        } else if (slotId.toLowerCase().includes('tank') && slotId.toLowerCase().includes('white') && slotId.toLowerCase().includes('front')) {
+            slotAliases.push('tankWhiteFront', 'tank_white_front');
+        } else if (slotId.toLowerCase().includes('tank') && slotId.toLowerCase().includes('white') && slotId.toLowerCase().includes('back')) {
+            slotAliases.push('tankWhiteBack', 'tank_white_back');
+        } else if (slotId.toLowerCase().includes('tank') && slotId.toLowerCase().includes('front')) {
+            slotAliases.push('tankFront', 'tank_front');
+        } else if (slotId.toLowerCase().includes('tank') && slotId.toLowerCase().includes('back')) {
+            slotAliases.push('tankBack', 'tank_back');
+        } else if (slotId.toLowerCase().includes('heavy') && slotId.toLowerCase().includes('white') && slotId.toLowerCase().includes('front')) {
+            slotAliases.push('heavyWhiteFront', 'heavy_white_front');
+        } else if (slotId.toLowerCase().includes('heavy') && slotId.toLowerCase().includes('white') && slotId.toLowerCase().includes('back')) {
+            slotAliases.push('heavyWhiteBack', 'heavy_white_back');
+        } else if (slotId.toLowerCase().includes('heavy') && slotId.toLowerCase().includes('front')) {
+            slotAliases.push('heavyFront', 'heavy_front');
+        } else if (slotId.toLowerCase().includes('heavy') && slotId.toLowerCase().includes('back')) {
+            slotAliases.push('heavyBack', 'heavy_back');
+        }
+
+        // 1. PURGE LOCALSTORAGE
+        if (typeof localStorage !== 'undefined') {
+            for (const alias of slotAliases) {
+                safeLocalStorageRemoveItem(`btp_mockup_${alias}`);
+                for (const k of candidateKeys) {
+                    safeLocalStorageRemoveItem(`btp_mockup_${alias}_${k}`);
+                }
+            }
+
+            // Clean garmentMockups and session_obj in localStorage
+            const gmKeys = ['garmentMockups', 'btp_garment_mockups'];
+            for (const k of candidateKeys) {
+                gmKeys.push(`garmentMockups_${k}`, `btp_garment_mockups_${k}`);
+            }
+            for (const gmKey of gmKeys) {
+                const gmRaw = localStorage.getItem(gmKey);
+                if (gmRaw) {
+                    try {
+                        const parsed = JSON.parse(gmRaw);
+                        for (const alias of slotAliases) {
+                            delete parsed[alias];
+                        }
+                        safeLocalStorageSetItem(gmKey, JSON.stringify(parsed));
+                    } catch (e) { }
+                }
+            }
+
+            // Clean mockups lists in localStorage
+            const mListKeys = ['mockups'];
+            for (const k of candidateKeys) {
+                mListKeys.push(`mockups_${k}`, `session_obj_${k}`);
+            }
+            for (const mlKey of mListKeys) {
+                const raw = localStorage.getItem(mlKey);
+                if (raw) {
+                    try {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            const updated = parsed.map((item: any) => {
+                                if (slotAliases.includes(item.id)) {
+                                    return {
+                                        ...item,
+                                        ai: null,
+                                        aiRemastered: null,
+                                        imageUrl: item.base || null,
+                                        frontImageUrl: undefined,
+                                        backImageUrl: undefined,
+                                        imageFront: undefined,
+                                        imageBack: undefined,
+                                        isFresh: false
+                                    };
+                                }
+                                return item;
+                            });
+                            safeLocalStorageSetItem(mlKey, JSON.stringify(updated));
+                        } else if (parsed && typeof parsed === 'object') {
+                            if (Array.isArray(parsed.mockups)) {
+                                parsed.mockups = parsed.mockups.map((item: any) => {
+                                    if (slotAliases.includes(item.id)) {
+                                        return {
+                                            ...item,
+                                            ai: null,
+                                            aiRemastered: null,
+                                            imageUrl: item.base || null,
+                                            frontImageUrl: undefined,
+                                            backImageUrl: undefined,
+                                            imageFront: undefined,
+                                            imageBack: undefined,
+                                            isFresh: false
+                                        };
+                                    }
+                                    return item;
+                                });
+                            }
+                            if (parsed.garmentMockups) {
+                                for (const alias of slotAliases) {
+                                    delete parsed.garmentMockups[alias];
+                                }
+                            }
+                            safeLocalStorageSetItem(mlKey, JSON.stringify(parsed));
+                        }
+                    } catch (e) { }
+                }
+            }
+        }
+
+        // 2. PURGE SESSIONSTORAGE
+        if (typeof sessionStorage !== 'undefined') {
+            const ssKeysToRemove: string[] = [];
+            for (let i = 0; i < sessionStorage.length; i++) {
+                const k = sessionStorage.key(i);
+                if (k) {
+                    const lk = k.toLowerCase();
+                    for (const alias of slotAliases) {
+                        if (lk.includes(alias.toLowerCase())) {
+                            ssKeysToRemove.push(k);
+                            break;
+                        }
+                    }
+                }
+            }
+            for (const k of ssKeysToRemove) {
+                try { sessionStorage.removeItem(k); } catch (e) { }
+            }
+        }
+
+        // 3. PURGE INDEXEDDB
+        for (const alias of slotAliases) {
+            for (const k of candidateKeys) {
+                await dbDelete(`${k}_ai_${alias}`);
+                await dbDelete(`${k}_mech_${alias}`);
+            }
+            if (sessionId) {
+                await dbDelete(`${sessionId}_ai_${alias}`);
+                await dbDelete(`${sessionId}_mech_${alias}`);
+            }
+            if (slug) {
+                await dbDelete(`${slug}_ai_${alias}`);
+                await dbDelete(`${slug}_mech_${alias}`);
+            }
+        }
+
+        // Clean session_obj in IndexedDB
+        for (const k of candidateKeys) {
+            const raw = await dbGet(`session_obj_${k}`);
+            if (raw) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed.mockups)) {
+                        parsed.mockups = parsed.mockups.map((item: any) => {
+                            if (slotAliases.includes(item.id)) {
+                                return {
+                                    ...item,
+                                    ai: null,
+                                    aiRemastered: null,
+                                    imageUrl: item.base || null,
+                                    frontImageUrl: undefined,
+                                    backImageUrl: undefined,
+                                    imageFront: undefined,
+                                    imageBack: undefined,
+                                    isFresh: false
+                                };
+                            }
+                            return item;
+                        });
+                    }
+                    if (parsed.garmentMockups) {
+                        for (const alias of slotAliases) {
+                            delete parsed.garmentMockups[alias];
+                        }
+                    }
+                    await dbSet(`session_obj_${k}`, JSON.stringify(parsed));
+                } catch (e) { }
+            }
+        }
+
+        console.log(`[CachePurge] Cache local purgé avec succès pour le slot: ${slotId}`);
+    } catch (err) {
+        console.warn(`[CachePurge] Avertissement lors de la purge du cache pour ${slotId}:`, err);
+    }
+};
+
+/**
+ * Merges local and incoming mockups, giving ABSOLUTE PRIORITY to fresh local state.
+ * Prevents cloud responses or background syncs from overwriting a freshly generated slot.
+ */
+export const mergeMockupsWithPriority = (
+    currentLocals: MockupItem[],
+    incomingMockups: MockupItem[]
+): MockupItem[] => {
+    if (!incomingMockups || incomingMockups.length === 0) return currentLocals;
+    if (!currentLocals || currentLocals.length === 0) return incomingMockups;
+
+    const mergedLocals = currentLocals.map(local => {
+        const incoming = incomingMockups.find(m => m.id === local.id);
+        if (!incoming) return local;
+
+        // 1. If currently generating, local state has absolute priority
+        if (local.isGenerating) {
+            return local;
+        }
+
+        const isBack = local.view === 'back' || isBackId(local.id);
+
+        // 2. If locally marked as fresh (newly generated slot)
+        if (local.isFresh) {
+            // Check if incoming is the Cloud Storage URL uploaded from this exact fresh generation
+            const isIncomingHttp = incoming.ai && (incoming.ai.startsWith('http://') || incoming.ai.startsWith('https://'));
+            const isIncomingStorage = isIncomingHttp && (incoming.ai!.includes('firebasestorage.googleapis.com') || incoming.ai!.includes('btp_mockups'));
+            const isIncomingFresh = incoming.isFresh || (incoming.timestamp || 0) >= (local.timestamp || 0);
+
+            if (isIncomingStorage && isIncomingFresh) {
+                // Incoming has the permanent Firebase Storage URL produced by syncSessionToCloud for this fresh mockup!
+                const primaryUrl = incoming.ai || incoming.imageUrl || local.ai;
+                return {
+                    ...local,
+                    ...incoming,
+                    isFresh: true,
+                    timestamp: Math.max(local.timestamp || 0, incoming.timestamp || 0),
+                    generatedAt: local.generatedAt || incoming.generatedAt,
+                    ai: primaryUrl,
+                    aiRemastered: primaryUrl,
+                    imageUrl: primaryUrl,
+                    frontImageUrl: isBack ? undefined : primaryUrl,
+                    backImageUrl: isBack ? primaryUrl : undefined,
+                    imageFront: isBack ? undefined : primaryUrl,
+                    imageBack: isBack ? primaryUrl : undefined
+                };
+            }
+
+            // Otherwise, keep the fresh local version in absolute priority!
+            // Never let stale or fallback data overwrite a fresh generation.
+            return local;
+        }
+
+        // 3. If neither is fresh, compare timestamps
+        if ((local.timestamp || 0) > (incoming.timestamp || 0)) {
+            return local;
+        }
+
+        // 4. If local has a real image and incoming does not, keep local
+        const isRealImg = (u: any) => u && typeof u === 'string' && (u.startsWith('data:') || u.startsWith('http://') || u.startsWith('https://') || u.includes('btp_mockups'));
+        if (isRealImg(local.ai) && !isRealImg(incoming.ai)) {
+            return local;
+        }
+
+        // 5. Default merge incoming
+        const incomingPrimary = incoming.ai || incoming.aiRemastered || incoming.imageUrl || incoming.mechanical || local.imageUrl || local.base;
+        return {
+            ...local,
+            ...incoming,
+            ai: incoming.ai || local.ai,
+            aiRemastered: incoming.aiRemastered || local.aiRemastered || incoming.ai,
+            imageUrl: incomingPrimary,
+            frontImageUrl: isBack ? undefined : incomingPrimary,
+            backImageUrl: isBack ? incomingPrimary : undefined,
+            imageFront: isBack ? undefined : incomingPrimary,
+            imageBack: isBack ? incomingPrimary : undefined
+        };
+    });
+
+    const localIds = new Set(currentLocals.map(l => l.id?.toLowerCase()));
+    const extraIncoming = incomingMockups.filter(inc => inc.id && !localIds.has(inc.id.toLowerCase()));
+    return [...mergedLocals, ...extraIncoming];
+};
 
 export const saveSessionLocal = async (params: SaveSessionParams): Promise<void> => {
     const { sessionId, logoA, logoB, logoPlacements, userData, mockups, logoColorModes = {}, globalLogoColorMode = 'original' } = params;
@@ -550,7 +874,10 @@ export const saveSessionLocal = async (params: SaveSessionParams): Promise<void>
                 frontImageUrl: (m.view === 'front' ? aiResolved : undefined) || m.frontImageUrl || (m.view === 'front' ? primaryDisplay : undefined) || null,
                 backImageUrl: (m.view === 'back' ? aiResolved : undefined) || m.backImageUrl || (m.view === 'back' ? primaryDisplay : undefined) || null,
                 imageFront: (m.view === 'front' ? aiResolved : undefined) || m.imageFront || (m.view === 'front' ? primaryDisplay : undefined) || null,
-                imageBack: (m.view === 'back' ? aiResolved : undefined) || m.imageBack || (m.view === 'back' ? primaryDisplay : undefined) || null
+                imageBack: (m.view === 'back' ? aiResolved : undefined) || m.imageBack || (m.view === 'back' ? primaryDisplay : undefined) || null,
+                isFresh: m.isFresh,
+                timestamp: m.timestamp,
+                generatedAt: m.generatedAt
             };
         });
 
@@ -857,8 +1184,8 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
             getActiveLogoUrl(logoB, 'B')
         ]);
 
-        const isBackId = (id?: string) => !id ? false : /(back|dos|verso|tback|pback|hback|tankback|tankwhiteback|heavyback)/i.test(id);
-        const isFrontId = (id?: string) => !id ? false : /(front|face|recto|tfront|pfront|hfront|tankfront|tankwhitefront|heavyfront)/i.test(id);
+        const isBackId = (id?: string) => !id ? false : /(back|dos|verso|tback|pback|hback|tankback|tankwhiteback|heavyback|heavywhiteback)/i.test(id);
+        const isFrontId = (id?: string) => !id ? false : /(front|face|recto|tfront|pfront|hfront|tankfront|tankwhitefront|heavyfront|heavywhitefront)/i.test(id);
 
         // Systematic recovery: inspect mockups and query IndexedDB for any trapped images
         const allMockupsToProcess: MockupItem[] = [...(mockups || [])];
@@ -869,7 +1196,8 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
             'hFront', 'hBack',
             'tankFront', 'tankBack',
             'tankWhiteFront', 'tankWhiteBack',
-            'heavyFront', 'heavyBack'
+            'heavyFront', 'heavyBack',
+            'heavyWhiteFront', 'heavyWhiteBack'
         ];
 
         for (const stdId of STANDARD_IDS) {
@@ -931,15 +1259,15 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
             const logo = slot === 'A' ? logoA : logoB;
             let activeAi = (m as any).aiRemastered || m.ai;
 
-            // SYSTEMATIC INDEXEDDB RECOVERY: fetch trapped base64 from BtpAuditDB / heavy_assets
-            if (!activeAi || (typeof activeAi === 'string' && (activeAi.startsWith('/assets/') || activeAi.startsWith('/merch/')))) {
+            // SYSTEMATIC INDEXEDDB RECOVERY: only if m is NOT fresh and activeAi is missing/default
+            if (!m.isFresh && (!activeAi || (typeof activeAi === 'string' && (activeAi.startsWith('/assets/') || activeAi.startsWith('/merch/'))))) {
                 if (idbAi && typeof idbAi === 'string' && (idbAi.startsWith('data:') || idbAi.length > 50)) {
                     activeAi = idbAi;
                 }
             }
 
             let mechData = m.mechanical;
-            if (!mechData || (typeof mechData === 'string' && (mechData.startsWith('/assets/') || mechData.startsWith('/merch/')))) {
+            if (!m.isFresh && (!mechData || (typeof mechData === 'string' && (mechData.startsWith('/assets/') || mechData.startsWith('/merch/'))))) {
                 if (idbMech && typeof idbMech === 'string' && (idbMech.startsWith('data:') || idbMech.length > 50)) {
                     mechData = idbMech;
                 }
@@ -960,6 +1288,10 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
 
             const primaryUrl = finalAi || finalMech;
 
+            const isFreshSlot = Boolean(m.isFresh);
+            const slotTimestamp = m.timestamp || Date.now();
+            const slotGeneratedAt = m.generatedAt || slotTimestamp;
+
             const updatedMockup: MockupItem = {
                 ...m,
                 id: m.id || "",
@@ -972,7 +1304,10 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
                 mechanical: finalMech,
                 base: (m as any).base || "",
                 isGenerating: false,
-                model: m.model
+                model: m.model,
+                isFresh: isFreshSlot,
+                timestamp: slotTimestamp,
+                generatedAt: slotGeneratedAt
             };
 
             (updatedMockup as any).imageUrl = finalAi || primaryUrl;
@@ -987,19 +1322,31 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
             return updatedMockup;
         }));
 
+        // Immediately keep IndexedDB in sync with the uploaded/fresh URLs
+        for (const m of uploadedMockups) {
+            if (m.id && m.ai) {
+                await dbSet(`${sessionId}_ai_${m.id}`, m.ai);
+                if (slug && slug !== sessionId) {
+                    await dbSet(`${slug}_ai_${m.id}`, m.ai);
+                }
+            }
+        }
+
         const tshirtMock = uploadedMockups.find(m => (m.garment === 'tshirt' && m.view === 'front') || m.id === 'tFront' || (m.garment === 'tshirt' && isFrontId(m.id)));
         const poloMock = uploadedMockups.find(m => (m.garment === 'polo' && m.view === 'front') || m.id === 'pFront' || (m.garment === 'polo' && isFrontId(m.id)));
         const hoodieMock = uploadedMockups.find(m => (m.garment === 'sweat' && m.view === 'front') || m.id === 'hFront' || (m.garment === 'sweat' && isFrontId(m.id)));
         const tankMock = uploadedMockups.find(m => m.id === 'tankFront' || (m.garment === 'tank_top' && m.view === 'front' && !m.id.toLowerCase().includes('white')));
         const tankWhiteMock = uploadedMockups.find(m => m.id === 'tankWhiteFront' || (m.garment === 'tank_top' && m.view === 'front' && m.id.toLowerCase().includes('white')));
-        const heavyMock = uploadedMockups.find(m => (m.garment === 'tshirt_oversize' && m.view === 'front') || m.id === 'heavyFront' || (m.garment === 'tshirt_oversize' && isFrontId(m.id)));
+        const heavyMock = uploadedMockups.find(m => ((m.garment === 'tshirt_oversize' && m.view === 'front') || m.id === 'heavyFront' || (m.garment === 'tshirt_oversize' && isFrontId(m.id))) && !m.id?.toLowerCase().includes('white') && !m.title?.toLowerCase().includes('blanc'));
+        const heavyWhiteMock = uploadedMockups.find(m => m.id === 'heavyWhiteFront' || ((m.garment === 'tshirt_oversize' && m.view === 'front') && (m.id?.toLowerCase().includes('white') || m.title?.toLowerCase().includes('blanc'))));
 
         const tshirtBackMock = uploadedMockups.find(m => (m.garment === 'tshirt' && m.view === 'back') || m.id === 'tBack' || (m.garment === 'tshirt' && isBackId(m.id)));
         const poloBackMock = uploadedMockups.find(m => (m.garment === 'polo' && m.view === 'back') || m.id === 'pBack' || (m.garment === 'polo' && isBackId(m.id)));
         const hoodieBackMock = uploadedMockups.find(m => (m.garment === 'sweat' && m.view === 'back') || m.id === 'hBack' || (m.garment === 'sweat' && isBackId(m.id)));
         const tankBackMock = uploadedMockups.find(m => m.id === 'tankBack' || (m.garment === 'tank_top' && m.view === 'back' && !m.id.toLowerCase().includes('white')));
         const tankWhiteBackMock = uploadedMockups.find(m => m.id === 'tankWhiteBack' || (m.garment === 'tank_top' && m.view === 'back' && m.id.toLowerCase().includes('white')));
-        const heavyBackMock = uploadedMockups.find(m => (m.garment === 'tshirt_oversize' && m.view === 'back') || m.id === 'heavyBack' || (m.garment === 'tshirt_oversize' && isBackId(m.id)));
+        const heavyBackMock = uploadedMockups.find(m => ((m.garment === 'tshirt_oversize' && m.view === 'back') || m.id === 'heavyBack' || (m.garment === 'tshirt_oversize' && isBackId(m.id))) && !m.id?.toLowerCase().includes('white') && !m.title?.toLowerCase().includes('blanc'));
+        const heavyWhiteBackMock = uploadedMockups.find(m => m.id === 'heavyWhiteBack' || ((m.garment === 'tshirt_oversize' && m.view === 'back') && (m.id?.toLowerCase().includes('white') || m.title?.toLowerCase().includes('blanc'))));
 
         const isFlatComposite = (u?: string | null) => {
             if (!u || typeof u !== 'string') return false;
@@ -1019,6 +1366,8 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
         const effectiveTankWhiteBackLogo = (logoPlacements?.tankWhiteBack === 'A' ? urlA : urlB) || urlA || urlB || "";
         const effectiveHeavyFrontLogo = (logoPlacements?.heavyFront === 'B' ? urlB : urlA) || urlB || urlA || "";
         const effectiveHeavyBackLogo = (logoPlacements?.heavyBack === 'A' ? urlA : urlB) || urlA || urlB || "";
+        const effectiveHeavyWhiteFrontLogo = (logoPlacements?.heavyWhiteFront === 'B' ? urlB : urlA) || urlA || urlB || "";
+        const effectiveHeavyWhiteBackLogo = (logoPlacements?.heavyWhiteBack === 'A' ? urlA : urlB) || urlB || urlA || "";
 
         const resolveMockupAiOrMech = (mock?: any) => {
             if (!mock) return null;
@@ -1168,6 +1517,28 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
             heavyBackImg = '/merch/visionroom/oversize-back.png';
         }
 
+        let heavyWhiteImg = resolveMockupAiOrMech(heavyWhiteMock);
+        if (!heavyWhiteImg && effectiveHeavyWhiteFrontLogo) {
+            try {
+                heavyWhiteImg = await generateMechanicalMockup('/assets/tshirt-white-NX7200.png', effectiveHeavyWhiteFrontLogo, 'front', 1.0, 'tshirt_oversize', 'black');
+            } catch (e) {
+                heavyWhiteImg = '/assets/tshirt-white-NX7200.png';
+            }
+        } else if (!heavyWhiteImg) {
+            heavyWhiteImg = '/assets/tshirt-white-NX7200.png';
+        }
+
+        let heavyWhiteBackImg = resolveMockupAiOrMech(heavyWhiteBackMock);
+        if (!heavyWhiteBackImg && effectiveHeavyWhiteBackLogo) {
+            try {
+                heavyWhiteBackImg = await generateMechanicalMockup('/assets/tshirt-white-NX7200-dos.png', effectiveHeavyWhiteBackLogo, 'back', 1.0, 'tshirt_oversize', 'black');
+            } catch (e) {
+                heavyWhiteBackImg = '/assets/tshirt-white-NX7200-dos.png';
+            }
+        } else if (!heavyWhiteBackImg) {
+            heavyWhiteBackImg = '/assets/tshirt-white-NX7200-dos.png';
+        }
+
         const uploadToStorageSafe = async (dataOrUrl: string, id: string): Promise<string> => {
             if (!dataOrUrl) return dataOrUrl;
             if (dataOrUrl.startsWith('http://') || dataOrUrl.startsWith('https://')) return dataOrUrl;
@@ -1187,7 +1558,8 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
             finalHoodieFront, finalHoodieBack,
             finalTankFront, finalTankBack,
             finalTankWhiteFront, finalTankWhiteBack,
-            finalHeavyFront, finalHeavyBack
+            finalHeavyFront, finalHeavyBack,
+            finalHeavyWhiteFront, finalHeavyWhiteBack
         ] = await Promise.all([
             uploadToStorageSafe(tshirtImg, 'tFront'),
             uploadToStorageSafe(tshirtBackImg, 'tBack'),
@@ -1200,7 +1572,9 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
             uploadToStorageSafe(tankWhiteImg, 'tankWhiteFront'),
             uploadToStorageSafe(tankWhiteBackImg, 'tankWhiteBack'),
             uploadToStorageSafe(heavyImg, 'heavyFront'),
-            uploadToStorageSafe(heavyBackImg, 'heavyBack')
+            uploadToStorageSafe(heavyBackImg, 'heavyBack'),
+            uploadToStorageSafe(heavyWhiteImg, 'heavyWhiteFront'),
+            uploadToStorageSafe(heavyWhiteBackImg, 'heavyWhiteBack')
         ]);
 
         const isVisionSession = sessionId.includes('clubvision') || sessionId.includes('vision') || (userData.companyName || '').toLowerCase().includes('vision');
@@ -1273,12 +1647,27 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
                 name: heavyMock?.title || 'T-Shirt Heavyweight Oversize',
                 garment: 'tshirt_oversize',
                 supplierRef: 'NX7200',
+                color: 'Noir',
                 aiImageUrl: finalHeavyFront,
                 imageUrl: finalHeavyFront,
                 imageFront: finalHeavyFront,
                 frontImageUrl: finalHeavyFront,
                 imageBack: finalHeavyBack,
                 backImageUrl: finalHeavyBack,
+                price: 34.99
+            },
+            heavyweight_tee_white: {
+                id: heavyWhiteMock?.id || 'heavyWhiteFront',
+                name: heavyWhiteMock?.title || 'T-Shirt Heavyweight Oversize Blanc',
+                garment: 'tshirt_oversize',
+                supplierRef: 'NX7200',
+                color: 'Blanc',
+                aiImageUrl: finalHeavyWhiteFront,
+                imageUrl: finalHeavyWhiteFront,
+                imageFront: finalHeavyWhiteFront,
+                frontImageUrl: finalHeavyWhiteFront,
+                imageBack: finalHeavyWhiteBack,
+                backImageUrl: finalHeavyWhiteBack,
                 price: 34.99
             }
         };
@@ -1455,12 +1844,24 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
                 finalHeavyFront || '/merch/visionroom/oversize-front.png',
                 finalHeavyBack || '/merch/visionroom/oversize-back.png',
                 'Noir'
+            ),
+            resolveProductItem(
+                heavyWhiteMock?.id || 'heavyWhiteFront',
+                heavyWhiteMock?.title || 'T-Shirt Heavyweight Oversize Blanc',
+                'tshirt_oversize',
+                34.99,
+                heavyWhiteMock,
+                heavyWhiteBackMock,
+                'NX7200',
+                finalHeavyWhiteFront || '/assets/tshirt-white-NX7200.png',
+                finalHeavyWhiteBack || '/assets/tshirt-white-NX7200-dos.png',
+                'Blanc'
             )
         ];
 
         // Intégrer également les autres items sélectionnés non-standards
         for (const m of uploadedMockups) {
-            if (m.selected && m.id && !['tFront', 'tBack', 'pFront', 'pBack', 'hFront', 'hBack', 'tankFront', 'tankBack', 'tankWhiteFront', 'tankWhiteBack', 'heavyFront', 'heavyBack'].includes(m.id)) {
+            if (m.selected && m.id && !['tFront', 'tBack', 'pFront', 'pBack', 'hFront', 'hBack', 'tankFront', 'tankBack', 'tankWhiteFront', 'tankWhiteBack', 'heavyFront', 'heavyBack', 'heavyWhiteFront', 'heavyWhiteBack'].includes(m.id)) {
                 const isBack = m.view === 'back' || isBackId(m.id);
                 const aiCandidate = (m as any).aiRemastered || m.ai || null;
                 const frontImg = isBack ? undefined : (aiCandidate || m.mechanical || m.base);
@@ -1549,6 +1950,8 @@ export const syncSessionToCloud = async (params: SaveSessionParams): Promise<Clo
             tshirt_oversize: finalHeavyFront,
             heavy_front: finalHeavyFront,
             heavy_back: finalHeavyBack,
+            heavy_white_front: finalHeavyWhiteFront,
+            heavy_white_back: finalHeavyWhiteBack,
             ...extractGarmentMockupMap(uploadedMockups)
         };
 

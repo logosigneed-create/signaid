@@ -50,10 +50,12 @@ export const productDatabase: ProductDatabase = {
     reference: "NX7200",
     sizeChart: DEFAULT_SIZE_CHART,
     images: {
-      "#000000": "/assets/tshirt-black-NX7200.png"
+      "#000000": "/assets/tshirt-black-NX7200.png",
+      "#FFFFFF": "/assets/tshirt-white-NX7200.png"
     },
     backImages: {
-      "#000000": "/assets/tshirt-black-NX7200-dos.png"
+      "#000000": "/assets/tshirt-black-NX7200-dos.png",
+      "#FFFFFF": "/assets/tshirt-white-NX7200-dos.png"
     }
   },
   tshirt: {

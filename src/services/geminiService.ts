@@ -104,16 +104,22 @@ export const generateTryOnImage = async (
 
     let finalPrompt = "";
 
+    const isHeavyWhiteBack = (garmentDescription.toLowerCase().includes('heavyweight') || garmentDescription.toLowerCase().includes('oversize') || (prompt && (prompt.toLowerCase().includes('heavywhiteback') || prompt.toLowerCase().includes('heavyweight blanc')))) && pose === 'back' && (garmentDescription.toLowerCase().includes('white') || garmentDescription.toLowerCase().includes('blanc') || (prompt && (prompt.toLowerCase().includes('white') || prompt.toLowerCase().includes('blanc'))));
+
     const strictDirective = isBusinessCard
         ? (companyName ? `Branded with official crisp logo for ${companyName}.` : "Accurately integrate the business card design from Input 3.")
-        : "Accurately reproduce ONLY the visual logo graphic provided in Input 3 onto the garment. ZERO additional text, ZERO slogans, ZERO synthetic typography.";
+        : (isHeavyWhiteBack
+            ? "Preserve the FULL complete logo including ALL typography, text, and subtext ('CLUB VISION ROOM') positioned under the central emblem. Do not crop, truncate, or omit the text."
+            : "Accurately reproduce ONLY the visual logo graphic provided in Input 3 onto the garment. ZERO additional text, ZERO slogans, ZERO synthetic typography.");
 
     // ARCHITECTE : VERROUILLAGE DYNAMIQUE ET RESPECT PIXEL-PERFECT DU LOGO
     const lockPrompt = `CRITICAL MULTIMODAL V-TON LOGO FIDELITY: ${strictDirective} Do NOT alter, re-draw, or modify the graphic shape, contours, or aspect ratio. `;
 
-    const strictNegativeInstruction = !isBusinessCard
-        ? "STRICT NEGATIVE CONSTRAINT: ZERO TEXT, NO TYPOGRAPHY, NO BRAND LETTERS, NO WORDS, NO SLOGANS, NO INVENTED WRITING. If the input graphic is an emblem, symbol, or cropped icon, render strictly that symbol without any text around or below it. The garment fabric must remain completely clean of all unprompted text. " 
-        : "";
+    const strictNegativeInstruction = isHeavyWhiteBack
+        ? "STRICT PRESERVATION INSTRUCTION: Do NOT remove, erase, or crop the typography or subtext ('CLUB VISION ROOM') located below the emblem. Render the entire graphic and text composition together seamlessly on the back of the garment. "
+        : (!isBusinessCard
+            ? "STRICT NEGATIVE CONSTRAINT: ZERO TEXT, NO TYPOGRAPHY, NO BRAND LETTERS, NO WORDS, NO SLOGANS, NO INVENTED WRITING. If the input graphic is an emblem, symbol, or cropped icon, render strictly that symbol without any text around or below it. The garment fabric must remain completely clean of all unprompted text. " 
+            : "");
 
     const neutralBackgroundPrompt = "CRITICAL BACKGROUND INSTRUCTION: The background MUST be a completely solid, minimalist, neutral light-gray or off-white studio background with soft studio lighting. STRICTLY FORBIDDEN: thematic environments, club interiors, night scenes, streets, outdoor landscapes, props, or background decor.";
     const taskType = 'Clean Minimalist E-Commerce Product Studio';

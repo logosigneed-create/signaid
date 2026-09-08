@@ -6,6 +6,7 @@ export interface CropModalProps {
     targetSlot: 'A' | 'B';
     logoA: BtpLogo;
     logoB: BtpLogo;
+    initialMethod?: 'rect' | 'poly' | 'eraser';
     onConfirm: (croppedBase64: string, targetSlot: 'A' | 'B') => void;
     onClose: () => void;
 }
@@ -15,6 +16,7 @@ export const CropModal: React.FC<CropModalProps> = ({
     targetSlot,
     logoA,
     logoB,
+    initialMethod,
     onConfirm,
     onClose
 }) => {
@@ -23,7 +25,7 @@ export const CropModal: React.FC<CropModalProps> = ({
     const eraserCanvasRef = useRef<HTMLCanvasElement>(null);
     const timeoutsRef = useRef<number[]>([]);
 
-    const [cropMethod, setCropMethod] = useState<'rect' | 'poly' | 'eraser'>('rect');
+    const [cropMethod, setCropMethod] = useState<'rect' | 'poly' | 'eraser'>(initialMethod || 'poly');
     const [sourceSlot, setSourceSlot] = useState<'A' | 'B'>(() => {
         if (targetSlot === 'A') return logoA.original ? 'A' : 'B';
         return logoB.original ? 'B' : (logoA.original ? 'A' : 'B');
@@ -47,7 +49,7 @@ export const CropModal: React.FC<CropModalProps> = ({
         return id;
     };
 
-    // Update source slot when modal opens or targetSlot changes
+    // Update source slot and method when modal opens or targetSlot changes
     useEffect(() => {
         if (isOpen) {
             if (targetSlot === 'A') {
@@ -55,8 +57,11 @@ export const CropModal: React.FC<CropModalProps> = ({
             } else {
                 setSourceSlot(logoB.original ? 'B' : (logoA.original ? 'A' : 'B'));
             }
+            if (initialMethod) {
+                setCropMethod(initialMethod);
+            }
         }
-    }, [isOpen, targetSlot, logoA.original, logoB.original]);
+    }, [isOpen, targetSlot, logoA.original, logoB.original, initialMethod]);
 
     // Memory Cleanup on Unmount
     useEffect(() => {
@@ -136,16 +141,34 @@ export const CropModal: React.FC<CropModalProps> = ({
 
     const initEraserCanvas = useCallback(() => {
         const canvas = eraserCanvasRef.current;
-        const img = imgRef.current;
-        if (!canvas || !img) return;
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0);
+        if (!canvas) return;
+        const src = getActiveSourceSrc();
+        if (!src) return;
+
+        const tempImg = new Image();
+        tempImg.crossOrigin = "anonymous";
+        tempImg.onload = () => {
+            if (!canvas) return;
+            canvas.width = tempImg.naturalWidth;
+            canvas.height = tempImg.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(tempImg, 0, 0);
+            }
+        };
+        tempImg.src = src;
+    }, [getActiveSourceSrc]);
+
+    // Re-initialize when cropMethod, sourceSlot, or modal open state changes
+    useEffect(() => {
+        if (!isOpen) return;
+        if (cropMethod === 'eraser') {
+            setSafeTimeout(initEraserCanvas, 60);
+        } else {
+            setSafeTimeout(initPoly, 60);
         }
-    }, []);
+    }, [isOpen, cropMethod, sourceSlot, initEraserCanvas, initPoly]);
 
     const getPos = (e: React.MouseEvent | React.TouchEvent) => {
         const rect = containerRef.current?.getBoundingClientRect();

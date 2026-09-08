@@ -774,10 +774,14 @@ exports.generateTryOnImageV2 = onCall({ cors: true, invoker: 'public', timeoutSe
       resolveImageToBase64(uploadedGarmentBase64)
     ]);
 
-    // Directive stricte : aucun texte parasite pour les textiles
+    const isHeavyWhiteBack = (garment === 'heavyWhiteBack' || data.id === 'heavyWhiteBack' || ((garment === 'tshirt_oversize' || garmentType === 'tshirt_oversize') && pose === 'back' && (sanitizedPrompt.toLowerCase().includes('white') || sanitizedPrompt.toLowerCase().includes('blanc') || sanitizedPrompt.toLowerCase().includes('heavywhiteback'))));
+
+    // Directive stricte : aucun texte parasite pour les textiles, mais préservation intégrale du logo pour heavyWhiteBack
     const graphicDirective = isBusinessCard
       ? `Accurately integrate the visual graphic provided in Input 3 onto the business card.${companyName ? ` Branded with official crisp logo for ${companyName}.` : ''}`
-      : "Accurately reproduce ONLY the visual logo graphic provided in Input 3 onto the garment. ZERO additional text, ZERO slogans, ZERO synthetic typography.";
+      : (isHeavyWhiteBack
+          ? "Preserve the FULL complete logo including ALL typography, text, and subtext ('CLUB VISION ROOM') positioned under the central emblem. Do not crop, truncate, or omit the text."
+          : "Accurately reproduce ONLY the visual logo graphic provided in Input 3 onto the garment. ZERO additional text, ZERO slogans, ZERO synthetic typography.");
 
     // Modèles Google Gen AI Image & Try-On dédiés
     const GEMINI_MODELS = [
@@ -813,11 +817,13 @@ GRAPHIC REPRODUCTION:
 - ${graphicDirective}
 ${cleanDesignComposite ? "Input 3 is the raw high-resolution graphic to reproduce." : ""}
 
-${!isBusinessCard ? `STRICT NEGATIVE CONSTRAINT:
+${!isBusinessCard ? (isHeavyWhiteBack ? `STRICT LOGO PRESERVATION:
+- Preserve the FULL complete logo including ALL typography, text, and subtext ('CLUB VISION ROOM') positioned under the central emblem. Do not crop, truncate, or omit the text.
+- Both the central emblem and the subtext text below it must appear clearly and sharply on the back of the garment.` : `STRICT NEGATIVE CONSTRAINT:
 - CRITICAL GRAPHIC INSTRUCTION: DO NOT ADD ANY TEXT, BRAND NAME, LETTERS, SLOGAN, OR TYPOGRAPHY. ONLY replicate the standalone visual graphic / symbol / emblem / icon exactly as provided. NO TEXT ALLOWED ANYWHERE ON THE GARMENT OR BACKGROUND.
 - DO NOT generate, add, or invent any letters, typography, slogans, brand names, or words on the garment.
 - The graphic on the garment MUST strictly contain ONLY the visual graphic from Input 2 / Input 3.
-- If the graphic is an emblem or standalone icon, DO NOT add any text, typography, or company name below, above, or around it. ZERO EXTRA TEXT.` : ''}
+- If the graphic is an emblem or standalone icon, DO NOT add any text, typography, or company name below, above, or around it. ZERO EXTRA TEXT.`) : ''}
 
 Setting: ${sanitizedPrompt || 'Clean Minimalist E-Commerce Product Studio'}. Glasses: ${glassesPrompt}. Pose: ${pose === 'back' ? 'STRICT 180-DEGREE REAR VIEW (facing away from camera)' : pose}. Ratio: 1:1. Symmetrical commercial fashion catalogue shot, neutral clean studio grey backdrop, 8k.` 
               }
