@@ -1,45 +1,71 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
+import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { auth } from './firebaseConfig';
+import { AuthProvider } from './contexts/AuthContext';
 import { logAnalyticsEvent, AnalyticsEvents } from './services/analyticsService';
+
+import { Header } from './components/Header';
+import { ProjectManagerModal } from './components/ProjectManagerModal';
+import { AuthModal } from './components/AuthModal';
+import { StudioComposer } from './components/StudioComposer';
+import { FlyerPosterRenderer } from './components/FlyerPosterRenderer';
 import { PremiumChatWidget } from './components/PremiumChatWidget';
 import { CookieConsent } from './components/CookieConsent';
 import { RequirePremium } from './components/RequirePremium';
+import { GenericSkeleton } from './components/Skeletons';
+
+import {
+    EventInput,
+    createBlankEventInput,
+    DEFAULT_STUDIO_DATA,
+    initialEventInput,
+    resetLogoTransformForFormat,
+} from './types';
 
 // Helper for safe lazy loading (reloads on chunk failure after new deployments)
 const safeLazy = (importFn: () => Promise<any>) =>
-  lazy(async () => {
-    try {
-      return await importFn();
-    } catch (err: any) {
-      const errMsg = String(err?.message || err || '');
-      const isChunkError =
-        errMsg.includes('dynamically imported module') ||
-        errMsg.includes('Loading chunk') ||
-        errMsg.includes('Failed to fetch') ||
-        errMsg.includes('Importing a module script failed') ||
-        errMsg.includes('CSS_CHUNK_LOAD_FAILED');
+    lazy(async () => {
+        try {
+            return await importFn();
+        } catch (err: any) {
+            const errMsg = String(err?.message || err || '');
+            const isChunkError =
+                errMsg.includes('dynamically imported module') ||
+                errMsg.includes('Loading chunk') ||
+                errMsg.includes('Failed to fetch') ||
+                errMsg.includes('Importing a module script failed') ||
+                errMsg.includes('CSS_CHUNK_LOAD_FAILED');
 
-      const lastReload = parseInt(sessionStorage.getItem('safe_lazy_reload') || '0', 10);
-      const now = Date.now();
+            const lastReload = parseInt(sessionStorage.getItem('safe_lazy_reload') || '0', 10);
+            const now = Date.now();
 
-      if (isChunkError && (now - lastReload > 8000)) {
-        sessionStorage.setItem('safe_lazy_reload', String(now));
-        window.location.reload();
-        return new Promise(() => {});
-      }
-      throw err;
-    }
-  });
+            if (isChunkError && (now - lastReload > 8000)) {
+                sessionStorage.setItem('safe_lazy_reload', String(now));
+                window.location.reload();
+                return new Promise(() => { });
+            }
+            throw err;
+        }
+    });
 
-// CODE SPLITTING: Lazy load heavy components to reduce initial bundle
-const LandingPage = safeLazy(() => import('./LandingPage'));
+// 1. IMPORTS DES MODULES PRINCIPAUX (CODE SPLITTING SÉCURISÉ)
+const LandingPage = safeLazy(() => import('./pages/LandingPage').catch(() => import('./LandingPage')));
+const DropperLanding = safeLazy(() => import('./pages/DropperLanding'));
+const BrandOnboardingForm = safeLazy(() => import('./components/BrandOnboardingForm'));
+const AdminView = safeLazy(() => import('./pages/AdminDashboard').catch(() => import('./components/AdminView').then(m => ({ default: (m as any).AdminView || (m as any).default || m }))));
+const CustomizerView = safeLazy(() => import('./pages/MerchCustomizer').catch(() => import('./CustomizerApp')).catch(() => import('./components/CustomizerView').then(m => ({ default: (m as any).CustomizerView || (m as any).default || m }))));
+const LiveHub = safeLazy(() => import('./pages/LiveHub').catch(() => import('./PortalPage')));
+const ArtistProfileView = safeLazy(() => import('./components/ArtistProfileView'));
+
+// Modules secondaires & utilitaires
 const BtpLandingPage = safeLazy(() => import('./BtpLandingPage'));
 const GenericAuditPage = safeLazy(() => import('./GenericAuditPage'));
 const CustomizerApp = safeLazy(() => import('./CustomizerApp'));
 const FlyerPage = safeLazy(() => import('./components/FlyerPage'));
-const ConditionsGeneralesPage = safeLazy(() => import('./components/LegalPages').then(m => ({ default: m.ConditionsGenerales })));
-const ConfidentialitePage = safeLazy(() => import('./components/LegalPages').then(m => ({ default: m.Confidentialite })));
-const CookiesPage = safeLazy(() => import('./components/LegalPages').then(m => ({ default: m.CookiesPage })));
+const ConditionsGeneralesPage = safeLazy(() => import('./components/LegalPages').then(m => ({ default: (m as any).ConditionsGenerales })));
+const ConfidentialitePage = safeLazy(() => import('./components/LegalPages').then(m => ({ default: (m as any).Confidentialite })));
+const CookiesPage = safeLazy(() => import('./components/LegalPages').then(m => ({ default: (m as any).CookiesPage })));
 const BlogPage = safeLazy(() => import('./components/BlogPage'));
 const BlogPageGeometry = safeLazy(() => import('./components/BlogPageGeometry'));
 const BlogDesignStyle = safeLazy(() => import('./components/BlogDesignStyle'));
@@ -47,15 +73,8 @@ const BlogBrandAsset = safeLazy(() => import('./components/BlogBrandAsset'));
 const BlogIndex = safeLazy(() => import('./components/BlogIndex'));
 const ProductPortal = safeLazy(() => import('./ProductPortal'));
 const PortalPage = safeLazy(() => import('./PortalPage'));
-const PreviewPage = safeLazy(() => import('./components/PreviewPage'));
 const ProfileRedirect = safeLazy(() => import('./components/ProfileRedirect'));
-const ArtistProfileView = safeLazy(() => import('./components/ArtistProfileView'));
-const BrandOnboardingForm = safeLazy(() => import('./components/BrandOnboardingForm'));
-const VitrineHome = safeLazy(() => import('./app/page'));
-const VitrineLogin = safeLazy(() => import('./app/vitrine-admin/page'));
-const VitrineDashboard = safeLazy(() => import('./app/vitrine-admin/dashboard/page'));
 const ProductAidView = safeLazy(() => import('./components/ProductAidView'));
-import { GenericSkeleton } from './components/Skeletons';
 
 const LoadingSpinner = () => <GenericSkeleton />;
 
@@ -70,7 +89,198 @@ const ScrollToTop = () => {
     return null;
 };
 
+// 2. GARDE D'EXCLUSION SUR LA ROUTE RACINE /:slug
+// Slugs système réservés ne devant JAMAIS être interceptés par ArtistProfileView
+const RESERVED = ['studio', 'admin', 'creer-profil', 'customizer', 'dropper', 'hub', 'api', 'assets', 'login', 'shop', 'audit'];
+
+/**
+ * Route dynamique /:slug pour les profils vitrines d'artistes (ex: signaid.eu/aaronh)
+ * - Exclut strictement les slugs système réservés (redirige vers / si réservé)
+ * - Monte TOUJOURS ArtistProfileView avec le paramètre slug
+ * - Conserve la priorité absolue aux photos réelles (tshirtPreviewImages)
+ * - Interdiction stricte de monter StudioComposer sur cette route
+ */
+function DynamicArtistProfileRoute() {
+    const { slug } = useParams<{ slug: string }>();
+    const cleanSlug = (slug || '').toLowerCase().trim();
+
+    // Si le slug est réservé ou vide, ne pas intercepter comme profil vitrine
+    if (!cleanSlug || RESERVED.includes(cleanSlug)) {
+        return <Navigate to="/" replace />;
+    }
+
+    // Monter STRICTEMENT ArtistProfileView avec le paramètre slug
+    // Conserver la priorité absolue aux photos réelles (tshirtPreviewImages)
+    // Interdiction stricte de monter StudioComposer sur cette route
+    return <ArtistProfileView overrideSlug={cleanSlug} />;
+}
+
+/**
+ * Route /studio et /studio/:slug
+ * Restaure l'architecture Studio Desktop à double colonne :
+ * - Colonne gauche/centrale (Desktop ≥ 920px) : Canvas interactif temps réel FlyerPosterRenderer
+ *   avec switcher de formats (Post, Story, Bannière, A3) et cadrage proportionnel strict.
+ * - Colonne droite (ou plein écran mobile) : StudioComposer (volet d'accordéons et réglages).
+ */
+function StudioComposerRoute() {
+    const { slug } = useParams<{ slug?: string }>();
+    const [input, setInput] = useState<EventInput>(() => {
+        try {
+            return createBlankEventInput(slug || '');
+        } catch {
+            return (DEFAULT_STUDIO_DATA as any) || (initialEventInput as any) || {};
+        }
+    });
+
+    const [previewFormat, setPreviewFormat] = useState<'post' | 'a3' | 'story' | 'banner' | 'tshirt'>('post');
+    const [isProjectsOpen, setIsProjectsOpen] = useState<boolean>(false);
+    const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
+    const [activeTab, setActiveTab] = useState<'generator' | 'checkout' | 'workshop' | 'prospecting'>('generator');
+
+    const getAspectRatio = (fmt: string): string => {
+        switch (fmt) {
+            case 'story':
+                return '9 / 16';
+            case 'banner':
+                return '16 / 9';
+            case 'a3':
+                return '1 / 1.414';
+            case 'post':
+            default:
+                return '1 / 1';
+        }
+    };
+
+    return (
+        <div className="h-screen w-full bg-zinc-950 text-white flex flex-col overflow-hidden">
+            {/* 1. VRAIE BARRE DE NAVIGATION DU HAUT ORIGINALE */}
+            <Header
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                onOpenProjects={() => setIsProjectsOpen(true)}
+                onOpenAuthModal={() => setIsAuthOpen(true)}
+            />
+
+            {/* 2. ESPACE DE TRAVAIL : GAUCHE = RÉGLAGES, DROITE = VISUEL */}
+            <div className="flex-1 w-full flex flex-col min-[920px]:flex-row min-h-0 overflow-hidden">
+                {/* COLONNE GAUCHE : Panneau Accordéons & Réglages StudioComposer */}
+                <aside className="w-full min-[920px]:w-[440px] lg:w-[480px] xl:w-[520px] shrink-0 border-b min-[920px]:border-b-0 min-[920px]:border-r border-zinc-800/80 bg-zinc-900/40 min-h-0 overflow-y-auto p-4 sm:p-6 order-2 min-[920px]:order-1">
+                    <StudioComposer
+                        input={input}
+                        setInput={setInput}
+                        previewFormat={previewFormat}
+                        onSelectFormat={setPreviewFormat}
+                        onUpdateTransform={(newScale: number, newOffsetY: number) => {
+                            setInput((prev) => ({
+                                ...prev,
+                                djPhotoScale: newScale,
+                                djPhotoOffsetY: newOffsetY,
+                                formatTransforms: {
+                                    ...(prev.formatTransforms || {}),
+                                    [previewFormat]: {
+                                        ...((prev.formatTransforms || {})[previewFormat] || {}),
+                                        scale: newScale,
+                                        offsetY: newOffsetY,
+                                        isCustom: true,
+                                    },
+                                },
+                            }));
+                        }}
+                        onResetFormatToMaster={() => {
+                            setInput((prev) => resetLogoTransformForFormat(prev, previewFormat));
+                        }}
+                        isUnlocked={true}
+                        onTriggerPayment={() => { }}
+                    />
+                </aside>
+
+                {/* COLONNE DROITE : Canvas Interactif Desktop */}
+                <main className="flex-1 flex flex-col items-center justify-center p-6 lg:p-8 bg-zinc-950/80 overflow-y-auto relative select-none order-1 min-[920px]:order-2">
+                    <div className="w-full max-w-2xl flex flex-col items-center justify-center my-auto">
+                        {/* Sélecteur de format rapide au-dessus du canvas */}
+                        <div className="mb-4 flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded-xl p-1 text-xs font-mono shadow-lg">
+                            {(['post', 'story', 'banner', 'a3'] as const).map((fmt) => (
+                                <button
+                                    key={fmt}
+                                    type="button"
+                                    onClick={() => setPreviewFormat(fmt)}
+                                    className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer uppercase ${previewFormat === fmt
+                                            ? 'bg-zinc-800 text-lime-400 shadow-sm'
+                                            : 'text-zinc-400 hover:text-white'
+                                        }`}
+                                >
+                                    {fmt === 'post' ? 'Post (1:1)' : fmt === 'story' ? 'Story (9:16)' : fmt === 'banner' ? 'Bannière' : 'A3 (Print)'}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Conteneur d'affiche avec ratio d'aspect dynamique */}
+                        <div
+                            className="relative w-full rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900 shadow-2xl flex items-center justify-center transition-all duration-300"
+                            style={{
+                                aspectRatio: getAspectRatio(previewFormat),
+                                maxHeight: 'calc(100vh - 180px)',
+                            }}
+                        >
+                            <FlyerPosterRenderer
+                                projectData={input}
+                                setInput={setInput}
+                                format={previewFormat}
+                                isInteractive={true}
+                                layoutTemplate={input.layoutTemplate || 'duality_campaign'}
+                                templateData={input.templateData}
+                            />
+                        </div>
+
+                        {/* Légende sous le canvas */}
+                        <div className="mt-4 flex items-center justify-between w-full px-2 text-xs font-mono text-zinc-500">
+                            <span>Format actif : <strong className="text-zinc-300 uppercase">{previewFormat}</strong></span>
+                            <span>Aperçu interactif haute fidélité</span>
+                        </div>
+                    </div>
+                </main>
+            </div>
+
+            {/* 3. MODALES NATIVES (Projets & Authentification) */}
+            {isProjectsOpen && (
+                <ProjectManagerModal
+                    isOpen={isProjectsOpen}
+                    onClose={() => setIsProjectsOpen(false)}
+                    currentInput={input}
+                    onLoadProject={(loadedInput: EventInput) => {
+                        if (loadedInput) {
+                            setInput(loadedInput);
+                        }
+                        setIsProjectsOpen(false);
+                    }}
+                />
+            )}
+
+            {isAuthOpen && (
+                <AuthModal
+                    isOpen={isAuthOpen}
+                    onClose={() => setIsAuthOpen(false)}
+                    onSuccess={() => setIsAuthOpen(false)}
+                />
+            )}
+        </div>
+    );
+}
+
 export default function App() {
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (!user) {
+                try {
+                    await signInAnonymously(auth);
+                } catch (err) {
+                    console.warn("[App] Initial anonymous signIn notice:", err);
+                }
+            }
+        });
+        return () => unsubscribe();
+    }, []);
+
     const hostname = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
     const isDjdfazzDomain = hostname.includes('djdfazz');
 
@@ -78,11 +288,13 @@ export default function App() {
         return (
             <BrowserRouter>
                 <ScrollToTop />
-                <Suspense fallback={<LoadingSpinner />}>
-                    <Routes>
-                        <Route path="*" element={<ArtistProfileView overrideSlug="djdfazz" />} />
-                    </Routes>
-                </Suspense>
+                <AuthProvider>
+                    <Suspense fallback={<LoadingSpinner />}>
+                        <Routes>
+                            <Route path="*" element={<ArtistProfileView overrideSlug="djdfazz" />} />
+                        </Routes>
+                    </Suspense>
+                </AuthProvider>
             </BrowserRouter>
         );
     }
@@ -90,97 +302,132 @@ export default function App() {
     return (
         <BrowserRouter>
             <ScrollToTop />
-            <Suspense fallback={<LoadingSpinner />}>
-                <Routes>
-                    <Route path="/" element={<VitrineHome />} />
-                    <Route path="/demo-vitrine" element={<Navigate to="/" replace />} />
-                    
-                    {/* AUTONOMOUS BRAND ONBOARDING ROUTES */}
-                    <Route path="/creer-profil" element={<BrandOnboardingForm />} />
-                    <Route path="/onboarding" element={<BrandOnboardingForm />} />
-                    <Route path="/nouveau-profil" element={<BrandOnboardingForm />} />
-                    
-                    {/* BTP SPECIFIC ROUTES */}
-                    <Route path="/btp" element={<LandingPage />} />
-                    <Route path="/btp-audit" element={<BtpLandingPage />} />
-                    <Route path="/portail-audit" element={<GenericAuditPage />} />
-                    <Route path="/audit-8f198p5" element={<GenericAuditPage />} />
-                    <Route path="/audit-:auditId" element={<GenericAuditPage />} />
-                    <Route path="/audit/:auditId" element={<GenericAuditPage />} />
-                    <Route path="/portail-shop" element={<ProductPortal />} />
-                    <Route path="/preview/:previewId" element={<ProductPortal />} />
-                    
-                    <Route path="/portal" element={<PortalPage />} />
-                    <Route path="/portal-dotation" element={<ProductPortal />} />
+            <AuthProvider>
+                <Suspense fallback={<LoadingSpinner />}>
+                    <Routes>
+                        {/* ======================================================== */}
+                        {/* 3. ORDONNANCEMENT STRICT DES ROUTES PRINCIPALES         */}
+                        {/* ======================================================== */}
 
-                    {/* UNIQUE VITRINE ADMIN ROUTE (signaid.eu/vitrine-admin) */}
-                    <Route path="/vitrine-admin" element={<VitrineDashboard />} />
-                    <Route path="/vitrine-admin/dashboard" element={<Navigate to="/vitrine-admin" replace />} />
-                    <Route path="/admin-dashboard" element={<Navigate to="/vitrine-admin" replace />} />
-                    <Route path="/admin" element={<Navigate to="/vitrine-admin" replace />} />
-                    
-                    {/* PRODUCTAID & AUDIT PIPELINE STUDIO (signaid.eu/productaid) */}
-                    <Route path="/productaid" element={<ProductAidView />} />
-                    <Route path="/product-aid" element={<Navigate to="/productaid" replace />} />
-                    
-                    <Route path="/galerie" element={<CustomizerApp />} />
-                    <Route path="/panier" element={<CustomizerApp />} />
-                    <Route path="/profil" element={<ProfileRedirect />} />
-                    <Route path="/recompense" element={<CustomizerApp />} />
-                    <Route path="/creation" element={<RequirePremium><CustomizerApp /></RequirePremium>} />
-                    <Route path="/creation/:productType" element={<RequirePremium><CustomizerApp /></RequirePremium>} />
-                    <Route path="/creation/:productType/:postId" element={<CustomizerApp />} />
-                    <Route path="/remix/:postId" element={<CustomizerApp />} />
-                    <Route path="/s/:shortId" element={<CustomizerApp />} />
-                    <Route path="/contact" element={<CustomizerApp />} />
-                    
-                    <Route path="/inthedark" element={<FlyerPage overrideSlug="inthedark" />} />
-                    <Route path="/in-the-dark" element={<FlyerPage overrideSlug="inthedark" />} />
-                    
-                    {/* Flyer Rave Old School */}
-                    <Route path="/raveoldschool" element={<FlyerPage overrideSlug="raveoldschool" />} />
-                    <Route path="/rave-old-school" element={<Navigate to="/raveoldschool" replace />} />
-                    
-                    {/* Flyer 13 Ans de Vision Room */}
-                    <Route path="/13ansvr" element={<FlyerPage overrideSlug="13ansvr" />} />
-                    <Route path="/13ans-vr" element={<Navigate to="/13ansvr" replace />} />
-                    
-                    {/* Flyer Kermesse de Courrière */}
-                    <Route path="/courriere11-14" element={<FlyerPage overrideSlug="courriere11-14" />} />
-                    <Route path="/courriere" element={<FlyerPage overrideSlug="courriere11-14" />} />
-                    
-                    {/* Flyer Electronic Wood */}
-                    <Route path="/electronicwood" element={<FlyerPage overrideSlug="electronicwood" />} />
-                    <Route path="/electronic-wood" element={<Navigate to="/electronicwood" replace />} />
-                    
-                    <Route path="/flyer" element={<FlyerPage />} />
-                    <Route path="/flyer/:flyerSlug" element={<FlyerPage />} />
-                    <Route path="/flyer-inthedark" element={<FlyerPage overrideSlug="inthedark" />} />
-                    <Route path="/flyer-13ansvr" element={<FlyerPage overrideSlug="13ansvr" />} />
-                    <Route path="/flyer-courriere" element={<FlyerPage overrideSlug="courriere11-14" />} />
-                    <Route path="/flyer-electronicwood" element={<FlyerPage overrideSlug="electronicwood" />} />
-                    
-                    <Route path="/conditions-generales" element={<ConditionsGeneralesPage />} />
-                    <Route path="/confidentialite" element={<ConfidentialitePage />} />
-                    <Route path="/cookies" element={<CookiesPage />} />
-                    
-                    <Route path="/blog" element={<BlogIndex />} />
-                    <Route path="/blog/ia-imprimerie" element={<BlogPage />} />
-                    <Route path="/blog/analyse-geometrique" element={<BlogPageGeometry />} />
-                    <Route path="/blog/style-accessible-vs-pro" element={<BlogDesignStyle />} />
-                    <Route path="/blog/logo-generique-danger" element={<BlogBrandAsset />} />
-                    
-                    {/* CUSTOM SLUG ROUTES FOR AUDIT AND SHOP (ex: /portail-shop/aaronh, /portail-audit/aaronh, /aaronh/shop, /aaronh/audit) */}
-                    <Route path="/portail-shop/:slug" element={<ProductPortal />} />
-                    <Route path="/portail-audit/:slug" element={<GenericAuditPage />} />
-                    <Route path="/:slug/audit" element={<GenericAuditPage />} />
-                    <Route path="/:slug/shop" element={<ProductPortal />} />
+                        {/* / ➔ LandingPage */}
+                        <Route path="/" element={<LandingPage />} />
 
-                    {/* DYNAMIC ARTIST SLUG ROUTE (ex: signaid.eu/aaronh, signaid.eu/thementalist, signaid.eu/djdfazz) */}
-                    <Route path="/:slug" element={<ArtistProfileView />} />
-                </Routes>
-            </Suspense>
-            <PremiumChatWidget />
+                        {/* /dropper ➔ DropperLanding */}
+                        <Route path="/dropper" element={<DropperLanding />} />
+
+                        {/* /studio et /studio/:slug ➔ StudioComposer */}
+                        <Route path="/studio" element={<StudioComposerRoute />} />
+                        <Route path="/studio/:slug" element={<StudioComposerRoute />} />
+
+                        {/* /creer-profil ➔ BrandOnboardingForm */}
+                        <Route path="/creer-profil" element={<BrandOnboardingForm />} />
+                        <Route path="/onboarding" element={<BrandOnboardingForm />} />
+                        <Route path="/nouveau-profil" element={<BrandOnboardingForm />} />
+
+                        {/* /admin ➔ AdminView */}
+                        <Route path="/admin" element={<AdminView />} />
+                        <Route path="/admin-dashboard" element={<Navigate to="/admin" replace />} />
+                        <Route path="/vitrine-admin" element={<AdminView />} />
+                        <Route path="/vitrine-admin/dashboard" element={<Navigate to="/admin" replace />} />
+
+                        {/* /customizer ➔ CustomizerView */}
+                        <Route path="/customizer" element={<CustomizerView />} />
+                        <Route path="/customizer/:slug" element={<CustomizerView />} />
+                        <Route path="/merch" element={<CustomizerView />} />
+                        <Route path="/merch/:slug" element={<CustomizerView />} />
+
+                        {/* /hub/:slug ➔ LiveHub */}
+                        <Route path="/hub/:slug" element={<LiveHub />} />
+                        <Route path="/hub" element={<LiveHub slug="portail-interactif-signaid" />} />
+                        <Route path="/e/:slug" element={<LiveHub />} />
+                        <Route path="/event/:slug" element={<LiveHub />} />
+
+                        {/* ======================================================== */}
+                        {/* ROUTES SECONDAIRES & ANCIENNES REDIRECTIONS              */}
+                        {/* ======================================================== */}
+                        <Route path="/demo-vitrine" element={<Navigate to="/" replace />} />
+
+                        {/* BTP & Audits */}
+                        <Route path="/btp" element={<LandingPage />} />
+                        <Route path="/btp-audit" element={<BtpLandingPage />} />
+                        <Route path="/portail-audit" element={<GenericAuditPage />} />
+                        <Route path="/audit-8f198p5" element={<GenericAuditPage />} />
+                        <Route path="/audit-:auditId" element={<GenericAuditPage />} />
+                        <Route path="/audit/:auditId" element={<GenericAuditPage />} />
+                        <Route path="/audit" element={<GenericAuditPage />} />
+                        <Route path="/portail-shop" element={<ProductPortal />} />
+                        <Route path="/preview/:previewId" element={<ProductPortal />} />
+
+                        {/* Portails & Dotation */}
+                        <Route path="/portal" element={<PortalPage />} />
+                        <Route path="/portal-dotation" element={<ProductPortal />} />
+
+                        {/* ProductAid Studio */}
+                        <Route path="/productaid" element={<ProductAidView />} />
+                        <Route path="/product-aid" element={<Navigate to="/productaid" replace />} />
+
+                        {/* Galerie & Panier */}
+                        <Route path="/galerie" element={<CustomizerApp />} />
+                        <Route path="/panier" element={<CustomizerApp />} />
+                        <Route path="/profil" element={<ProfileRedirect />} />
+                        <Route path="/recompense" element={<CustomizerApp />} />
+                        <Route path="/creation" element={<RequirePremium><CustomizerApp /></RequirePremium>} />
+                        <Route path="/creation/:productType" element={<RequirePremium><CustomizerApp /></RequirePremium>} />
+                        <Route path="/creation/:productType/:postId" element={<CustomizerApp />} />
+                        <Route path="/remix/:postId" element={<CustomizerApp />} />
+                        <Route path="/s/:shortId" element={<CustomizerApp />} />
+                        <Route path="/contact" element={<CustomizerApp />} />
+
+                        {/* Flyers Dédiés */}
+                        <Route path="/inthedark" element={<FlyerPage overrideSlug="inthedark" />} />
+                        <Route path="/in-the-dark" element={<FlyerPage overrideSlug="inthedark" />} />
+                        <Route path="/raveoldschool" element={<FlyerPage overrideSlug="raveoldschool" />} />
+                        <Route path="/rave-old-school" element={<Navigate to="/raveoldschool" replace />} />
+                        <Route path="/13ansvr" element={<FlyerPage overrideSlug="13ansvr" />} />
+                        <Route path="/13ans-vr" element={<Navigate to="/13ansvr" replace />} />
+                        <Route path="/courriere11-14" element={<FlyerPage overrideSlug="courriere11-14" />} />
+                        <Route path="/courriere" element={<FlyerPage overrideSlug="courriere11-14" />} />
+                        <Route path="/electronicwood" element={<FlyerPage overrideSlug="electronicwood" />} />
+                        <Route path="/electronic-wood" element={<Navigate to="/electronicwood" replace />} />
+                        <Route path="/flyer" element={<FlyerPage />} />
+                        <Route path="/flyer/:flyerSlug" element={<FlyerPage />} />
+                        <Route path="/flyer-inthedark" element={<FlyerPage overrideSlug="inthedark" />} />
+                        <Route path="/flyer-13ansvr" element={<FlyerPage overrideSlug="13ansvr" />} />
+                        <Route path="/flyer-courriere" element={<FlyerPage overrideSlug="courriere11-14" />} />
+                        <Route path="/flyer-electronicwood" element={<FlyerPage overrideSlug="electronicwood" />} />
+
+                        {/* Mentions Légales & Pages d'information */}
+                        <Route path="/conditions-generales" element={<ConditionsGeneralesPage />} />
+                        <Route path="/confidentialite" element={<ConfidentialitePage />} />
+                        <Route path="/cookies" element={<CookiesPage />} />
+
+                        {/* Articles de Blog */}
+                        <Route path="/blog" element={<BlogIndex />} />
+                        <Route path="/blog/ia-imprimerie" element={<BlogPage />} />
+                        <Route path="/blog/analyse-geometrique" element={<BlogPageGeometry />} />
+                        <Route path="/blog/style-accessible-vs-pro" element={<BlogDesignStyle />} />
+                        <Route path="/blog/logo-generique-danger" element={<BlogBrandAsset />} />
+
+                        {/* Routes personnalisées d'audit et shop */}
+                        <Route path="/portail-shop/:slug" element={<ProductPortal />} />
+                        <Route path="/portail-audit/:slug" element={<GenericAuditPage />} />
+                        <Route path="/:slug/audit" element={<GenericAuditPage />} />
+                        <Route path="/:slug/shop" element={<ProductPortal />} />
+
+                        {/* ======================================================== */}
+                        {/* ROUTE DYNAMIQUE /:SLUG POUR VITRINES ARTISTES            */}
+                        {/* En DERNIER avant le repli 404 (*)                        */}
+                        {/* ======================================================== */}
+                        <Route path="/:slug" element={<DynamicArtistProfileRoute />} />
+
+                        {/* ======================================================== */}
+                        {/* REPLI 404 ÉPURÉ                                          */}
+                        {/* ======================================================== */}
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                </Suspense>
+                <PremiumChatWidget />
+            </AuthProvider>
             <CookieConsent />
         </BrowserRouter>
     );
