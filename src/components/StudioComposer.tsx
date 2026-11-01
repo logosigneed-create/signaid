@@ -2839,9 +2839,20 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
   // Deep-linking visuel interactif (Tap-to-Edit & Navigation d'étape)
   const handleVisualElementClick = (
-    target: 'decor' | 'subject' | 'logo' | 'texts' | 'textSizes',
+    target: 'decor' | 'subject' | 'subject2' | 'logo' | 'texts' | 'textSizes',
     specificField?: string
   ) => {
+    if ((target as string) === 'subject2') {
+      setActiveSection('subject');
+      setActiveSubjectTab('secondary');
+      goToMobileStep(1);
+      setFocusedTarget?.('subject' as FocusedTarget);
+      setTimeout(() => {
+        section2Ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 120);
+      return;
+    }
+
     if (target === 'texts' || target === 'textSizes') {
       setActiveSection('textSizes');
       goToMobileStep(4);
@@ -3197,8 +3208,8 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
     if (state.target === 'secondary') {
       const currentTr = getTransformsForFormat(previewFormat);
-      setInput((prev) =>
-        applySecondarySubjectUpdate(
+      setInput((prev) => {
+        const updated = applySecondarySubjectUpdate(
           prev,
           previewFormat,
           {
@@ -3208,8 +3219,15 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
             alignX: currentTr.alignX,
           },
           { offsetX: clampedX, offsetY: clampedY }
-        )
-      );
+        );
+        return {
+          ...updated,
+          subject2OffsetX: clampedX,
+          subject2OffsetY: clampedY,
+          secondaryDjPhotoOffsetX: clampedX,
+          secondaryDjPhotoOffsetY: clampedY,
+        };
+      });
       return;
     }
 
@@ -5509,6 +5527,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
           format={activeFormat}
           isInteractive={true}
           activeSection={activeSection}
+          activeSubjectTab={activeSubjectTab}
           focusedTextField={effectiveFocusedField}
           isDraggingField={isDraggingField}
           isPickingColor={isPickingColor}
@@ -5620,7 +5639,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               WebkitUserSelect: 'none',
               userSelect: 'none',
               touchAction: 'none',
-              transform: `translate(${input.backgroundOffsetX ?? 0}%, ${input.backgroundOffsetY ?? 0}%) scale(${Math.max(1.06, 1.06 + Math.max(Math.abs(input.backgroundOffsetX ?? 0), Math.abs(input.backgroundOffsetY ?? 0)) * 0.02)})`,
+              transform: `translate(${input.backgroundOffsetX ?? 0}%, ${input.backgroundOffsetY ?? 0}%) scale(${1.08 * (input.backgroundScale ?? 1.0)})`,
               transformOrigin: 'center center',
               opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03) ? 1 : (input.backgroundOpacity ?? 1),
               filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03 || toneOverlay.filterCss === 'none') ? 'none' : toneOverlay.filterCss,
@@ -8213,8 +8232,8 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                               const parsed = parseFloat((e.target as HTMLInputElement).value);
                               const val = Number.isNaN(parsed) ? 1.0 : parsed;
                               if (isSecondary) {
-                                setInput((prev) =>
-                                  applySecondarySubjectUpdate(
+                                setInput((prev) => {
+                                  const updated = applySecondarySubjectUpdate(
                                     prev,
                                     previewFormat,
                                     {
@@ -8224,8 +8243,13 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                       alignX: currentTransforms.alignX,
                                     },
                                     { scale: val }
-                                  )
-                                );
+                                  );
+                                  return {
+                                    ...updated,
+                                    subject2Scale: val,
+                                    secondaryDjPhotoScale: val,
+                                  };
+                                });
                               } else {
                                 onUpdateTransform?.(val, currentTransforms.offsetY);
                                 setInput((prev) => ({
@@ -8249,8 +8273,8 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                               const parsed = parseFloat(e.target.value);
                               const val = Number.isNaN(parsed) ? 1.0 : parsed;
                               if (isSecondary) {
-                                setInput((prev) =>
-                                  applySecondarySubjectUpdate(
+                                setInput((prev) => {
+                                  const updated = applySecondarySubjectUpdate(
                                     prev,
                                     previewFormat,
                                     {
@@ -8260,8 +8284,13 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                       alignX: currentTransforms.alignX,
                                     },
                                     { scale: val }
-                                  )
-                                );
+                                  );
+                                  return {
+                                    ...updated,
+                                    subject2Scale: val,
+                                    secondaryDjPhotoScale: val,
+                                  };
+                                });
                               } else {
                                 onUpdateTransform?.(val, currentTransforms.offsetY);
                                 setInput((prev) => ({
@@ -8303,8 +8332,8 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                               const parsed = parseInt(e.target.value, 10);
                               const val = Number.isNaN(parsed) ? 0 : parsed;
                               if (isSecondary) {
-                                setInput((prev) =>
-                                  applySecondarySubjectUpdate(
+                                setInput((prev) => {
+                                  const updated = applySecondarySubjectUpdate(
                                     prev,
                                     previewFormat,
                                     {
@@ -8314,8 +8343,13 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                       alignX: currentTransforms.alignX,
                                     },
                                     { offsetY: val }
-                                  )
-                                );
+                                  );
+                                  return {
+                                    ...updated,
+                                    subject2OffsetY: val,
+                                    secondaryDjPhotoOffsetY: val,
+                                  };
+                                });
                               } else {
                                 onUpdateTransform?.(currentTransforms.scale, val);
                                 setInput((prev) => ({
@@ -8358,8 +8392,8 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                               const parsed = parseInt(e.target.value, 10);
                               const val = Number.isNaN(parsed) ? 0 : parsed;
                               if (isSecondary) {
-                                setInput((prev) =>
-                                  applySecondarySubjectUpdate(
+                                setInput((prev) => {
+                                  const updated = applySecondarySubjectUpdate(
                                     prev,
                                     previewFormat,
                                     {
@@ -8369,8 +8403,13 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                       alignX: currentTransforms.alignX,
                                     },
                                     { offsetX: val }
-                                  )
-                                );
+                                  );
+                                  return {
+                                    ...updated,
+                                    subject2OffsetX: val,
+                                    secondaryDjPhotoOffsetX: val,
+                                  };
+                                });
                               } else {
                                 setInput((prev) => ({
                                   ...prev,

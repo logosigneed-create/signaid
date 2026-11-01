@@ -123,6 +123,7 @@ export interface FlyerPosterRendererProps {
 
   // Propriétés interactives du Studio (facultatives)
   activeSection?: string | null;
+  activeSubjectTab?: 'primary' | 'secondary' | 'subject1' | 'subject2' | string;
   focusedTextField?: string | null;
   isDraggingField?: string | null;
   isPickingColor?: boolean;
@@ -159,6 +160,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   layoutTemplate: propLayoutTemplate,
   templateData: propTemplateData,
   activeSection,
+  activeSubjectTab,
   focusedTextField,
   isDraggingField,
   isPickingColor,
@@ -340,8 +342,10 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   // Décor (Arrière-plan) : décalages panoramiques Drag & Drop
   const bgOffsetX = data.backgroundOffsetX ?? 0;
   const bgOffsetY = data.backgroundOffsetY ?? 0;
-  // Facteur de sur-dimensionnement dynamique pour que l'image reste 100% couvrante sans bord noir
-  const bgScale = Math.max(1.06, 1.06 + Math.max(Math.abs(bgOffsetX), Math.abs(bgOffsetY)) * 0.02) * (data.backgroundScale ?? 1.0);
+  // Échelle fixe et couvrante avec marge de sécurité stable (1.15 min, absorbant dynamiquement les décalages de translation sans bords noirs)
+  const maxBgOffset = Math.max(Math.abs(bgOffsetX), Math.abs(bgOffsetY));
+  const dynamicSafetyScale = Math.max(1.15, 1.15 + (maxBgOffset / 100) * 0.4);
+  const bgScale = dynamicSafetyScale * (data.backgroundScale ?? 1.0);
 
   // État et contrôleurs de glisser-déposer (Drag & Drop) intuitif du Sujet 1
   const [isLocalDraggingSubject, setIsLocalDraggingSubject] = React.useState(false);
@@ -506,6 +510,13 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     handleSubjectStart(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
   };
 
+  const handleSubjectPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    e.preventDefault();
+    e.stopPropagation();
+    handleSubjectStart(e.clientX, e.clientY, e.currentTarget, e);
+  };
+
   // Second sujet (duo / B2B) si présent
   const secondarySubjectImage = data.secondaryDjPhoto || null;
   const secondaryTr = resolveSecondarySubjectTransform(
@@ -514,8 +525,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     subjectImage ? { scale: subjectScale, offsetY: subjectOffsetY, offsetX: subjectOffsetX, alignX: subjectAlignX } : null
   );
   const secondarySubjectScale = data.subject2Scale ?? data.secondaryDjPhotoScale ?? secondaryTr.scale;
-  const secondarySubjectOffsetY = data.subject2OffsetY ?? data.secondaryDjPhotoOffsetY ?? secondaryTr.offsetY;
-  const secondarySubjectOffsetX = data.subject2OffsetX ?? data.secondaryDjPhotoOffsetX ?? secondaryTr.offsetX;
+  const secondarySubjectOffsetY = data.subject2OffsetY ?? data.secondaryDjPhotoOffsetY ?? secondaryTr.offsetY ?? 0;
+  const secondarySubjectOffsetX = data.subject2OffsetX ?? data.secondaryDjPhotoOffsetX ?? secondaryTr.offsetX ?? 0;
 
   // État et contrôleurs de glisser-déposer (Drag & Drop) intuitif du Sujet 2
   const [isLocalDraggingSubject2, setIsLocalDraggingSubject2] = React.useState(false);
@@ -589,18 +600,26 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       const newY = Math.round((state.initialOffsetY + deltaPercentY) * 10) / 10;
 
       const clampedX = Math.max(-80, Math.min(80, newX));
-      const clampedY = Math.max(-60, Math.min(60, newY));
+      const clampedY = Math.max(-80, Math.min(100, newY));
 
       if (setInput) {
         setInput((prev) => {
-          return applySecondarySubjectUpdate(
+          const updated = applySecondarySubjectUpdate(
             prev,
             targetFormatKey,
             { scale: subjectScale, offsetY: subjectOffsetY, offsetX: subjectOffsetX, alignX: subjectAlignX },
             { offsetX: clampedX, offsetY: clampedY }
           );
+          return {
+            ...updated,
+            subject2OffsetX: clampedX,
+            subject2OffsetY: clampedY,
+            secondaryDjPhotoOffsetX: clampedX,
+            secondaryDjPhotoOffsetY: clampedY,
+          };
         });
       }
+      onSubjectDragMove?.(deltaX, deltaY);
     };
 
     const handleWindowUp = (upEvt: MouseEvent | TouchEvent) => {
@@ -610,7 +629,9 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       subject2DragRef.current = null;
       setIsLocalDraggingSubject2(false);
 
-      if (!didMove) {
+      if (didMove) {
+        onSubjectDragEnd?.(upEvt);
+      } else {
         onVisualElementClick?.('subject2' as any);
       }
     };
@@ -643,6 +664,13 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     if (e.touches.length !== 1) return;
     e.stopPropagation();
     handleSubject2Start(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
+  };
+
+  const handleSubject2PointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    e.preventDefault();
+    e.stopPropagation();
+    handleSubject2Start(e.clientX, e.clientY, e.currentTarget, e);
   };
 
   // État et contrôleurs de glisser-déposer (Drag & Drop) intuitif du Décor (Arrière-plan)
@@ -714,8 +742,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       const newX = Math.round((state.initialOffsetX + deltaPercentX) * 10) / 10;
       const newY = Math.round((state.initialOffsetY + deltaPercentY) * 10) / 10;
 
-      const clampedX = Math.max(-35, Math.min(35, newX));
-      const clampedY = Math.max(-35, Math.min(35, newY));
+      const clampedX = Math.max(-25, Math.min(25, newX));
+      const clampedY = Math.max(-25, Math.min(25, newY));
 
       if (setInput) {
         setInput((prev) => ({
@@ -763,25 +791,52 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     handleBgStart(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
   };
 
-  // Opacité, Dégradé Fondu Bas et Blend-Mode du sujet
+  const handleBgPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    handleBgStart(e.clientX, e.clientY, e.currentTarget, e);
+  };
+
+  // Opacité, Dégradé Fondu Bas et Blend-Mode du Sujet 1
   const subjectOpacity = typeof subject?.opacity === 'number'
     ? subject.opacity
     : (typeof data.djPhotoOpacity === 'number' ? data.djPhotoOpacity : 1);
 
   const subjectFade = typeof subject?.bottomFade === 'number'
     ? subject.bottomFade
-    : (data.isSubjectGradientFade !== false && typeof data.subjectFadeIntensity === 'number' ? data.subjectFadeIntensity : 0);
-  const hasSubjectFade = subjectFade > 0;
-  const fadeStartPercent = Math.max(10, 100 - subjectFade);
-  const containerFadeMask: React.CSSProperties = hasSubjectFade
+    : (typeof (data as any).subjectBottomFade === 'number'
+        ? (data as any).subjectBottomFade
+        : (typeof data.subjectFadeIntensity === 'number'
+            ? data.subjectFadeIntensity
+            : (typeof (data as any).bottomFade === 'number' ? (data as any).bottomFade : 0)));
+
+  const s1FadeMaskStyle: React.CSSProperties = subjectFade > 0
     ? {
-      WebkitMaskImage: `linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) ${fadeStartPercent}%, transparent 100%)`,
-      maskImage: `linear-gradient(to bottom, rgba(0,0,0,1) 0%, rgba(0,0,0,1) ${fadeStartPercent}%, transparent 100%)`,
-    }
+        WebkitMaskImage: `linear-gradient(to top, transparent 0%, black ${subjectFade}%, black 100%)`,
+        maskImage: `linear-gradient(to top, transparent 0%, black ${subjectFade}%, black 100%)`,
+      }
     : {
-      WebkitMaskImage: 'none',
-      maskImage: 'none',
-    };
+        WebkitMaskImage: 'none',
+        maskImage: 'none',
+      };
+
+  // Dégradé Fondu Bas du Sujet 2
+  const subject2Fade = typeof (data as any).secondarySubjectFadeIntensity === 'number'
+    ? (data as any).secondarySubjectFadeIntensity
+    : (typeof (data as any).subject2BottomFade === 'number'
+        ? (data as any).subject2BottomFade
+        : (typeof (data as any).secondaryBottomFade === 'number'
+            ? (data as any).secondaryBottomFade
+            : 0));
+
+  const s2FadeMaskStyle: React.CSSProperties = subject2Fade > 0
+    ? {
+        WebkitMaskImage: `linear-gradient(to top, transparent 0%, black ${subject2Fade}%, black 100%)`,
+        maskImage: `linear-gradient(to top, transparent 0%, black ${subject2Fade}%, black 100%)`,
+      }
+    : {
+        WebkitMaskImage: 'none',
+        maskImage: 'none',
+      };
 
   const isHarmonized = subject?.isHarmonized ?? (data.isSubjectHarmonized ?? false);
   const rawBlendMode = subject?.blendMode || data.subjectBlendMode || 'normal';
@@ -887,7 +942,20 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const cartoucheColor = cartouche?.color ?? resolvedColors.infoBadge;
   const cartoucheOffsetX = cartouche?.offsetX ?? resolvedOffsetsX.infoBadge ?? 0;
   const cartoucheOffsetY = cartouche?.offsetY ?? resolvedOffsetsY.infoBadge ?? 0;
-  const hasCartoucheContent = Boolean(cartoucheDate?.trim() || cartoucheTime?.trim() || cartoucheVenue?.trim() || (isInteractive && ['date', 'timeSlot', 'venue'].includes(focusedTextField || '')));
+  const hasCartoucheDate = Boolean(cartoucheDate && cartoucheDate.trim().length > 0);
+  const hasCartoucheTime = Boolean(cartoucheTime && cartoucheTime.trim().length > 0);
+  const hasCartoucheVenue = Boolean(cartoucheVenue && cartoucheVenue.trim().length > 0);
+  const effectiveFocusedField = (isInteractive && !isExporting) ? focusedTextField : null;
+  const isDateFocused = Boolean(effectiveFocusedField === 'date');
+  const isTimeFocused = Boolean(effectiveFocusedField === 'timeSlot');
+  const isVenueFocused = Boolean(effectiveFocusedField === 'venue');
+  const isInfoBadgeFocused = Boolean(effectiveFocusedField === 'infoBadge');
+  const hasCartoucheContent = Boolean(
+    hasCartoucheDate || isDateFocused ||
+    hasCartoucheTime || isTimeFocused ||
+    hasCartoucheVenue || isVenueFocused ||
+    isInfoBadgeFocused
+  );
 
   const infoBadgeStyle: React.CSSProperties = isLightCanvas
     ? {
@@ -903,14 +971,34 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       backdropFilter: 'blur(16px)',
     };
 
-  // 6. Gestion interactive vs passive (Studio vs Live Hub)
-  const isDecorActive = isInteractive && !isExporting && (!activeSection || activeSection === 'decor');
-  const isSubjectActive = isInteractive && !isExporting && (!activeSection || activeSection === 'subject');
-  const isSubject2Active = isInteractive && !isExporting && (!activeSection || activeSection === 'subject2' || activeSection === 'subject');
-  const isLogoActive = isInteractive && !isExporting && (!activeSection || activeSection === 'logo');
-  const isTextsActive = isInteractive && !isExporting && (!activeSection || activeSection === 'texts' || activeSection === 'textSizes');
-  const canInteractTexts = isInteractive && !isExporting;
-  const effectiveFocusedField = (isInteractive && !isExporting) ? focusedTextField : null;
+  // Sections contextuelles strictes (Décor = volet 1, Sujet = volet 2, Textes = volet 5)
+  const isDecorSection = activeSection === 'decor';
+  const isSubjectSection = activeSection === 'subject' || activeSection === 'subject2';
+  const isTextSection = activeSection === 'text' || activeSection === 'texts' || activeSection === 'textSizes';
+  const isLogoSection = activeSection === 'logo';
+
+  // Gestion de priorité d'interaction selon l'onglet actif (Sujet 1 vs Sujet 2)
+  const isSubject2Tab = activeSubjectTab === 'subject2' || activeSubjectTab === 'secondary' || activeSection === 'subject2';
+  const isSubject1Tab = !isSubject2Tab;
+
+  // 1. Décor réactif STRICTEMENT quand activeSection === 'decor' (ou volet 1 ouvert)
+  const isDecorPointerActive = isInteractive && !isExporting && isDecorSection;
+  const isDecorActive = isDecorPointerActive;
+
+  // 2. Sujets réactifs STRICTEMENT quand activeSection === 'subject' (ou volet 2 ouvert)
+  const isS1PointerActive = isInteractive && !isExporting && isSubjectSection && isSubject1Tab;
+  const isS2PointerActive = isInteractive && !isExporting && isSubjectSection && isSubject2Tab;
+  const isSubjectActive = isS1PointerActive;
+  const isSubject2Active = isS2PointerActive;
+
+  // Hiérarchie visuelle z-index Sujet 1 vs Sujet 2
+  const s1ZIndex = isSubject2Tab ? 20 : (isSubject1InFront ? 22 : 20);
+  const s2ZIndex = isSubject2Tab ? 23 : (isSubject1InFront ? 20 : 22);
+
+  // 3. Textes réactifs STRICTEMENT quand activeSection === 'text' (ou volet 5 ouvert)
+  const isTextsActive = isInteractive && !isExporting && isTextSection;
+  const canInteractTexts = isTextsActive;
+  const isLogoActive = isInteractive && !isExporting && isLogoSection;
 
   // Contrôleurs de glisser-déposer interne pour les blocs de texte si non passés par le parent
   const textDragRef = React.useRef<{
@@ -1416,19 +1504,6 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
             >
               {accentText || (isAccentFocused ? ' ' : '')}
             </div>
-
-            {/* Trait brush vectoriel SVG soulignant le mot d'accent */}
-            <svg
-              viewBox="0 0 260 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              className="w-[65%] max-w-[280px] h-auto mt-0.5 mx-auto overflow-visible select-none pointer-events-none drop-shadow-[0_2px_6px_rgba(249,115,22,0.6)]"
-            >
-              <path
-                d="M3 10C35 4 80 12 118 6C155 1 195 11 235 5C246 3 255 7 257 9C248 11 225 12 198 11C152 10 108 14 62 12C38 11 16 13 3 11Z"
-                fill={primaryColor}
-              />
-            </svg>
           </div>
         )}
       </div>
@@ -1457,7 +1532,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         style={{ pointerEvents: 'none' }}
       >
         {/* Accroche Gauche */}
-        {Boolean(leftText?.trim() || isLeftFocused) && (
+        {Boolean((leftText && leftText.trim().length > 0) || isLeftFocused) && (
           <div
             data-testid="poster-semantic-top-dual-left"
             data-tap-edit="topTextLeft"
@@ -1491,7 +1566,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         )}
 
         {/* Accroche Droite */}
-        {Boolean(rightText?.trim() || isRightFocused) && (
+        {Boolean((rightText && rightText.trim().length > 0) || isRightFocused) && (
           <div
             data-testid="poster-semantic-top-dual-right"
             data-tap-edit="topTextRight"
@@ -1524,86 +1599,80 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           </div>
         )}
 
-        {/* Bloc Bas (Centré) */}
-        <div
-          data-testid="poster-bottom-impact-cta"
-          className="absolute bottom-[8%] left-1/2 -translate-x-1/2 w-[90%] text-center flex flex-col items-center select-none pointer-events-none"
-          style={{ pointerEvents: 'none' }}
-        >
-          {/* Ligne 1 : Titre Principal */}
-          {Boolean(titleText?.trim() || isTitleFocused) && (
-            <div
-              data-tap-edit="bottomTitle"
-              onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, 'eventName', 'bottomTitle') : undefined}
-              onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
-              onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onClick={isTextsActive ? (e) => {
-                e.stopPropagation();
-                onVisualElementClick?.('texts', 'bottomTitle');
-              } : undefined}
-              className={`font-black text-white ${isBannerFormat ? 'text-[clamp(20px,4.5cqi,38px)]' : 'text-[clamp(26px,5.5cqi,48px)]'} uppercase tracking-wider drop-shadow-lg w-full transition-all select-none leading-none ${
-                isTextsActive
-                  ? isDraggingField === 'eventName'
-                    ? 'pointer-events-auto cursor-grabbing ring-2 ring-emerald-400 rounded-lg p-1 bg-emerald-400/20 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.85)] scale-[1.01]'
-                    : isTitleFocused
-                      ? 'pointer-events-auto cursor-grab ring-2 ring-emerald-400 rounded-lg p-1 bg-emerald-400/20 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.85)] scale-[1.01]'
-                      : 'pointer-events-auto cursor-grab hover:ring-1 hover:ring-emerald-400/50 rounded-lg'
-                  : 'pointer-events-none'
-              }`}
-              style={{
-                transform: `translateX(${resolvedOffsetsX.eventName ?? 0}%) translateY(${resolvedOffsetsY.eventName ?? 0}cqi)`,
-                pointerEvents: isTextsActive ? 'auto' : 'none',
-                touchAction: 'none',
-              }}
-            >
-              {titleText || (isTitleFocused ? ' ' : '')}
-            </div>
-          )}
-
-          {/* Ligne 2 : Mot d'accent avec son trait souligné dynamique */}
-          {Boolean(accentText?.trim() || isAccentFocused) && (
-            <div
-              data-tap-edit="bottomAccent"
-              onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, 'punchline', 'bottomAccent') : undefined}
-              onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
-              onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onClick={isTextsActive ? (e) => {
-                e.stopPropagation();
-                onVisualElementClick?.('texts', 'bottomAccent');
-              } : undefined}
-              className={`flex flex-col items-center justify-center font-bold italic ${isBannerFormat ? 'text-[clamp(22px,5cqi,42px)]' : 'text-[clamp(30px,6.5cqi,56px)]'} tracking-tight w-full transition-all select-none leading-tight mt-1 ${
-                isTextsActive
-                  ? isDraggingField === 'punchline'
-                    ? 'pointer-events-auto cursor-grabbing ring-2 ring-emerald-400 rounded-lg p-1 bg-emerald-400/20 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.85)] scale-[1.01]'
-                    : isAccentFocused
-                      ? 'pointer-events-auto cursor-grab ring-2 ring-emerald-400 rounded-lg p-1 bg-emerald-400/20 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.85)] scale-[1.01]'
-                      : 'pointer-events-auto cursor-grab hover:ring-1 hover:ring-emerald-400/50 rounded-lg'
-                  : 'pointer-events-none'
-              }`}
-              style={{
-                color: primaryColor,
-                transform: `translateX(${resolvedOffsetsX.punchline ?? 0}%) translateY(${resolvedOffsetsY.punchline ?? 0}cqi)`,
-                pointerEvents: isTextsActive ? 'auto' : 'none',
-                touchAction: 'none',
-              }}
-            >
-              <span>{accentText || (isAccentFocused ? ' ' : '')}</span>
-
-              {/* Trait souligné vectoriel SVG STRICTEMENT encapsulé dans la condition du mot d'accent */}
-              <svg
-                className={`${isBannerFormat ? 'w-36 h-1.5' : 'w-48 h-2'} mt-0.5 overflow-visible select-none pointer-events-none`}
-                viewBox="0 0 260 16"
-                fill="currentColor"
-                xmlns="http://www.w3.org/2000/svg"
-                style={{ pointerEvents: 'none', color: primaryColor }}
+        {/* Bloc Bas (Centré) - Uniquement si du texte est présent */}
+        {Boolean(
+          (titleText && titleText.trim().length > 0) || isTitleFocused ||
+          (accentText && accentText.trim().length > 0) || isAccentFocused
+        ) && (
+          <div
+            data-testid="poster-bottom-impact-cta"
+            className="absolute bottom-[8%] left-1/2 -translate-x-1/2 w-[90%] text-center flex flex-col items-center select-none pointer-events-none"
+            style={{ pointerEvents: 'none' }}
+          >
+            {/* Ligne 1 : Titre Principal */}
+            {Boolean((titleText && titleText.trim().length > 0) || isTitleFocused) && (
+              <div
+                data-tap-edit="bottomTitle"
+                onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, 'eventName', 'bottomTitle') : undefined}
+                onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
+                onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
+                onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
+                onClick={isTextsActive ? (e) => {
+                  e.stopPropagation();
+                  onVisualElementClick?.('texts', 'bottomTitle');
+                } : undefined}
+                className={`font-black text-white ${isBannerFormat ? 'text-[clamp(20px,4.5cqi,38px)]' : 'text-[clamp(26px,5.5cqi,48px)]'} uppercase tracking-wider drop-shadow-lg w-full transition-all select-none leading-none ${
+                  isTextsActive
+                    ? isDraggingField === 'eventName'
+                      ? 'pointer-events-auto cursor-grabbing ring-2 ring-emerald-400 rounded-lg p-1 bg-emerald-400/20 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.85)] scale-[1.01]'
+                      : isTitleFocused
+                        ? 'pointer-events-auto cursor-grab ring-2 ring-emerald-400 rounded-lg p-1 bg-emerald-400/20 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.85)] scale-[1.01]'
+                        : 'pointer-events-auto cursor-grab hover:ring-1 hover:ring-emerald-400/50 rounded-lg'
+                    : 'pointer-events-none'
+                }`}
+                style={{
+                  transform: `translateX(${resolvedOffsetsX.eventName ?? 0}%) translateY(${resolvedOffsetsY.eventName ?? 0}cqi)`,
+                  pointerEvents: isTextsActive ? 'auto' : 'none',
+                  touchAction: 'none',
+                }}
               >
-                <path d="M3 10C35 4 80 12 118 6C155 1 195 11 235 5C246 3 255 7 257 9C248 11 225 12 198 11C152 10 108 14 62 12C38 11 16 13 3 11Z" />
-              </svg>
-            </div>
-          )}
-        </div>
+                {titleText || (isTitleFocused ? ' ' : '')}
+              </div>
+            )}
+
+            {/* Ligne 2 : Mot d'accent */}
+            {Boolean((accentText && accentText.trim().length > 0) || isAccentFocused) && (
+              <div
+                data-tap-edit="bottomAccent"
+                onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, 'punchline', 'bottomAccent') : undefined}
+                onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
+                onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
+                onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
+                onClick={isTextsActive ? (e) => {
+                  e.stopPropagation();
+                  onVisualElementClick?.('texts', 'bottomAccent');
+                } : undefined}
+                className={`flex flex-col items-center justify-center font-bold italic ${isBannerFormat ? 'text-[clamp(22px,5cqi,42px)]' : 'text-[clamp(30px,6.5cqi,56px)]'} tracking-tight w-full transition-all select-none leading-tight mt-1 ${
+                  isTextsActive
+                    ? isDraggingField === 'punchline'
+                      ? 'pointer-events-auto cursor-grabbing ring-2 ring-emerald-400 rounded-lg p-1 bg-emerald-400/20 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.85)] scale-[1.01]'
+                      : isAccentFocused
+                        ? 'pointer-events-auto cursor-grab ring-2 ring-emerald-400 rounded-lg p-1 bg-emerald-400/20 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.85)] scale-[1.01]'
+                        : 'pointer-events-auto cursor-grab hover:ring-1 hover:ring-emerald-400/50 rounded-lg'
+                    : 'pointer-events-none'
+                }`}
+                style={{
+                  color: primaryColor,
+                  transform: `translateX(${resolvedOffsetsX.punchline ?? 0}%) translateY(${resolvedOffsetsY.punchline ?? 0}cqi)`,
+                  pointerEvents: isTextsActive ? 'auto' : 'none',
+                  touchAction: 'none',
+                }}
+              >
+                <span>{accentText || (isAccentFocused ? ' ' : '')}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -1626,7 +1695,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     const ticketCta = headlinerSlots.ticketCta;
 
     const renderArtist = () => {
-      if (!artistName?.trim() && !isArtistFocused) return null;
+      if ((!artistName || artistName.trim().length === 0) && !isArtistFocused) return null;
       return (
         <div
           data-testid="poster-headliner-artist"
@@ -1672,114 +1741,122 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       return renderArtist();
     }
 
+    const hasHeadlinerCapsuleContent = Boolean(
+      (subRole && subRole.trim().length > 0) || isSubRoleFocused ||
+      (datePlace && datePlace.trim().length > 0) || isDatePlaceFocused ||
+      (ticketCta && ticketCta.trim().length > 0) || isTicketFocused
+    );
+
     if (layer === 'front') {
       return (
         <>
           {!isTitleBehindSubject && renderArtist()}
 
-          {/* Capsule compacte semi-sombre lisible en bas : Sous-titre et date intégrés */}
-          <div
-            data-testid="poster-headliner-bottom-capsule"
-            className="absolute bottom-[7%] left-1/2 -translate-x-1/2 max-w-[88%] w-auto pointer-events-none select-none"
-            style={{
-              transform: `translateX(${resolvedOffsetsX.infoBadge ?? 0}%) translateY(${resolvedOffsetsY.infoBadge ?? 0}cqi)`,
-              zIndex: layerZIndex,
-              pointerEvents: 'none',
-            }}
-          >
+          {/* Capsule compacte semi-sombre lisible en bas : Sous-titre et date intégrés - Uniquement si du texte est présent */}
+          {hasHeadlinerCapsuleContent && (
             <div
-              className="bg-neutral-950/85 backdrop-blur-md border border-neutral-700/80 rounded-2xl px-5 py-2.5 sm:px-7 sm:py-3.5 shadow-[0_12px_36px_rgba(0,0,0,0.9)] flex flex-col items-center justify-center text-center gap-1 pointer-events-none"
-              style={{ pointerEvents: 'none' }}
+              data-testid="poster-headliner-bottom-capsule"
+              className="absolute bottom-[7%] left-1/2 -translate-x-1/2 max-w-[88%] w-auto pointer-events-none select-none"
+              style={{
+                transform: `translateX(${resolvedOffsetsX.infoBadge ?? 0}%) translateY(${resolvedOffsetsY.infoBadge ?? 0}cqi)`,
+                zIndex: layerZIndex,
+                pointerEvents: 'none',
+              }}
             >
-              {/* Sous-titre / Style */}
-              {Boolean(subRole?.trim() || isSubRoleFocused) && (
-                <div
-                  data-tap-edit="subRole"
-                  onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, 'punchline', 'subRole') : undefined}
-                  onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
-                  onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
-                  onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
-                  onClick={isTextsActive ? (e) => {
-                    e.stopPropagation();
-                    onVisualElementClick?.('texts', 'subRole');
-                  } : undefined}
-                  className={`font-mono font-bold tracking-widest uppercase transition-all select-none ${
-                    isTextsActive
-                      ? isSubRoleFocused
-                        ? 'pointer-events-auto cursor-grab text-emerald-300 underline font-black ring-1 ring-emerald-400 rounded px-1'
-                        : 'pointer-events-auto cursor-grab hover:underline'
-                      : 'pointer-events-none'
-                  }`}
-                  style={{
-                    color: primaryColor,
-                    fontSize: isBannerFormat ? '1.8cqi' : '2.2cqi',
-                    pointerEvents: isTextsActive ? 'auto' : 'none',
-                    touchAction: 'none',
-                  }}
-                >
-                  {subRole || (isSubRoleFocused ? ' ' : '')}
-                </div>
-              )}
+              <div
+                className="bg-neutral-950/85 backdrop-blur-md border border-neutral-700/80 rounded-2xl px-5 py-2.5 sm:px-7 sm:py-3.5 shadow-[0_12px_36px_rgba(0,0,0,0.9)] flex flex-col items-center justify-center text-center gap-1 pointer-events-none"
+                style={{ pointerEvents: 'none' }}
+              >
+                {/* Sous-titre / Style */}
+                {Boolean((subRole && subRole.trim().length > 0) || isSubRoleFocused) && (
+                  <div
+                    data-tap-edit="subRole"
+                    onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, 'punchline', 'subRole') : undefined}
+                    onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
+                    onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
+                    onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
+                    onClick={isTextsActive ? (e) => {
+                      e.stopPropagation();
+                      onVisualElementClick?.('texts', 'subRole');
+                    } : undefined}
+                    className={`font-mono font-bold tracking-widest uppercase transition-all select-none ${
+                      isTextsActive
+                        ? isSubRoleFocused
+                          ? 'pointer-events-auto cursor-grab text-emerald-300 underline font-black ring-1 ring-emerald-400 rounded px-1'
+                          : 'pointer-events-auto cursor-grab hover:underline'
+                        : 'pointer-events-none'
+                    }`}
+                    style={{
+                      color: primaryColor,
+                      fontSize: isBannerFormat ? '1.8cqi' : '2.2cqi',
+                      pointerEvents: isTextsActive ? 'auto' : 'none',
+                      touchAction: 'none',
+                    }}
+                  >
+                    {subRole || (isSubRoleFocused ? ' ' : '')}
+                  </div>
+                )}
 
-              {/* Date & Lieu */}
-              {Boolean(datePlace?.trim() || isDatePlaceFocused) && (
-                <div
-                  data-tap-edit="datePlace"
-                  onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, 'infoBadge', 'datePlace') : undefined}
-                  onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
-                  onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
-                  onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
-                  onClick={isTextsActive ? (e) => {
-                    e.stopPropagation();
-                    onVisualElementClick?.('texts', 'datePlace');
-                  } : undefined}
-                  className={`font-mono font-black tracking-wide text-white uppercase transition-all select-none ${
-                    isTextsActive
-                      ? isDatePlaceFocused
-                        ? 'pointer-events-auto cursor-grab text-emerald-300 underline ring-1 ring-emerald-400 rounded px-1'
-                        : 'pointer-events-auto cursor-grab hover:underline'
-                      : 'pointer-events-none'
-                  }`}
-                  style={{
-                    fontSize: isBannerFormat ? '2.1cqi' : '2.6cqi',
-                    pointerEvents: isTextsActive ? 'auto' : 'none',
-                    touchAction: 'none',
-                  }}
-                >
-                  {datePlace || (isDatePlaceFocused ? ' ' : '')}
-                </div>
-              )}
+                {/* Date & Lieu */}
+                {Boolean((datePlace && datePlace.trim().length > 0) || isDatePlaceFocused) && (
+                  <div
+                    data-tap-edit="datePlace"
+                    onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, 'infoBadge', 'datePlace') : undefined}
+                    onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
+                    onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
+                    onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
+                    onClick={isTextsActive ? (e) => {
+                      e.stopPropagation();
+                      onVisualElementClick?.('texts', 'datePlace');
+                    } : undefined}
+                    className={`font-mono font-black tracking-wide text-white uppercase transition-all select-none ${
+                      isTextsActive
+                        ? isDatePlaceFocused
+                          ? 'pointer-events-auto cursor-grab text-emerald-300 underline ring-1 ring-emerald-400 rounded px-1'
+                          : 'pointer-events-auto cursor-grab hover:underline'
+                        : 'pointer-events-none'
+                    }`}
+                    style={{
+                      fontSize: isBannerFormat ? '2.1cqi' : '2.6cqi',
+                      pointerEvents: isTextsActive ? 'auto' : 'none',
+                      touchAction: 'none',
+                    }}
+                  >
+                    {datePlace || (isDatePlaceFocused ? ' ' : '')}
+                  </div>
+                )}
 
-              {/* CTA Billetterie (optionnel) */}
-              {Boolean(ticketCta?.trim() || isTicketFocused) && (
-                <div
-                  data-tap-edit="ticketCta"
-                  onClick={isTextsActive ? (e) => {
-                    e.stopPropagation();
-                    onVisualElementClick?.('texts', 'ticketCta');
-                  } : undefined}
-                  className={`font-mono font-bold tracking-wider uppercase mt-0.5 px-2.5 py-0.5 rounded-full transition-all select-none ${
-                    isTextsActive
-                      ? isTicketFocused
-                        ? 'pointer-events-auto cursor-pointer ring-1'
-                        : 'pointer-events-auto cursor-pointer hover:opacity-90'
-                      : 'pointer-events-none'
-                  }`}
-                  style={{
-                    fontSize: isBannerFormat ? '1.5cqi' : '1.8cqi',
-                    pointerEvents: isTextsActive ? 'auto' : 'none',
-                    color: primaryColor,
-                    borderColor: `${primaryColor}66`,
-                    backgroundColor: `${primaryColor}22`,
-                    borderWidth: '1px',
-                    borderStyle: 'solid',
-                  }}
-                >
-                  {ticketCta || (isTicketFocused ? ' ' : '')}
-                </div>
-              )}
+                {/* CTA Billetterie (optionnel) */}
+                {Boolean((ticketCta && ticketCta.trim().length > 0) || isTicketFocused) && (
+                  <div
+                    data-tap-edit="ticketCta"
+                    onClick={isTextsActive ? (e) => {
+                      e.stopPropagation();
+                      onVisualElementClick?.('texts', 'ticketCta');
+                    } : undefined}
+                    className={`font-mono font-bold tracking-wider uppercase mt-0.5 px-2.5 py-0.5 rounded-full transition-all select-none ${
+                      isTextsActive
+                        ? isTicketFocused
+                          ? 'pointer-events-auto cursor-pointer ring-1'
+                          : 'pointer-events-auto cursor-pointer hover:opacity-90'
+                        : 'pointer-events-none'
+                    }`}
+                    style={{
+                      fontSize: isBannerFormat ? '1.5cqi' : '1.8cqi',
+                      pointerEvents: isTextsActive ? 'auto' : 'none',
+                      color: primaryColor,
+                      borderColor: `${primaryColor}66`,
+                      backgroundColor: `${primaryColor}22`,
+                      borderWidth: '1px',
+                      borderStyle: 'solid',
+                    }}
+                  >
+                    {ticketCta || (isTicketFocused ? ' ' : '')}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </>
       );
     }
@@ -1802,6 +1879,13 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     const tagline = minimalSlots.tagline;
     const releaseDate = minimalSlots.releaseDate;
 
+    const hasMinimalContent = Boolean(
+      (brandName && brandName.trim().length > 0) || isBrandFocused ||
+      (tagline && tagline.trim().length > 0) || isTaglineFocused ||
+      (releaseDate && releaseDate.trim().length > 0) || isReleaseDateFocused
+    );
+    if (!hasMinimalContent) return null;
+
     return (
       <div
         data-testid="poster-minimal-brand-composition"
@@ -1809,7 +1893,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         style={{ zIndex: layerZIndex, pointerEvents: 'none' }}
       >
         {/* Nom de Marque / Collectif : Typographie épurée, grand interlettrage */}
-        {Boolean(brandName?.trim() || isBrandFocused) && (
+        {Boolean((brandName && brandName.trim().length > 0) || isBrandFocused) && (
           <div
             data-tap-edit="brandName"
             onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, 'eventName', 'brandName') : undefined}
@@ -1846,11 +1930,16 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           </div>
         )}
 
-        {/* Filet séparateur subtil */}
-        <div className="w-14 h-[2px] my-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />
+        {/* Filet séparateur subtil - Uniquement si nom de marque et (slogan ou date) sont présents */}
+        {Boolean(
+          ((brandName && brandName.trim().length > 0) || isBrandFocused) &&
+          (((tagline && tagline.trim().length > 0) || isTaglineFocused) || ((releaseDate && releaseDate.trim().length > 0) || isReleaseDateFocused))
+        ) && (
+          <div className="w-14 h-[2px] my-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />
+        )}
 
         {/* Slogan / Manifeste : Typographie fine & épurée */}
-        {Boolean(tagline?.trim() || isTaglineFocused) && (
+        {Boolean((tagline && tagline.trim().length > 0) || isTaglineFocused) && (
           <div
             data-tap-edit="tagline"
             onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, 'headerTagline', 'tagline') : undefined}
@@ -1888,7 +1977,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         )}
 
         {/* Mention Capsule : Badge épuré */}
-        {Boolean(releaseDate?.trim() || isReleaseDateFocused) && (
+        {Boolean((releaseDate && releaseDate.trim().length > 0) || isReleaseDateFocused) && (
           <div
             data-tap-edit="releaseDate"
             onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, 'infoBadge', 'releaseDate') : undefined}
@@ -2033,8 +2122,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         {/* 1. Fond du Décor / Ambiance avec Drag & Drop */}
         <div
           data-canvas-bg="true"
-          className={`absolute inset-0 w-full h-full transition-colors duration-300 select-none z-0 overflow-hidden ${
-            isInteractive
+          className={`absolute inset-0 w-full h-full overflow-hidden transition-colors duration-300 select-none z-0 ${
+            isDecorPointerActive
               ? isLocalDraggingBg
                 ? 'pointer-events-auto cursor-grabbing active:cursor-grabbing'
                 : 'pointer-events-auto cursor-grab active:cursor-grabbing'
@@ -2046,17 +2135,18 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           }`}
           style={{
             backgroundColor: canvasBgColor,
-            pointerEvents: isInteractive ? 'auto' : 'none',
+            pointerEvents: isDecorPointerActive ? 'auto' : 'none',
           }}
-          onMouseDown={isInteractive ? handleBgMouseDown : undefined}
-          onTouchStart={isInteractive ? handleBgTouchStart : undefined}
-          onClick={isInteractive ? (e) => {
+          onPointerDown={isDecorPointerActive ? handleBgPointerDown : undefined}
+          onMouseDown={isDecorPointerActive ? handleBgMouseDown : undefined}
+          onTouchStart={isDecorPointerActive ? handleBgTouchStart : undefined}
+          onClick={isDecorPointerActive ? (e) => {
             if (!bgDragRef.current?.hasMoved) {
               e.stopPropagation();
               onVisualElementClick?.('decor');
             }
           } : undefined}
-          title={isInteractive ? "Glisser pour déplacer le décor (ou cliquer pour régler)" : undefined}
+          title={isDecorPointerActive ? "Glisser pour déplacer le décor (ou cliquer pour régler)" : undefined}
         >
           {backgroundUrl && (
             <img
@@ -2068,7 +2158,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
               fetchPriority="high"
               decoding="async"
               onContextMenu={(e) => e.preventDefault()}
-              className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none -webkit-touch-callout-none transition-opacity duration-300"
+              className="w-full h-full object-cover min-w-full min-h-full max-w-none pointer-events-none select-none -webkit-touch-callout-none transition-opacity duration-300"
               style={{
                 WebkitTouchCallout: 'none',
                 WebkitUserSelect: 'none',
@@ -2136,35 +2226,37 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         renderSmartComposition('behind', 10)
       )}
 
-      {/* 4. Image du Sujet 1 (100% opaque, au premier plan de la scène) */}
+      {/* 4. Image du Sujet 1 avec Drag & Drop interactif et détection de clic */}
       {subjectImage && (
         <div
+          data-subject-container="true"
           className={`absolute inset-0 flex ${
             subjectAlignX === 'right'
               ? 'justify-end pr-[8%]'
               : subjectAlignX === 'left'
                 ? 'justify-start pl-[8%]'
                 : 'justify-center'
-          } items-end pointer-events-none ${isSubject1InFront ? 'z-[22]' : 'z-20'} overflow-visible`}
+          } items-end pointer-events-none ${isSubject2Tab ? 'z-20' : (isSubject1InFront ? 'z-[22]' : 'z-20')} overflow-visible`}
           style={{
             transform: `translate(${subjectOffsetX}%, ${subjectOffsetY}%) scale(${subjectScale})`,
             transformOrigin: 'bottom center',
             opacity: subjectOpacity,
             mixBlendMode: blendMode,
             pointerEvents: 'none',
-            zIndex: isSubject1InFront ? 22 : 20,
+            zIndex: s1ZIndex,
           }}
         >
           <div
             className={`relative inline-flex items-end justify-center overflow-visible ${
-              isInteractive
+              isS1PointerActive
                 ? (isLocalDraggingSubject || isDraggingSubject)
                   ? 'cursor-grabbing active:cursor-grabbing pointer-events-auto'
                   : 'cursor-grab active:cursor-grabbing pointer-events-auto'
                 : 'pointer-events-none cursor-default'
             }`}
             style={{
-              pointerEvents: isInteractive ? 'auto' : 'none',
+              pointerEvents: isS1PointerActive ? 'auto' : 'none',
+              ...s1FadeMaskStyle,
             }}
           >
             <img
@@ -2176,20 +2268,19 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
               fetchPriority="high"
               decoding="async"
               onContextMenu={(e) => e.preventDefault()}
-              onMouseDown={isInteractive ? handleSubjectMouseDown : undefined}
-              onTouchStart={isInteractive ? handleSubjectTouchStart : undefined}
-              onClick={isInteractive ? (e) => {
+              onPointerDown={isS1PointerActive ? handleSubjectPointerDown : undefined}
+              onMouseDown={isS1PointerActive ? handleSubjectMouseDown : undefined}
+              onTouchStart={isS1PointerActive ? handleSubjectTouchStart : undefined}
+              onClick={isS1PointerActive ? (e) => {
                 e.stopPropagation();
                 onVisualElementClick?.('subject');
               } : undefined}
-              title={isInteractive ? "Glisser-déposer pour déplacer librement le sujet" : undefined}
+              title={isS1PointerActive ? "Glisser-déposer pour déplacer librement le sujet" : undefined}
               className={`max-h-full max-w-full object-contain object-bottom select-none image-render-hd transition-all ${
-                isInteractive
+                isS1PointerActive
                   ? (isLocalDraggingSubject || isDraggingSubject)
                     ? 'pointer-events-auto cursor-grabbing active:cursor-grabbing ring-2 ring-lime-400 shadow-[0_0_25px_rgba(163,230,53,0.85)] scale-[1.01]'
-                    : isSubjectActive
-                      ? 'pointer-events-auto cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-lime-400/80 ring-1 ring-dashed ring-lime-400/80 shadow-[0_0_15px_rgba(163,230,53,0.25)] rounded-xl'
-                      : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:ring-1 hover:ring-lime-400/50'
+                    : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-lime-400/80 ring-1 ring-dashed ring-lime-400/80 shadow-[0_0_15px_rgba(163,230,53,0.25)] rounded-xl'
                   : 'pointer-events-none cursor-default'
               }`}
               style={{
@@ -2197,12 +2288,13 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                 WebkitUserSelect: 'none',
                 userSelect: 'none',
                 touchAction: 'none',
-                pointerEvents: isInteractive ? 'auto' : 'none',
+                pointerEvents: isS1PointerActive ? 'auto' : 'none',
                 imageRendering: 'high-quality' as any,
                 WebkitBackfaceVisibility: 'hidden',
                 backfaceVisibility: 'hidden',
                 transform: 'translateZ(0)',
                 filter: renderSubjectFilter(),
+                ...s1FadeMaskStyle,
               }}
             />
           </div>
@@ -2212,26 +2304,27 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       {/* Second Sujet B2B si présent avec Drag & Drop interactif */}
       {secondarySubjectImage && (
         <div
-          className={`absolute inset-0 flex items-end justify-center pointer-events-none ${isSubject1InFront ? 'z-20' : 'z-[22]'} overflow-visible`}
+          className={`absolute inset-0 flex items-end justify-center pointer-events-none ${isSubject2Tab ? 'z-[23]' : (isSubject1InFront ? 'z-20' : 'z-[22]')} overflow-visible`}
           style={{
             transform: `translate(${secondarySubjectOffsetX}%, ${secondarySubjectOffsetY}%) scale(${secondarySubjectScale})`,
             transformOrigin: 'bottom center',
             mixBlendMode: 'normal',
             opacity: typeof data.secondaryDjPhotoOpacity === 'number' ? data.secondaryDjPhotoOpacity : 1,
             pointerEvents: 'none',
-            zIndex: isSubject1InFront ? 20 : 22,
+            zIndex: s2ZIndex,
           }}
         >
           <div
             className={`relative inline-flex items-end justify-center overflow-visible ${
-              isInteractive
+              isS2PointerActive
                 ? isLocalDraggingSubject2
                   ? 'cursor-grabbing active:cursor-grabbing pointer-events-auto'
                   : 'cursor-grab active:cursor-grabbing pointer-events-auto'
                 : 'pointer-events-none cursor-default'
             }`}
             style={{
-              pointerEvents: isInteractive ? 'auto' : 'none',
+              pointerEvents: isS2PointerActive ? 'auto' : 'none',
+              ...s2FadeMaskStyle,
             }}
           >
             <img
@@ -2240,20 +2333,19 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
               alt="Second Sujet B2B"
               draggable={false}
               onContextMenu={(e) => e.preventDefault()}
-              onMouseDown={isInteractive ? handleSubject2MouseDown : undefined}
-              onTouchStart={isInteractive ? handleSubject2TouchStart : undefined}
-              onClick={isInteractive ? (e) => {
+              onPointerDown={isS2PointerActive ? handleSubject2PointerDown : undefined}
+              onMouseDown={isS2PointerActive ? handleSubject2MouseDown : undefined}
+              onTouchStart={isS2PointerActive ? handleSubject2TouchStart : undefined}
+              onClick={isS2PointerActive ? (e) => {
                 e.stopPropagation();
                 onVisualElementClick?.('subject2' as any);
               } : undefined}
-              title={isInteractive ? "Glisser-déposer pour déplacer librement le sujet 2" : undefined}
+              title={isS2PointerActive ? "Glisser-déposer pour déplacer librement le sujet 2" : undefined}
               className={`max-h-full max-w-full object-contain object-bottom select-none image-render-hd transition-all ${
-                isInteractive
+                isS2PointerActive
                   ? isLocalDraggingSubject2
                     ? 'pointer-events-auto cursor-grabbing active:cursor-grabbing ring-2 ring-lime-400 shadow-[0_0_25px_rgba(163,230,53,0.85)] scale-[1.01]'
-                    : isSubject2Active
-                      ? 'pointer-events-auto cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-lime-400/80 ring-1 ring-dashed ring-lime-400/80 shadow-[0_0_15px_rgba(163,230,53,0.25)] rounded-xl'
-                      : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:ring-1 hover:ring-lime-400/50'
+                    : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-lime-400/80 ring-1 ring-dashed ring-lime-400/80 shadow-[0_0_15px_rgba(163,230,53,0.25)] rounded-xl'
                   : 'pointer-events-none cursor-default'
               }`}
               style={{
@@ -2261,7 +2353,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                 WebkitUserSelect: 'none',
                 userSelect: 'none',
                 touchAction: 'none',
-                pointerEvents: isInteractive ? 'auto' : 'none',
+                pointerEvents: isS2PointerActive ? 'auto' : 'none',
+                ...s2FadeMaskStyle,
               }}
             />
           </div>
@@ -2369,7 +2462,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                   title={isTextsActive ? "Glisser verticalement pour déplacer ou cliquer pour modifier" : undefined}
                 >
                   <span className="font-bold uppercase whitespace-pre overflow-visible flex items-center justify-center gap-1.5 flex-wrap">
-                    {Boolean(cartoucheDate?.trim() || effectiveFocusedField === 'date') && (
+                    {Boolean(hasCartoucheDate || isDateFocused) && (
                       <span
                         data-tap-edit="date"
                         onClick={isTextsActive ? (e) => {
@@ -2378,16 +2471,16 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                         } : undefined}
                         className={`truncate transition-all ${
                           isTextsActive ? 'cursor-pointer hover:underline' : 'pointer-events-none select-none'
-                        } ${effectiveFocusedField === 'date' ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
+                        } ${isDateFocused ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
                       >
                         {Boolean(cartoucheCalendarUrl) && <span className="mr-0.5 text-lime-400 opacity-90">📅 </span>}
-                        {cartoucheDate || (effectiveFocusedField === 'date' ? ' ' : '')}
+                        {cartoucheDate || (isDateFocused ? ' ' : '')}
                       </span>
                     )}
-                    {Boolean((cartoucheDate?.trim() || effectiveFocusedField === 'date') && (cartoucheTime?.trim() || cartoucheVenue?.trim() || effectiveFocusedField === 'timeSlot' || effectiveFocusedField === 'venue')) && (
+                    {Boolean((hasCartoucheDate || isDateFocused) && (hasCartoucheTime || isTimeFocused || hasCartoucheVenue || isVenueFocused)) && (
                       <span className="opacity-40 select-none shrink-0">•</span>
                     )}
-                    {Boolean(cartoucheTime?.trim() || effectiveFocusedField === 'timeSlot') && (
+                    {Boolean(hasCartoucheTime || isTimeFocused) && (
                       <span
                         data-tap-edit="timeSlot"
                         onClick={isTextsActive ? (e) => {
@@ -2396,15 +2489,15 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                         } : undefined}
                         className={`truncate transition-all ${
                           isTextsActive ? 'cursor-pointer hover:underline' : 'pointer-events-none select-none'
-                        } ${effectiveFocusedField === 'timeSlot' ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
+                        } ${isTimeFocused ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
                       >
-                        {cartoucheTime || (effectiveFocusedField === 'timeSlot' ? ' ' : '')}
+                        {cartoucheTime || (isTimeFocused ? ' ' : '')}
                       </span>
                     )}
-                    {Boolean((cartoucheTime?.trim() || effectiveFocusedField === 'timeSlot') && (cartoucheVenue?.trim() || effectiveFocusedField === 'venue')) && (
+                    {Boolean((hasCartoucheTime || isTimeFocused) && (hasCartoucheVenue || isVenueFocused)) && (
                       <span className="opacity-40 select-none shrink-0">•</span>
                     )}
-                    {Boolean(cartoucheVenue?.trim() || effectiveFocusedField === 'venue') && (
+                    {Boolean(hasCartoucheVenue || isVenueFocused) && (
                       <span
                         data-tap-edit="venue"
                         onClick={isTextsActive ? (e) => {
@@ -2413,10 +2506,10 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                         } : undefined}
                         className={`truncate transition-all ${
                           isTextsActive ? 'cursor-pointer hover:underline' : 'pointer-events-none select-none'
-                        } ${effectiveFocusedField === 'venue' ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
+                        } ${isVenueFocused ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
                       >
                         {Boolean(cartoucheMapsUrl) && <span className="mr-0.5 text-lime-400 opacity-90">📍 </span>}
-                        {cartoucheVenue || (effectiveFocusedField === 'venue' ? ' ' : '')}
+                        {cartoucheVenue || (isVenueFocused ? ' ' : '')}
                       </span>
                     )}
                   </span>
@@ -2450,7 +2543,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                 title={isTextsActive ? "Glisser verticalement pour déplacer ou cliquer pour modifier" : undefined}
               >
                 <span className="font-bold uppercase whitespace-pre overflow-visible flex items-center justify-center gap-1.5 flex-wrap">
-                  {Boolean(cartoucheDate?.trim() || effectiveFocusedField === 'date') && (
+                  {Boolean(hasCartoucheDate || isDateFocused) && (
                     <span
                       data-tap-edit="date"
                       onClick={isTextsActive ? (e) => {
@@ -2459,15 +2552,15 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                       } : undefined}
                       className={`truncate transition-all ${
                         isTextsActive ? 'cursor-pointer hover:underline' : 'pointer-events-none select-none'
-                      } ${effectiveFocusedField === 'date' ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
+                      } ${isDateFocused ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
                     >
-                      {cartoucheDate || (effectiveFocusedField === 'date' ? ' ' : '')}
+                      {cartoucheDate || (isDateFocused ? ' ' : '')}
                     </span>
                   )}
-                  {Boolean((cartoucheDate?.trim() || effectiveFocusedField === 'date') && (cartoucheTime?.trim() || cartoucheVenue?.trim() || effectiveFocusedField === 'timeSlot' || effectiveFocusedField === 'venue')) && (
+                  {Boolean((hasCartoucheDate || isDateFocused) && (hasCartoucheTime || isTimeFocused || hasCartoucheVenue || isVenueFocused)) && (
                     <span className="opacity-40 select-none shrink-0">•</span>
                   )}
-                  {Boolean(cartoucheTime?.trim() || effectiveFocusedField === 'timeSlot') && (
+                  {Boolean(hasCartoucheTime || isTimeFocused) && (
                     <span
                       data-tap-edit="timeSlot"
                       onClick={isTextsActive ? (e) => {
@@ -2476,15 +2569,15 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                       } : undefined}
                       className={`truncate transition-all ${
                         isTextsActive ? 'cursor-pointer hover:underline' : 'pointer-events-none select-none'
-                      } ${effectiveFocusedField === 'timeSlot' ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
+                      } ${isTimeFocused ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
                     >
-                      {cartoucheTime || (effectiveFocusedField === 'timeSlot' ? ' ' : '')}
+                      {cartoucheTime || (isTimeFocused ? ' ' : '')}
                     </span>
                   )}
-                  {Boolean((cartoucheTime?.trim() || effectiveFocusedField === 'timeSlot') && (cartoucheVenue?.trim() || effectiveFocusedField === 'venue')) && (
+                  {Boolean((hasCartoucheTime || isTimeFocused) && (hasCartoucheVenue || isVenueFocused)) && (
                     <span className="opacity-40 select-none shrink-0">•</span>
                   )}
-                  {Boolean(cartoucheVenue?.trim() || effectiveFocusedField === 'venue') && (
+                  {Boolean(hasCartoucheVenue || isVenueFocused) && (
                     <span
                       data-tap-edit="venue"
                       onClick={isTextsActive ? (e) => {
@@ -2493,9 +2586,9 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                       } : undefined}
                       className={`truncate transition-all ${
                         isTextsActive ? 'cursor-pointer hover:underline' : 'pointer-events-none select-none'
-                      } ${effectiveFocusedField === 'venue' ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
+                      } ${isVenueFocused ? 'text-lime-300 underline font-black drop-shadow-[0_0_6px_rgba(163,230,53,0.9)]' : ''}`}
                     >
-                      {cartoucheVenue || (effectiveFocusedField === 'venue' ? ' ' : '')}
+                      {cartoucheVenue || (isVenueFocused ? ' ' : '')}
                     </span>
                   )}
                 </span>
