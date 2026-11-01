@@ -10,6 +10,8 @@ import {
   EventInput,
   PosterTextItem,
   getDefaultFormatTransforms,
+  getDefaultBackgroundTransform,
+  resolveBackgroundTransformForFormat,
   resolveTextScalesForFormat,
   resolveTextOffsetsYForFormat,
   resolveTextOffsetsXForFormat,
@@ -344,32 +346,43 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const subjectOffsetX = subject?.x ?? (activeTransforms.offsetX ?? 0);
   const subjectAlignX = subject?.alignX ?? activeTransforms.alignX ?? 'center';
 
-  // Débattements adaptés pour naviguer dans l'image (bornés à ±35% en X et ±35% en Y)
-  const isStory = format === 'story';
-  const isBanner = format === 'banner' || format === '16:9';
-  const isFlyer = format === 'flyer' || format === 'a3';
+  // Débattements et bornes de drag & drop adaptés par ratio pour préserver la liberté de cadrage sans jamais découvrir le fond de canvas noir
+  const getFormatBgBounds = (fmtKey: 'post' | 'story' | 'banner' | 'a3') => {
+    switch (fmtKey) {
+      case 'story':
+        // Story (9:16) : hauteur couverte à 100%, translation horizontale panoramique étendue, verticale bornée de sécurité
+        return { limitX: 35, limitY: 12 };
+      case 'banner':
+        // Bannière (16:9) : largeur couverte à 100%, translation verticale panoramique étendue, horizontale bornée de sécurité
+        return { limitX: 12, limitY: 35 };
+      case 'post':
+        // Post (1:1) : débattements symétriques et équilibrés
+        return { limitX: 20, limitY: 20 };
+      case 'a3':
+      default:
+        // Flyer / A3 (format vertical standard)
+        return { limitX: 25, limitY: 18 };
+    }
+  };
 
-  const limitX = 35;
-  const limitY = 35;
+  const bgBounds = getFormatBgBounds(targetFormatKey);
 
-  // Décor (Arrière-plan) : décalages panoramiques Drag & Drop bornés à ±35%
-  const rawBgOffsetX = typeof input.backgroundOffsetX === 'number'
-    ? input.backgroundOffsetX
-    : (typeof data.backgroundOffsetX === 'number' ? data.backgroundOffsetX : 0);
-  const rawBgOffsetY = typeof input.backgroundOffsetY === 'number'
-    ? input.backgroundOffsetY
-    : (typeof data.backgroundOffsetY === 'number' ? data.backgroundOffsetY : 0);
+  // Résolution du cadrage du décor spécifique au format actif (Indépendance stricte par format)
+  // FormatTransforms?.[targetFormatKey]?.background = { offsetX, offsetY, scale }
+  const activeBgTransform = resolveBackgroundTransformForFormat(data, targetFormatKey);
+  const rawBgOffsetX = activeBgTransform.offsetX ?? 0;
+  const rawBgOffsetY = activeBgTransform.offsetY ?? 0;
+  const bgUserScale = activeBgTransform.scale ?? 1.0;
 
-  const bgOffsetX = Math.max(-limitX, Math.min(limitX, rawBgOffsetX));
-  const bgOffsetY = Math.max(-limitY, Math.min(limitY, rawBgOffsetY));
+  const bgOffsetX = Math.max(-bgBounds.limitX, Math.min(bgBounds.limitX, rawBgOffsetX));
+  const bgOffsetY = Math.max(-bgBounds.limitY, Math.min(bgBounds.limitY, rawBgOffsetY));
 
-  (input as any).backgroundOffsetX = bgOffsetX;
-  (input as any).backgroundOffsetY = bgOffsetY;
-  (data as any).backgroundOffsetX = bgOffsetX;
-  (data as any).backgroundOffsetY = bgOffsetY;
-
-  // Échelle stricte respectant le choix utilisateur (sans multiplicateur caché)
-  const bgScale = data.backgroundScale ?? 1.0;
+  // Rétablissement du débord de sécurité calculé (bleed de 115% de base, adaptant dynamiquement l'échelle pour absorber tout déplacement)
+  // Garantit mathématiquement que le fond noir du canvas ne sera JAMAIS découvert
+  const maxBgOffset = Math.max(Math.abs(bgOffsetX), Math.abs(bgOffsetY));
+  const dynamicSafetyBleed = Math.max(1.15, 1.0 + (maxBgOffset / 50));
+  const effectiveBgScale = dynamicSafetyBleed * bgUserScale;
+  const bgScale = effectiveBgScale;
 
   // Sections contextuelles strictes (Décor = volet 1, Sujet = volet 2, Textes = volet 5)
   // Détection universelle et permissive de la section décor active :
@@ -865,19 +878,33 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       const newX = Math.round((state.initialOffsetX + deltaPercentX) * 10) / 10;
       const newY = Math.round((state.initialOffsetY + deltaPercentY) * 10) / 10;
 
-      // Débattements adaptés pour naviguer dans l'image (bornés à ±35% en X et ±35% en Y)
-      const limitX = 35;
-      const limitY = 35;
-
-      const clampedX = Math.max(-limitX, Math.min(limitX, newX));
-      const clampedY = Math.max(-limitY, Math.min(limitY, newY));
+      // Débattements bornés au ratio pour que le fond de canvas noir ne soit JAMAIS découvert
+      const bounds = getFormatBgBounds(targetFormatKey);
+      const clampedX = Math.max(-bounds.limitX, Math.min(bounds.limitX, newX));
+      const clampedY = Math.max(-bounds.limitY, Math.min(bounds.limitY, newY));
 
       if (setInput) {
-        setInput((prev) => ({
-          ...prev,
-          backgroundOffsetX: clampedX,
-          backgroundOffsetY: clampedY,
-        }));
+        setInput((prev) => {
+          const prevFmtTransforms = prev.formatTransforms || {};
+          const currentFmtConfig = prevFmtTransforms[targetFormatKey] || {};
+          const existingBg = currentFmtConfig.background;
+
+          return {
+            ...prev,
+            formatTransforms: {
+              ...prevFmtTransforms,
+              [targetFormatKey]: {
+                ...currentFmtConfig,
+                background: {
+                  offsetX: clampedX,
+                  offsetY: clampedY,
+                  scale: existingBg?.scale ?? prev.backgroundScale ?? 1.0,
+                },
+              },
+            },
+            ...(isPostFormat ? { backgroundOffsetX: clampedX, backgroundOffsetY: clampedY } : {}),
+          };
+        });
       }
     };
 
@@ -2198,11 +2225,11 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     >
       {/* 
         =======================================================================
-        STRUCTURE DE COUVERTURE TOTALE DU DÉCOR SANS ROGNAGE FORCÉ
-        - Conteneur de fond : absolute inset-0 w-full h-full overflow-hidden pointer-events-none
-        - Image <img> : w-full h-full object-cover max-w-none max-h-none
-        - Échelle stricte respectant l'échelle choisie : data.backgroundScale ?? 1.0
-        - Déplacement adapté : translate(${bgOffsetX}%, ${bgOffsetY}%) scale(${data.backgroundScale ?? 1.0})
+        STRUCTURE DE COUVERTURE TOTALE DU DÉCOR SANS ROGNAGE FORCÉ (ZERO BANDE NOIRE)
+        - Conteneur de fond : absolute inset-0 w-full h-full overflow-hidden
+        - Image <img> : w-full h-full object-cover min-w-full min-h-full max-w-none max-h-none
+        - Débord de sécurité calculé (bleed 115% de base) : absorbant dynamiquement les décalages sans bords noirs
+        - Déplacement adapté au format actif : translate(${bgOffsetX}%, ${bgOffsetY}%) scale(${effectiveBgScale})
         =======================================================================
       */}
       {(data.backgroundUrl || backgroundImage) ? (
@@ -2220,7 +2247,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
             fetchPriority="high"
             decoding="async"
             onContextMenu={(e) => e.preventDefault()}
-            className={`w-full h-full object-cover max-w-none max-h-none select-none ${
+            className={`w-full h-full object-cover min-w-full min-h-full max-w-none max-h-none select-none ${
               isDecorActive
                 ? isLocalDraggingBg
                   ? 'cursor-grabbing active:cursor-grabbing pointer-events-auto'
@@ -2228,7 +2255,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                 : 'pointer-events-none'
             }`}
             style={{
-              transform: `translate(${bgOffsetX}%, ${bgOffsetY}%) scale(${data.backgroundScale ?? 1.0})`,
+              transform: `translate(${bgOffsetX}%, ${bgOffsetY}%) scale(${effectiveBgScale})`,
+              transformOrigin: 'center center',
               pointerEvents: isDecorActive ? 'auto' : 'none',
               opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03)
                 ? 1

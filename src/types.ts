@@ -818,15 +818,64 @@ export interface EventInput {
   posterTexts?: PosterTextItem[];
 }
 
+export interface BackgroundFormatTransform {
+  offsetX: number;
+  offsetY: number;
+  scale: number;
+}
+
 export interface FormatTransformConfig {
   scale: number;
   offsetY: number;
   offsetX?: number;
   alignX?: 'center' | 'left' | 'right';
   isCustom?: boolean;
+  background?: BackgroundFormatTransform;
 }
 
 export type FormatTransform = FormatTransformConfig;
+
+export function getDefaultBackgroundTransform(formatKey: 'post' | 'story' | 'banner' | 'a3' | string): BackgroundFormatTransform {
+  switch (formatKey) {
+    case 'story':
+      // Story (9:16) : centrage automatique optimisé sur la hauteur avec scale: 1.0
+      return { offsetX: 0, offsetY: 0, scale: 1.0 };
+    case 'banner':
+      // Bannière (16:9) : centrage automatique optimisé sur la largeur avec scale: 1.0
+      return { offsetX: 0, offsetY: 0, scale: 1.0 };
+    case 'post':
+    case 'a3':
+    case 'flyer':
+    default:
+      // Post (1:1) / Flyer : centrage neutre
+      return { offsetX: 0, offsetY: 0, scale: 1.0 };
+  }
+}
+
+export function resolveBackgroundTransformForFormat(
+  input: EventInput,
+  formatKey: 'post' | 'story' | 'banner' | 'a3' | string
+): BackgroundFormatTransform {
+  const resolvedKey = (['post', 'story', 'banner', 'a3'].includes(formatKey) ? formatKey : 'a3') as 'post' | 'story' | 'banner' | 'a3';
+  const configured = input.formatTransforms?.[resolvedKey]?.background ||
+    (resolvedKey === 'a3' ? (input.formatTransforms as any)?.flyer?.background : undefined);
+  if (configured) {
+    return {
+      offsetX: typeof configured.offsetX === 'number' ? configured.offsetX : 0,
+      offsetY: typeof configured.offsetY === 'number' ? configured.offsetY : 0,
+      scale: typeof configured.scale === 'number' ? configured.scale : 1.0,
+    };
+  }
+  // Rétrocompatibilité Post 1:1
+  if (resolvedKey === 'post' && (typeof input.backgroundOffsetX === 'number' || typeof input.backgroundOffsetY === 'number' || typeof input.backgroundScale === 'number')) {
+    return {
+      offsetX: input.backgroundOffsetX ?? 0,
+      offsetY: input.backgroundOffsetY ?? 0,
+      scale: input.backgroundScale ?? 1.0,
+    };
+  }
+  return getDefaultBackgroundTransform(resolvedKey);
+}
 
 export function getDefaultFormatTransforms(
   masterScale: number = 1.0,

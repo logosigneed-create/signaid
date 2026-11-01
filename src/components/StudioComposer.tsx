@@ -16,6 +16,8 @@ import {
   ToneOverlayState,
   FocusedTarget,
   getDefaultFormatTransforms,
+  getDefaultBackgroundTransform,
+  resolveBackgroundTransformForFormat,
   INITIAL_DEMO_STATE,
   DEFAULT_STUDIO_DATA,
   BLANK_STUDIO_DATA,
@@ -3618,6 +3620,32 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
   const hasCustomBackground = Boolean(input.customBackground || input.backgroundImage || input.bgImage);
   const customBackgroundSrc = input.customBackground || input.backgroundImage || input.bgImage || '';
 
+  const activePreviewBgKey = (['post', 'story', 'banner', 'a3'].includes(previewFormat) ? previewFormat : 'a3') as 'post' | 'story' | 'banner' | 'a3';
+  const currentPreviewBg = resolveBackgroundTransformForFormat(input, activePreviewBgKey);
+  const isCurrentPreviewBgOffset = (currentPreviewBg.offsetX !== 0) || (currentPreviewBg.offsetY !== 0);
+
+  const handleResetBackgroundPosition = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setInput((prev) => {
+      const curFmt = prev.formatTransforms?.[activePreviewBgKey] || {};
+      return {
+        ...prev,
+        formatTransforms: {
+          ...(prev.formatTransforms || {}),
+          [activePreviewBgKey]: {
+            ...curFmt,
+            background: {
+              offsetX: 0,
+              offsetY: 0,
+              scale: curFmt.background?.scale ?? prev.backgroundScale ?? 1.0,
+            },
+          },
+        },
+        ...(activePreviewBgKey === 'post' ? { backgroundOffsetX: 0, backgroundOffsetY: 0 } : {}),
+      };
+    });
+  };
+
   const handleFileUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
     field: 'djPhoto' | 'backgroundImage'
@@ -5548,6 +5576,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
     }
 
     const backgroundUrl = input.customBackground || input.backgroundImage || input.bgImage;
+    const activeBgKey = (['post', 'story', 'banner', 'a3'].includes(activeFormat) ? activeFormat : 'a3') as 'post' | 'story' | 'banner' | 'a3';
+    const activeBgTransform = resolveBackgroundTransformForFormat(input, activeBgKey);
+    const maxActiveBgOffset = Math.max(Math.abs(activeBgTransform.offsetX), Math.abs(activeBgTransform.offsetY));
+    const activeDynamicBleed = Math.max(1.15, 1.0 + (maxActiveBgOffset / 50));
+    const activeEffectiveScale = activeDynamicBleed * (activeBgTransform.scale ?? 1.0);
     const resolvedTextScales = resolveTextScalesForFormat(input, activeFormat);
     const resolvedOffsetsY = resolveTextOffsetsYForFormat(input, activeFormat);
     const resolvedOffsetsX = resolveTextOffsetsXForFormat(input, activeFormat);
@@ -5639,7 +5672,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               WebkitUserSelect: 'none',
               userSelect: 'none',
               touchAction: 'none',
-              transform: `translate(${input.backgroundOffsetX ?? 0}%, ${input.backgroundOffsetY ?? 0}%) scale(${1.08 * (input.backgroundScale ?? 1.0)})`,
+              transform: `translate(${activeBgTransform.offsetX}%, ${activeBgTransform.offsetY}%) scale(${activeEffectiveScale})`,
               transformOrigin: 'center center',
               opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03) ? 1 : (input.backgroundOpacity ?? 1),
               filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03 || toneOverlay.filterCss === 'none') ? 'none' : toneOverlay.filterCss,
@@ -7157,15 +7190,12 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   />
                 )}
                 <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
-                  {((input.backgroundOffsetX && input.backgroundOffsetX !== 0) || (input.backgroundOffsetY && input.backgroundOffsetY !== 0)) && (
+                  {isCurrentPreviewBgOffset && (
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setInput((p) => ({ ...p, backgroundOffsetX: 0, backgroundOffsetY: 0 }));
-                      }}
+                      onClick={handleResetBackgroundPosition}
                       className="py-1 px-2 rounded-lg bg-black/80 hover:bg-black text-lime-400 border border-lime-400/40 text-[9px] font-mono font-bold flex items-center gap-1 transition shadow-md cursor-pointer"
-                      title="Recentrer le décor au centre du canvas"
+                      title={`Recentrer le décor pour le format ${previewFormat.toUpperCase()}`}
                     >
                       <RotateCcw className="w-2.5 h-2.5" />
                       <span>Recentrer</span>
@@ -7187,7 +7217,26 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setInput((p) => ({ ...p, backgroundImage: '', bgImage: '', customBackground: '', backgroundOffsetX: 0, backgroundOffsetY: 0 }));
+                      setInput((p) => {
+                        const nextFmts = { ...(p.formatTransforms || {}) };
+                        (['post', 'story', 'banner', 'a3'] as const).forEach((fmt) => {
+                          if (nextFmts[fmt]?.background) {
+                            nextFmts[fmt] = {
+                              ...nextFmts[fmt],
+                              background: { offsetX: 0, offsetY: 0, scale: 1.0 },
+                            };
+                          }
+                        });
+                        return {
+                          ...p,
+                          backgroundImage: '',
+                          bgImage: '',
+                          customBackground: '',
+                          backgroundOffsetX: 0,
+                          backgroundOffsetY: 0,
+                          formatTransforms: nextFmts,
+                        };
+                      });
                       if (bgInputRefDesktop.current) {
                         bgInputRefDesktop.current.value = '';
                       }
@@ -7205,25 +7254,25 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
             {hasCustomBackground && (
               <div className={`flex items-center justify-between p-2 rounded-xl border ${isDayMode ? 'border-zinc-200 bg-zinc-50' : 'border-zinc-800 bg-zinc-900/60'} text-[10px] font-mono`}>
                 <span className={`${isDayMode ? 'text-zinc-600' : 'text-zinc-400'} flex items-center gap-1.5`}>
-                  <span>Glissez sur le fond</span>
-                  {((input.backgroundOffsetX && input.backgroundOffsetX !== 0) || (input.backgroundOffsetY && input.backgroundOffsetY !== 0)) && (
+                  <span>Glissez sur le fond ({previewFormat.toUpperCase()})</span>
+                  {isCurrentPreviewBgOffset && (
                     <span className="text-lime-400 font-bold">
-                      ({input.backgroundOffsetX > 0 ? `+${input.backgroundOffsetX}` : input.backgroundOffsetX}%, {input.backgroundOffsetY > 0 ? `+${input.backgroundOffsetY}` : input.backgroundOffsetY}%)
+                      ({currentPreviewBg.offsetX > 0 ? `+${currentPreviewBg.offsetX}` : currentPreviewBg.offsetX}%, {currentPreviewBg.offsetY > 0 ? `+${currentPreviewBg.offsetY}` : currentPreviewBg.offsetY}%)
                     </span>
                   )}
                 </span>
                 <button
                   type="button"
-                  onClick={() => setInput((p) => ({ ...p, backgroundOffsetX: 0, backgroundOffsetY: 0 }))}
+                  onClick={handleResetBackgroundPosition}
                   className={`px-2 py-1 rounded-lg border text-[10px] font-bold font-mono transition flex items-center gap-1.5 cursor-pointer ${
-                    (input.backgroundOffsetX || input.backgroundOffsetY)
+                    isCurrentPreviewBgOffset
                       ? 'border-lime-400/60 text-lime-400 bg-lime-400/10 hover:bg-lime-400/20'
                       : isDayMode ? 'border-zinc-300 text-zinc-600 hover:text-black' : 'border-zinc-700 text-zinc-400 hover:text-white'
                   }`}
-                  title="Recentrer le décor au centre du canvas"
+                  title={`Recentrer le décor pour le format ${previewFormat.toUpperCase()}`}
                 >
                   <RotateCcw className="w-2.5 h-2.5" />
-                  <span>Recentrer le décor</span>
+                  <span>Recentrer ({previewFormat.toUpperCase()})</span>
                 </button>
               </div>
             )}
