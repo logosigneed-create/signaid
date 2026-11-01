@@ -83,7 +83,11 @@ export const UserHeaderAuth: React.FC<UserHeaderAuthProps> = ({
                 setIsAuthModalOpen(true);
               }
             }}
-            className="p-2 min-[920px]:px-3.5 min-[920px]:py-1.5 rounded-xl bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 text-white dark:text-zinc-900 text-xs font-mono font-medium shadow-sm transition-transform active:scale-95 flex items-center gap-1.5"
+            className={`p-2 min-[920px]:px-3.5 min-[920px]:py-1.5 rounded-xl text-xs font-mono font-medium shadow-xs transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+              isDayMode
+                ? 'bg-zinc-900 hover:bg-zinc-800 text-white'
+                : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900'
+            }`}
             title="Connexion"
           >
             <User className="w-4 h-4 min-[920px]:w-3.5 min-[920px]:h-3.5" />
@@ -93,19 +97,19 @@ export const UserHeaderAuth: React.FC<UserHeaderAuthProps> = ({
           <button
             type="button"
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className={`p-1.5 min-[920px]:px-2.5 min-[920px]:py-1 rounded-xl text-xs font-mono flex items-center gap-1.5 min-[920px]:gap-2 transition border shadow-sm ${
+            className={`p-1.5 min-[920px]:px-2.5 min-[920px]:py-1 rounded-xl text-xs font-mono flex items-center gap-1.5 min-[920px]:gap-2 transition border shadow-xs cursor-pointer ${
               isSuperAdmin
                 ? 'bg-lime-500/10 border-lime-500/40 text-lime-400 hover:bg-lime-500/20'
                 : isPro
                 ? 'bg-lime-400/10 border-lime-400/40 text-lime-400 hover:bg-lime-400/20'
                 : isDayMode
-                ? 'bg-white border-zinc-300 text-zinc-800 hover:border-zinc-400'
+                ? 'bg-zinc-100 border-zinc-300 text-zinc-800 hover:bg-zinc-200'
                 : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700'
             }`}
             title={displayName}
           >
             {/* AVATAR / INITIALES */}
-            <div className="w-6 h-6 rounded-lg bg-zinc-950 border border-zinc-700 flex items-center justify-center font-bold text-[10px] text-white shrink-0 overflow-hidden">
+            <div className={`w-6 h-6 rounded-lg ${isDayMode ? 'bg-zinc-200 border-zinc-300 text-zinc-900' : 'bg-zinc-950 border-zinc-700 text-white'} flex items-center justify-center font-bold text-[10px] shrink-0 overflow-hidden`}>
               {user?.photoURL ? (
                 <img src={user.photoURL} alt="Avatar" width={24} height={24} loading="lazy" decoding="async" className="w-full h-full object-cover" />
               ) : isSuperAdmin ? (
@@ -116,7 +120,7 @@ export const UserHeaderAuth: React.FC<UserHeaderAuthProps> = ({
             </div>
 
             {/* EMAIL / PSEUDO TRONQUÉ */}
-            <span className="hidden min-[920px]:inline font-bold max-w-[120px] truncate text-[11px]">
+            <span className={`hidden min-[920px]:inline font-bold max-w-[120px] truncate text-[11px] ${isDayMode ? 'text-zinc-900' : 'text-zinc-100'}`}>
               {displayName}
             </span>
 
@@ -124,9 +128,11 @@ export const UserHeaderAuth: React.FC<UserHeaderAuthProps> = ({
             <span
               className={`hidden min-[920px]:flex text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider items-center gap-1 ${
                 isSuperAdmin
-                  ? 'bg-lime-500/20 text-lime-300 border border-lime-500/50'
+                  ? 'bg-lime-500/20 text-lime-600 dark:text-lime-300 border border-lime-500/50'
                   : isPro
-                  ? 'bg-lime-400/20 text-lime-400 border border-lime-400/50'
+                  ? 'bg-lime-400/20 text-lime-600 dark:text-lime-400 border border-lime-400/50'
+                  : isDayMode
+                  ? 'bg-zinc-200 text-zinc-800 border border-zinc-300'
                   : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
               }`}
             >
@@ -143,18 +149,18 @@ export const UserHeaderAuth: React.FC<UserHeaderAuthProps> = ({
         {isMenuOpen && !isAnonymousGuest && (
           <div
             className={`absolute right-0 mt-2 w-72 ${
-              isDayMode ? 'bg-white border-zinc-200 text-zinc-900' : 'bg-zinc-950 border-zinc-800 text-zinc-100'
-            } border rounded-2xl shadow-2xl p-3 z-50 animate-fadeIn space-y-2`}
+              isDayMode ? 'bg-white border-zinc-200 text-zinc-900 shadow-xl' : 'bg-zinc-950 border-zinc-800 text-zinc-100 shadow-2xl'
+            } border rounded-2xl p-3 z-50 animate-fadeIn space-y-2`}
           >
             {/* RECAP EMAIL & RÔLE */}
             <div className={`p-2.5 rounded-xl ${isDayMode ? 'bg-zinc-50 border border-zinc-200' : 'bg-zinc-900 border border-zinc-800'}`}>
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-zinc-950 border border-zinc-700 flex items-center justify-center font-bold text-xs text-white shrink-0">
-                  {isSuperAdmin ? <Crown className="w-4 h-4 text-lime-400" /> : <User className="w-4 h-4 text-lime-400" />}
+                <div className={`w-8 h-8 rounded-lg ${isDayMode ? 'bg-zinc-200 border-zinc-300 text-zinc-900' : 'bg-zinc-950 border-zinc-700 text-white'} flex items-center justify-center font-bold text-xs shrink-0`}>
+                  {isSuperAdmin ? <Crown className="w-4 h-4 text-lime-500" /> : <User className="w-4 h-4 text-lime-500" />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-bold truncate">{effectiveEmail}</p>
-                  <p className="text-[10px] text-zinc-500 font-mono">
+                  <p className={`text-xs font-bold truncate ${isDayMode ? 'text-zinc-900' : 'text-zinc-100'}`}>{effectiveEmail}</p>
+                  <p className={`text-[10px] ${isDayMode ? 'text-zinc-600' : 'text-zinc-500'} font-mono`}>
                     {isSuperAdmin
                       ? 'Administrateur Suprême (Permanent)'
                       : isPro
@@ -167,19 +173,18 @@ export const UserHeaderAuth: React.FC<UserHeaderAuthProps> = ({
 
             {/* PRIVILÈGES DU COMPTE */}
             <div className="px-1 py-1 space-y-1 text-[11px] font-mono">
-              <div className="flex items-center justify-between py-1 text-zinc-400">
+              <div className={`flex items-center justify-between py-1 ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
                 <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-lime-400" />
+                  <CheckCircle2 className={`w-3.5 h-3.5 ${isDayMode ? 'text-emerald-600' : 'text-lime-400'}`} />
                   <span>Exports 300 DPI :</span>
                 </span>
-                <span className={`font-bold ${isPro ? 'text-lime-400' : 'text-zinc-400'}`}>
+                <span className={`font-bold ${isPro ? (isDayMode ? 'text-emerald-600' : 'text-lime-400') : (isDayMode ? 'text-zinc-700' : 'text-zinc-400')}`}>
                   {isPro ? 'DÉVERROUILLÉS 🔓' : '59€ 🔒'}
                 </span>
               </div>
-
             </div>
 
-            <div className="border-t border-zinc-800/80 pt-2 space-y-1">
+            <div className={`border-t ${isDayMode ? 'border-zinc-200' : 'border-zinc-800/80'} pt-2 space-y-1`}>
               {/* BOUTON PASSER EN PRO POUR STANDARD */}
               {!isPro && onTriggerUpgrade && (
                 <button
@@ -188,9 +193,13 @@ export const UserHeaderAuth: React.FC<UserHeaderAuthProps> = ({
                     setIsMenuOpen(false);
                     onTriggerUpgrade();
                   }}
-                  className="w-full p-2 rounded-xl text-xs font-mono font-bold flex items-center gap-2 bg-lime-400/10 text-lime-400 border border-lime-400/40 hover:bg-lime-400/20 transition"
+                  className={`w-full p-2 rounded-xl text-xs font-mono font-bold flex items-center gap-2 transition cursor-pointer ${
+                    isDayMode
+                      ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900 border border-zinc-300'
+                      : 'bg-lime-400/10 text-lime-400 border border-lime-400/40 hover:bg-lime-400/20'
+                  }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className="w-3.5 h-3.5 text-lime-500" />
                   <span>Passer en Pro Master (59€)</span>
                 </button>
               )}
@@ -202,7 +211,11 @@ export const UserHeaderAuth: React.FC<UserHeaderAuthProps> = ({
                   setIsMenuOpen(false);
                   await logout();
                 }}
-                className={`w-full p-2 rounded-xl text-xs font-mono flex items-center gap-2 transition text-zinc-400 hover:text-white hover:bg-zinc-800/60`}
+                className={`w-full p-2 rounded-xl text-xs font-mono flex items-center gap-2 transition cursor-pointer ${
+                  isDayMode
+                    ? 'text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800/60'
+                }`}
               >
                 <LogOut className="w-3.5 h-3.5" />
                 <span>Se déconnecter</span>

@@ -24,6 +24,7 @@ import {
     initialEventInput,
     resetLogoTransformForFormat,
 } from './types';
+import { safeSaveProjectToLocalStorage } from './utils/storageSanitizer';
 
 // Helper for safe lazy loading (reloads on chunk failure after new deployments)
 const safeLazy = (importFn: () => Promise<any>) =>
@@ -127,12 +128,73 @@ function DynamicArtistProfileRoute() {
 function StudioComposerRoute() {
     const { slug } = useParams<{ slug?: string }>();
     const [input, setInput] = useState<EventInput>(() => {
+        if (typeof window !== 'undefined') {
+            // 1. Restaurer depuis l'URL si des paramètres de projet sont présents (?project=, ?data=, ?draft=)
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const projectParam = urlParams.get('project') || urlParams.get('data') || urlParams.get('draft');
+                if (projectParam) {
+                    const parsed = JSON.parse(decodeURIComponent(projectParam));
+                    if (parsed && typeof parsed === 'object') {
+                        const base = createBlankEventInput(slug || parsed.slug || '');
+                        return { ...base, ...parsed, slug: slug || parsed.slug || base.slug };
+                    }
+                }
+            } catch (e) {
+                console.warn('[StudioComposerRoute] Erreur parsing projet depuis URL :', e);
+            }
+
+            // 2. Restaurer immédiatement depuis le LocalStorage (clé: 'signaid_studio_project_draft')
+            try {
+                const savedDraft = localStorage.getItem('signaid_studio_project_draft');
+                if (savedDraft) {
+                    const parsed = JSON.parse(savedDraft);
+                    if (parsed && typeof parsed === 'object') {
+                        const base = createBlankEventInput(slug || parsed.slug || '');
+                        return { ...base, ...parsed, slug: slug || parsed.slug || base.slug };
+                    }
+                }
+            } catch (e) {
+                console.warn('[StudioComposerRoute] Erreur chargement draft LocalStorage :', e);
+            }
+
+            // 3. Secours sur session active pour garantir la continuité
+            try {
+                const savedSession = sessionStorage.getItem('signaid_studio_current_project') || localStorage.getItem('signaid_studio_current_project');
+                if (savedSession) {
+                    const parsed = JSON.parse(savedSession);
+                    if (parsed && typeof parsed === 'object') {
+                        const base = createBlankEventInput(slug || parsed.slug || '');
+                        return { ...base, ...parsed, slug: slug || parsed.slug || base.slug };
+                    }
+                }
+            } catch { }
+        }
+
         try {
             return createBlankEventInput(slug || '');
         } catch {
             return (DEFAULT_STUDIO_DATA as any) || (initialEventInput as any) || {};
         }
     });
+
+    // Synchronisation automatique continue du projet actif dans le localStorage
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (!input || Object.keys(input).length === 0) return;
+
+        try {
+            localStorage.setItem('signaid_studio_project_draft', JSON.stringify(input));
+        } catch (err) {
+            try {
+                safeSaveProjectToLocalStorage('signaid_studio_project_draft', input);
+            } catch { }
+        }
+
+        try {
+            sessionStorage.setItem('signaid_studio_current_project', JSON.stringify(input));
+        } catch { }
+    }, [input]);
 
     const [previewFormat, setPreviewFormat] = useState<'post' | 'a3' | 'story' | 'banner' | 'tshirt'>('post');
     const [isProjectsOpen, setIsProjectsOpen] = useState<boolean>(false);
@@ -165,15 +227,21 @@ function StudioComposerRoute() {
     }, [isDayMode]);
 
     const getAspectRatio = (fmt: string): string => {
-        switch (fmt) {
+        const normalized = (fmt || '').toLowerCase().trim();
+        switch (normalized) {
+            case 'post':
+                return '1 / 1';
             case 'story':
                 return '9 / 16';
             case 'banner':
+            case 'bannière':
+            case 'banniere':
                 return '16 / 9';
+            case 'flyer':
             case 'a3':
                 return '1 / 1.414';
             case 'tshirt':
-            case 'post':
+                return '1 / 1';
             default:
                 return '1 / 1';
         }
@@ -230,6 +298,10 @@ function StudioComposerRoute() {
         { key: 'a3', label: 'Flyer' },
     ] as const;
 
+    const currentMockupUrl = (input as any).currentMockupUrl || '';
+    const visualLogoUrl = (input as any).visualLogoUrl || (input as any).processedLogoUrlFront || (input as any).logoUrl || '';
+    const djPhotoUrl = input.djPhoto || '';
+
     return (
         <div className={`h-screen w-full ${isDayMode ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-950 text-white'} flex flex-col overflow-hidden`}>
             {/* 1. VRAIE BARRE DE NAVIGATION DU HAUT ORIGINALE */}
@@ -242,10 +314,10 @@ function StudioComposerRoute() {
                 onOpenAuthModal={() => setIsAuthOpen(true)}
             />
 
-            {/* 2. ESPACE DE TRAVAIL : GAUCHE = RÉGLAGES, DROITE = VISUEL */}
-            <div className="flex-1 w-full flex flex-col min-[920px]:flex-row min-h-0 overflow-hidden">
-                {/* COLONNE GAUCHE : Panneau Accordéons & Réglages StudioComposer (Fixe et stable lors du changement de format) */}
-                <aside className={`w-full min-[920px]:w-[440px] lg:w-[480px] xl:w-[520px] shrink-0 flex-none border-b min-[920px]:border-b-0 min-[920px]:border-r ${isDayMode ? 'border-zinc-300 bg-white/95 text-zinc-900' : 'border-zinc-800/80 bg-zinc-900/40 text-white'} min-h-0 overflow-y-auto p-4 sm:p-6 order-2 min-[920px]:order-1`}>
+            {/* 2. ESPACE DE TRAVAIL : GAUCHE = RÉGLAGES, DROITE = VISUEL (PLEINE LARGEUR) */}
+            <main className="w-full flex-1 flex flex-row overflow-hidden">
+                {/* Enfant 1 (à GAUCHE) : Panneau Accordéons & Réglages StudioComposer */}
+                <aside className={`w-[440px] shrink-0 h-[calc(100vh-64px)] overflow-y-auto border-r ${isDayMode ? 'border-zinc-300 bg-white/95 text-zinc-900' : 'border-zinc-800 bg-zinc-900/40 text-white'} p-4 sm:p-6`}>
                     <StudioComposer
                         input={input}
                         setInput={setInput}
@@ -260,64 +332,95 @@ function StudioComposerRoute() {
                     />
                 </aside>
 
-                {/* COLONNE DROITE : Canvas Interactif Desktop */}
-                <main className={`flex-1 min-w-0 min-h-0 flex flex-col items-center justify-center p-6 lg:p-8 ${isDayMode ? 'bg-zinc-200/60' : 'bg-zinc-950/80'} overflow-y-auto relative select-none order-1 min-[920px]:order-2`}>
-                    <div className="w-full max-w-2xl flex flex-col items-center justify-center my-auto">
-                        {/* Sélecteur de format rapide au-dessus du canvas */}
-                        <div className={`mb-4 flex items-center gap-1 ${isDayMode ? 'bg-white border-zinc-300' : 'bg-zinc-950 border-zinc-800'} border rounded-xl p-1 text-xs font-mono shadow-lg`}>
+                {/* Enfant 2 (à DROITE) : Canvas Interactif Desktop */}
+                <div className="flex-1 w-full h-[calc(100vh-64px)] flex flex-col items-center justify-start overflow-hidden">
+                    {/* Sélecteur de format rapide : FIXÉ EN HAUT */}
+                    <div className="shrink-0 w-full flex items-center justify-center py-3 border-b border-zinc-800/40">
+                        <div className={`inline-flex items-center gap-1.5 p-1 ${isDayMode ? 'bg-white border-zinc-200' : 'bg-zinc-900 border-zinc-800'} border rounded-xl shadow-xs`}>
                             {FORMAT_OPTIONS.map((fmt) => (
                                 <button
                                     key={fmt.key}
                                     type="button"
-                                    onClick={() => setPreviewFormat(fmt.key)}
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setPreviewFormat(fmt.key);
+                                    }}
                                     className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer uppercase ${previewFormat === fmt.key
-                                            ? (isDayMode ? 'bg-zinc-900 text-lime-400 shadow-sm' : 'bg-zinc-800 text-lime-400 shadow-sm')
-                                            : (isDayMode ? 'text-zinc-600 hover:text-black' : 'text-zinc-400 hover:text-white')
+                                        ? (isDayMode ? 'bg-zinc-900 text-white shadow-xs' : 'bg-zinc-800 text-lime-400 shadow-sm')
+                                        : (isDayMode ? 'text-zinc-600 hover:text-zinc-900' : 'text-zinc-400 hover:text-white')
                                         }`}
                                 >
                                     {fmt.label}
                                 </button>
                             ))}
+
+                            <div className="w-[1px] h-4 bg-zinc-700/50 mx-1" />
+
                             <button
                                 type="button"
-                                onClick={() => setPreviewFormat('tshirt')}
-                                className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer uppercase flex items-center gap-1.5 ${
-                                    previewFormat === 'tshirt'
-                                        ? (isDayMode ? 'bg-zinc-900 text-lime-400 shadow-sm' : 'bg-zinc-800 text-lime-400 shadow-sm')
-                                        : (isDayMode ? 'text-zinc-600 hover:text-black' : 'text-zinc-400 hover:text-white')
-                                }`}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setPreviewFormat('tshirt');
+                                }}
+                                className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer uppercase flex items-center gap-1.5 ${previewFormat === 'tshirt'
+                                    ? (isDayMode ? 'bg-zinc-900 text-white shadow-xs' : 'bg-zinc-800 text-lime-400 shadow-sm')
+                                    : (isDayMode ? 'text-zinc-600 hover:text-zinc-900' : 'text-zinc-400 hover:text-white')
+                                    }`}
                                 title="Aperçu des maquettes vêtements Stand Merch"
                             >
-                                <Shirt className="w-3.5 h-3.5" />
                                 <span>Stand Merch</span>
                             </button>
                         </div>
+                    </div>
+
+                    {/* ZONE D'AFFICHAGE DU CANVAS / MERCH : CENTRÉE (PLEINE LARGEUR) */}
+                    <div className="flex-1 w-full flex flex-col items-center justify-center p-4 overflow-hidden min-h-0">
 
                         {/* Conteneur d'affiche avec ratio d'aspect dynamique */}
                         <div
-                            className={`relative w-full rounded-2xl overflow-hidden border ${isDayMode ? 'border-zinc-300 bg-white' : 'border-zinc-800 bg-zinc-900'} shadow-2xl flex items-center justify-center transition-all duration-300`}
+                            className="relative w-full rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900 shadow-2xl flex items-center justify-center transition-all duration-300"
                             style={{
                                 aspectRatio: getAspectRatio(previewFormat),
-                                maxHeight: 'calc(100vh - 180px)',
+                                maxHeight: previewFormat === 'story'
+                                    ? 'calc(100vh - 160px)'
+                                    : previewFormat === 'banner'
+                                        ? 'calc(100vh - 220px)'
+                                        : 'calc(100vh - 180px)',
+                                maxWidth: previewFormat === 'story'
+                                    ? 'calc((100vh - 160px) * (9 / 16))'
+                                    : previewFormat === 'banner'
+                                        ? 'min(100%, calc((100vh - 220px) * (16 / 9)))'
+                                        : ((previewFormat as string) === 'a3' || (previewFormat as string) === 'flyer')
+                                            ? 'calc((100vh - 180px) / 1.414)'
+                                            : 'min(100%, calc(100vh - 180px))',
                             }}
                         >
                             {previewFormat === 'tshirt' ? (
-                                <div className="w-full h-full p-2 flex items-center justify-center">
-                                    <MerchPreview
-                                        input={input}
-                                        interactive={true}
-                                        onPlacementChange={(placement, side) => {
-                                            setInput((prev) => ({
-                                                ...prev,
-                                                ...(side === 'back'
-                                                    ? { tshirtBackPlacement: placement, tshirtBackLogoScale: placement.scale }
-                                                    : { tshirtFrontPlacement: placement, tshirtLogoScale: placement.scale }
-                                                ),
-                                            }));
-                                        }}
-                                        showSideToggle={true}
-                                        showViewToggle={true}
+                                <div className="relative w-full h-full max-h-[85vh] max-w-[550px] flex items-center justify-center p-8">
+                                    <img
+                                        src={currentMockupUrl || "/models/male_tshirt_front.png"}
+                                        alt="Aperçu Merch"
+                                        className="w-full h-full max-h-full object-contain filter drop-shadow-2xl"
                                     />
+                                    {/* Conteneur de l'imprimé DTF */}
+                                    <div
+                                        className="absolute pointer-events-none"
+                                        style={{
+                                            width: '28%',
+                                            height: '35%',
+                                            top: '32%',
+                                            left: '50%',
+                                            transform: 'translateX(-50%)',
+                                        }}
+                                    >
+                                        <img
+                                            src={visualLogoUrl || djPhotoUrl}
+                                            alt="Print DTF"
+                                            className="w-full h-full object-contain"
+                                        />
+                                    </div>
                                 </div>
                             ) : (
                                 <FlyerPosterRenderer
@@ -337,13 +440,13 @@ function StudioComposerRoute() {
                         </div>
 
                         {/* Légende sous le canvas */}
-                        <div className={`mt-4 flex items-center justify-between w-full px-2 text-xs font-mono ${isDayMode ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                        <div className={`mt-3 flex items-center justify-between w-full max-w-[600px] px-2 text-xs font-mono shrink-0 ${isDayMode ? 'text-zinc-600' : 'text-zinc-500'}`}>
                             <span>Format actif : <strong className={`${isDayMode ? 'text-zinc-900' : 'text-zinc-300'} uppercase`}>{previewFormat === 'a3' ? 'Flyer' : previewFormat}</strong></span>
                             <span>Aperçu interactif haute fidélité</span>
                         </div>
                     </div>
-                </main>
-            </div>
+                </div>
+            </main>
 
             {/* 3. MODALES NATIVES (Projets & Authentification) */}
             {isProjectsOpen && (

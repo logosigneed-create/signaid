@@ -43,17 +43,23 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className="relative w-full h-14 sm:h-16 px-3 sm:px-6 flex items-center justify-between shrink-0 border-b border-zinc-800 bg-zinc-950/95 text-white backdrop-blur-md sticky top-0 z-50 transition-colors duration-200">
+      <header className={`relative w-full h-14 sm:h-16 px-3 sm:px-6 flex items-center justify-between shrink-0 border-b backdrop-blur-md sticky top-0 z-50 transition-colors duration-200 ${
+        isDayMode ? 'border-zinc-200 bg-white/95 text-zinc-900 shadow-xs' : 'border-zinc-800 bg-zinc-950/95 text-white'
+      }`}>
         {/* BLOC GAUCHE : Menu Hamburger (Mobile & Desktop) */}
         <div className="flex items-center gap-2 min-w-0 min-[920px]:min-w-[180px]">
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="p-2 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800/80 transition-colors cursor-pointer"
+            className={`p-2 rounded-xl transition-colors cursor-pointer ${
+              isDayMode
+                ? 'text-zinc-700 hover:text-zinc-950 hover:bg-zinc-100'
+                : 'text-zinc-300 hover:text-white hover:bg-zinc-800/80'
+            }`}
             aria-label={isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
             title={isMobileMenuOpen ? 'Fermer le menu' : 'Menu & Réglages'}
           >
-            {isMobileMenuOpen ? <X className="w-5 h-5 text-lime-400" /> : <Menu className="w-5 h-5" />}
+            {isMobileMenuOpen ? <X className="w-5 h-5 text-lime-500" /> : <Menu className="w-5 h-5" />}
           </button>
         </div>
 
@@ -74,10 +80,12 @@ export const Header: React.FC<HeaderProps> = ({
               setActiveTab('generator');
               setIsMobileMenuOpen(false);
             }}
-            className="font-mono font-black text-sm sm:text-base tracking-[0.25em] text-white hover:text-zinc-200 uppercase select-none pointer-events-auto cursor-pointer group transition-colors whitespace-nowrap drop-shadow-sm"
+            className={`font-mono font-black text-sm sm:text-base tracking-[0.25em] uppercase select-none pointer-events-auto cursor-pointer group transition-colors whitespace-nowrap drop-shadow-sm ${
+              isDayMode ? 'text-zinc-900 hover:text-zinc-700' : 'text-white hover:text-zinc-200'
+            }`}
             title="SIGNAID.EU - Studio de Création"
           >
-            SIGNAID<span className="text-lime-400 group-hover:text-lime-300 transition-colors">.EU</span>
+            SIGNAID<span className={isDayMode ? "text-lime-600 group-hover:text-lime-700" : "text-lime-400 group-hover:text-lime-300 transition-colors"}>.EU</span>
           </span>
         </div>
 
@@ -89,7 +97,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={onToggleDayMode}
               className={`px-2.5 py-1.5 rounded-xl border transition-all duration-200 cursor-pointer shrink-0 flex items-center gap-1.5 font-mono text-xs font-bold ${
                 isDayMode
-                  ? 'border-amber-400/50 bg-amber-400/15 text-amber-300 hover:bg-amber-400/25 shadow-[0_0_12px_rgba(251,191,36,0.25)]'
+                  ? 'border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 shadow-xs'
                   : 'border-zinc-800 bg-zinc-900/90 text-zinc-300 hover:text-white hover:border-zinc-700 hover:bg-zinc-800/80 shadow-xs'
               }`}
               aria-label={isDayMode ? 'Mode Clair actif (Cliquer pour passer en mode Sombre)' : 'Mode Sombre actif (Cliquer pour passer en mode Clair)'}
@@ -97,8 +105,8 @@ export const Header: React.FC<HeaderProps> = ({
             >
               {isDayMode ? (
                 <>
-                  <Sun className="w-4 h-4 text-amber-400" />
-                  <span className="hidden min-[480px]:inline text-[11px] text-amber-300">Jour</span>
+                  <Sun className="w-4 h-4 text-amber-500" />
+                  <span className="hidden min-[480px]:inline text-[11px] text-zinc-800 font-semibold">Jour</span>
                 </>
               ) : (
                 <>
@@ -113,16 +121,20 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onOpenProjects}
-              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-900/80 text-xs font-mono text-zinc-300 hover:text-white hover:bg-zinc-800 hover:border-zinc-700 transition-colors shadow-sm cursor-pointer shrink-0"
+              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-mono transition-colors shadow-xs cursor-pointer shrink-0 ${
+                isDayMode
+                  ? 'border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
+                  : 'border-zinc-800 bg-zinc-900/80 text-zinc-300 hover:text-white hover:bg-zinc-800 hover:border-zinc-700'
+              }`}
               title="Ouvrir la liste des projets"
             >
-              <Folder className="w-3.5 h-3.5 text-lime-400" />
+              <Folder className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-700' : 'text-lime-400'}`} />
               <span className="hidden min-[540px]:inline">Projets</span>
             </button>
           )}
 
           <UserHeaderAuth
-            isDayMode={false}
+            isDayMode={isDayMode}
             onOpenWorkshop={() => setActiveTab('workshop')}
             onOpenAuthModal={onOpenAuthModal}
           />
@@ -142,17 +154,21 @@ export const Header: React.FC<HeaderProps> = ({
           } backdrop-blur-xl border-r p-5 space-y-4 font-mono text-xs animate-fadeIn overflow-y-auto overscroll-contain flex flex-col justify-between`}>
             <div className="space-y-4">
               {/* En-tête du tiroir latéral */}
-              <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
+              <div className={`flex items-center justify-between pb-3 border-b ${isDayMode ? 'border-zinc-200' : 'border-zinc-800'}`}>
                 <div className="flex items-center gap-2">
-                  <Menu className="w-4 h-4 text-lime-500" />
-                  <span className="font-mono font-bold text-xs uppercase tracking-wider text-zinc-900 dark:text-zinc-100">
+                  <Menu className={`w-4 h-4 ${isDayMode ? 'text-zinc-900' : 'text-lime-500'}`} />
+                  <span className={`font-mono font-bold text-xs uppercase tracking-wider ${isDayMode ? 'text-zinc-900' : 'text-zinc-100'}`}>
                     Menu & Réglages
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setIsMobileMenuOpen(false)}
-                  className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer"
+                  className={`p-1.5 rounded-lg transition cursor-pointer ${
+                    isDayMode
+                      ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                  }`}
                   aria-label="Fermer le menu"
                 >
                   <X className="w-4 h-4" />
@@ -163,29 +179,31 @@ export const Header: React.FC<HeaderProps> = ({
               <div className={`p-3.5 rounded-xl border ${isDayMode ? 'bg-zinc-50 border-zinc-200' : 'bg-zinc-900/80 border-zinc-800'}`}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-lime-400/15 border border-lime-400/30 flex items-center justify-center text-lime-400 shrink-0">
-                      <Zap className="w-3.5 h-3.5 fill-lime-400 animate-pulse" />
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                      isDayMode ? 'bg-zinc-200/80 border border-zinc-300 text-zinc-900' : 'bg-lime-400/15 border border-lime-400/30 text-lime-400'
+                    }`}>
+                      <Zap className={`w-3.5 h-3.5 ${isDayMode ? 'fill-zinc-900' : 'fill-lime-400 animate-pulse'}`} />
                     </div>
                     <div>
-                      <span className="text-[11px] font-bold uppercase tracking-wider block">Cagnotte Merch</span>
-                      <span className="text-[9px] text-zinc-500">Dividende d'usage déductible</span>
+                      <span className={`text-[11px] font-bold uppercase tracking-wider block ${isDayMode ? 'text-zinc-900' : 'text-zinc-100'}`}>Cagnotte Merch</span>
+                      <span className={`text-[9px] ${isDayMode ? 'text-zinc-600' : 'text-zinc-500'}`}>Dividende d'usage déductible</span>
                     </div>
                   </div>
-                  <span className="text-base font-black text-lime-400">{dividendFormattedBalance}</span>
+                  <span className={`text-base font-black ${isDayMode ? 'text-zinc-950' : 'text-lime-400'}`}>{dividendFormattedBalance}</span>
                 </div>
 
                 <div className="space-y-1.5 pt-1">
-                  <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                  <div className={`flex items-center justify-between text-[9px] ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
                     <span>Prochain palier (-5 €)</span>
-                    <span className="font-bold text-zinc-300 dark:text-zinc-200">{formatCurrency(dividendTierInfo.nextTier)}</span>
+                    <span className={`font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>{formatCurrency(dividendTierInfo.nextTier)}</span>
                   </div>
-                  <div className="w-full h-1.5 rounded-full bg-zinc-950 border border-zinc-800 overflow-hidden">
+                  <div className={`w-full h-1.5 rounded-full overflow-hidden border ${isDayMode ? 'bg-zinc-200 border-zinc-300' : 'bg-zinc-950 border-zinc-800'}`}>
                     <div
-                      className="h-full bg-gradient-to-r from-lime-500 to-lime-300 rounded-full transition-all duration-500"
+                      className={`h-full rounded-full transition-all duration-500 ${isDayMode ? 'bg-zinc-900' : 'bg-gradient-to-r from-lime-500 to-lime-300'}`}
                       style={{ width: `${dividendTierInfo.progressPercent}%` }}
                     />
                   </div>
-                  <p className="text-[9px] text-zinc-500 leading-tight">
+                  <p className={`text-[9px] leading-tight ${isDayMode ? 'text-zinc-600' : 'text-zinc-500'}`}>
                     Déductible jusqu'à -20% sur vos commandes Merch & Print (par tranches de 5 €).
                   </p>
                 </div>
@@ -196,7 +214,11 @@ export const Header: React.FC<HeaderProps> = ({
                     setActiveTab('workshop');
                     setIsMobileMenuOpen(false);
                   }}
-                  className="mt-3 w-full py-1.5 px-2.5 rounded-lg border border-lime-400/40 bg-lime-400/10 hover:bg-lime-400/20 text-lime-400 text-[10px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  className={`mt-3 w-full py-1.5 px-2.5 rounded-lg border text-[10px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    isDayMode
+                      ? 'border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-800'
+                      : 'border-lime-400/40 bg-lime-400/10 hover:bg-lime-400/20 text-lime-400'
+                  }`}
                 >
                   <Shirt className="w-3.5 h-3.5" />
                   <span>Utiliser ma cagnotte en Atelier</span>
@@ -205,25 +227,30 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* NAVIGATION & STUDIO */}
               <div className="space-y-1.5">
-                <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 px-1">Navigation & Studio</p>
+                <p className={`text-[10px] uppercase font-bold tracking-wider px-1 ${isDayMode ? 'text-zinc-600' : 'text-zinc-500'}`}>Navigation & Studio</p>
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('generator');
                     setIsMobileMenuOpen(false);
                   }}
-                  className={`w-full p-2.5 rounded-xl border flex items-center justify-between transition cursor-pointer ${activeTab === 'generator'
-                    ? 'bg-lime-400/10 border-lime-400/40 text-lime-400 font-bold'
-                    : isDayMode
-                      ? 'bg-zinc-50 border-zinc-200 text-zinc-800 hover:border-zinc-300'
+                  className={`w-full p-2.5 rounded-xl border flex items-center justify-between transition cursor-pointer ${
+                    activeTab === 'generator'
+                      ? isDayMode
+                        ? 'bg-zinc-900 border-zinc-900 text-white font-bold shadow-xs'
+                        : 'bg-lime-400/10 border-lime-400/40 text-lime-400 font-bold'
+                      : isDayMode
+                      ? 'bg-zinc-50 border-zinc-200 text-zinc-800 hover:bg-zinc-100 hover:border-zinc-300 font-medium'
                       : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700'
-                    }`}
+                  }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <Sparkles className="w-4 h-4 text-lime-400" />
+                    <Sparkles className={`w-4 h-4 ${activeTab === 'generator' && isDayMode ? 'text-white' : 'text-lime-500'}`} />
                     <span>Studio / Générateur d'Affiches</span>
                   </div>
-                  {activeTab === 'generator' && <span className="text-[9px] px-1.5 py-0.5 rounded bg-lime-400/20 text-lime-400 font-bold">ACTIF</span>}
+                  {activeTab === 'generator' && (
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${isDayMode ? 'bg-zinc-800 text-white' : 'bg-lime-400/20 text-lime-400'}`}>ACTIF</span>
+                  )}
                 </button>
 
                 <button
@@ -232,19 +259,22 @@ export const Header: React.FC<HeaderProps> = ({
                     setActiveTab('workshop');
                     setIsMobileMenuOpen(false);
                   }}
-                  className={`w-full p-2.5 rounded-xl border flex items-center justify-between transition cursor-pointer ${activeTab === 'workshop'
-                    ? 'bg-lime-400/10 border-lime-400/40 text-lime-400 font-bold'
-                    : isDayMode
-                      ? 'bg-zinc-50 border-zinc-200 text-zinc-800 hover:border-zinc-300'
+                  className={`w-full p-2.5 rounded-xl border flex items-center justify-between transition cursor-pointer ${
+                    activeTab === 'workshop'
+                      ? isDayMode
+                        ? 'bg-zinc-900 border-zinc-900 text-white font-bold shadow-xs'
+                        : 'bg-lime-400/10 border-lime-400/40 text-lime-400 font-bold'
+                      : isDayMode
+                      ? 'bg-zinc-50 border-zinc-200 text-zinc-800 hover:bg-zinc-100 hover:border-zinc-300 font-medium'
                       : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700'
-                    }`}
+                  }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <Shirt className="w-4 h-4 text-lime-400" />
+                    <Shirt className={`w-4 h-4 ${activeTab === 'workshop' && isDayMode ? 'text-white' : 'text-lime-500'}`} />
                     <span>Atelier Presse DTF & Textile</span>
                   </div>
                   {pendingPressCount > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-lime-400/20 text-lime-400 font-bold">{pendingPressCount}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${isDayMode ? 'bg-zinc-800 text-white' : 'bg-lime-400/20 text-lime-400'}`}>{pendingPressCount}</span>
                   )}
                 </button>
 
@@ -256,12 +286,12 @@ export const Header: React.FC<HeaderProps> = ({
                       onOpenProjects();
                     }}
                     className={`w-full p-2.5 rounded-xl border flex items-center justify-between transition cursor-pointer ${isDayMode
-                      ? 'bg-zinc-50 border-zinc-200 text-zinc-800 hover:border-zinc-300'
+                      ? 'bg-zinc-50 border-zinc-200 text-zinc-800 hover:bg-zinc-100 hover:border-zinc-300 font-medium'
                       : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700'
                       }`}
                   >
                     <div className="flex items-center gap-2.5">
-                      <Folder className="w-4 h-4 text-lime-400" />
+                      <Folder className={`w-4 h-4 ${isDayMode ? 'text-zinc-700' : 'text-lime-400'}`} />
                       <span>Mes Projets</span>
                     </div>
                     <ExternalLink className="w-3.5 h-3.5 text-zinc-500" />
@@ -271,7 +301,7 @@ export const Header: React.FC<HeaderProps> = ({
 
               {/* AIDE & SUPPORT */}
               <div className="space-y-1.5">
-                <p className="text-[10px] uppercase font-bold tracking-wider text-zinc-500 px-1">Aide & Support</p>
+                <p className={`text-[10px] uppercase font-bold tracking-wider px-1 ${isDayMode ? 'text-zinc-600' : 'text-zinc-500'}`}>Aide & Support</p>
                 {onOpenHelp && (
                   <button
                     type="button"
@@ -280,15 +310,15 @@ export const Header: React.FC<HeaderProps> = ({
                       onOpenHelp();
                     }}
                     className={`w-full p-2.5 rounded-xl border flex items-center justify-between transition cursor-pointer ${isDayMode
-                      ? 'bg-zinc-50 border-zinc-200 text-zinc-800 hover:border-zinc-300'
+                      ? 'bg-zinc-50 border-zinc-200 text-zinc-800 hover:bg-zinc-100 hover:border-zinc-300 font-medium'
                       : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700'
                       }`}
                   >
                     <div className="flex items-center gap-2.5">
-                      <HelpCircle className="w-4 h-4 text-lime-400" />
+                      <HelpCircle className={`w-4 h-4 ${isDayMode ? 'text-zinc-700' : 'text-lime-400'}`} />
                       <span>Centre d'aide & Documentation</span>
                     </div>
-                    <span className="text-[10px] text-zinc-500">Guide</span>
+                    <span className={`text-[10px] ${isDayMode ? 'text-zinc-600' : 'text-zinc-500'}`}>Guide</span>
                   </button>
                 )}
 
@@ -300,7 +330,7 @@ export const Header: React.FC<HeaderProps> = ({
                       setIsMobileMenuOpen(false);
                     }}
                     className={`w-full p-2.5 rounded-xl border flex items-center justify-between transition cursor-pointer ${isDayMode
-                      ? 'bg-zinc-50 border-zinc-200 text-zinc-800 hover:border-zinc-300'
+                      ? 'bg-zinc-50 border-zinc-200 text-zinc-800 hover:bg-zinc-100 hover:border-zinc-300 font-medium'
                       : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:border-zinc-700'
                       }`}
                   >
@@ -308,7 +338,7 @@ export const Header: React.FC<HeaderProps> = ({
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
                       <span>Aide en Live</span>
                     </div>
-                    <span className="text-[10px] text-zinc-500">Direct</span>
+                    <span className={`text-[10px] ${isDayMode ? 'text-zinc-600' : 'text-zinc-500'}`}>Direct</span>
                   </button>
                 )}
               </div>
@@ -316,8 +346,8 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* BASCULE DU THÈME (MODE JOUR / NUIT) */}
             {onToggleDayMode && (
-              <div className="pt-3 border-t border-zinc-200 dark:border-zinc-800/80 flex items-center justify-between mt-4">
-                <span className="text-zinc-600 dark:text-zinc-400 text-[11px] flex items-center gap-2">
+              <div className={`pt-3 border-t flex items-center justify-between mt-4 ${isDayMode ? 'border-zinc-200' : 'border-zinc-800/80'}`}>
+                <span className={`text-[11px] flex items-center gap-2 ${isDayMode ? 'text-zinc-700 font-medium' : 'text-zinc-400'}`}>
                   {isDayMode ? <Sun className="w-3.5 h-3.5 text-amber-500" /> : <Moon className="w-3.5 h-3.5 text-lime-400" />}
                   <span>Mode d'affichage</span>
                 </span>
@@ -325,11 +355,11 @@ export const Header: React.FC<HeaderProps> = ({
                   type="button"
                   onClick={onToggleDayMode}
                   className={`px-3 py-1.5 rounded-xl border text-[11px] font-bold transition flex items-center gap-1.5 cursor-pointer ${isDayMode
-                    ? 'bg-zinc-100 border-zinc-300 text-zinc-800 hover:border-zinc-400'
+                    ? 'bg-zinc-100 hover:bg-zinc-200 border-zinc-300 text-zinc-800'
                     : 'bg-zinc-900 border-zinc-700 text-zinc-200 hover:border-zinc-600'
                     }`}
                 >
-                  {isDayMode ? <Moon className="w-3.5 h-3.5 text-zinc-500" /> : <Sun className="w-3.5 h-3.5 text-amber-400" />}
+                  {isDayMode ? <Moon className="w-3.5 h-3.5 text-zinc-700" /> : <Sun className="w-3.5 h-3.5 text-amber-400" />}
                   <span>{isDayMode ? 'Mode Nuit' : 'Mode Jour'}</span>
                 </button>
               </div>

@@ -220,10 +220,13 @@ export const StyleDirectionPicker: React.FC<StyleDirectionPickerProps> = ({
         typographyStyle: preset.typographyId,
         headerTagline: preset.label,
         accentColor: preset.defaultColor,
+        themeColor: preset.defaultColor,
+        primaryColor: preset.defaultColor,
         dynamicTheme: {
           ...(prev.dynamicTheme || { secondaryAccent: '#00f0ff' }),
           primaryAccent: preset.defaultColor,
           glowColor: preset.defaultColor,
+          themeColor: preset.defaultColor,
         },
         ambiancePrompt: updatedPrompt,
       };
@@ -232,7 +235,7 @@ export const StyleDirectionPicker: React.FC<StyleDirectionPickerProps> = ({
 
   /**
    * Modification manuelle de la couleur d'accent (Desktop) :
-   * - Met à jour 'accentColor' et 'dynamicTheme'.
+   * - Met à jour 'accentColor', 'themeColor', 'primaryColor' et 'dynamicTheme'.
    * - Répercute la nouvelle couleur dans le prompt IA.
    */
   const handleColorChange = (newColor: string) => {
@@ -247,10 +250,13 @@ export const StyleDirectionPicker: React.FC<StyleDirectionPickerProps> = ({
       return {
         ...prev,
         accentColor: newColor,
+        themeColor: newColor,
+        primaryColor: newColor,
         dynamicTheme: {
           ...(prev.dynamicTheme || { secondaryAccent: '#00f0ff' }),
           primaryAccent: newColor,
           glowColor: newColor,
+          themeColor: newColor,
         },
         ambiancePrompt: updatedPrompt,
       };
@@ -268,10 +274,13 @@ export const StyleDirectionPicker: React.FC<StyleDirectionPickerProps> = ({
       return {
         ...prev,
         accentColor: newHex,
+        themeColor: newHex,
+        primaryColor: newHex,
         dynamicTheme: {
           ...(prev.dynamicTheme || { secondaryAccent: '#00f0ff' }),
           primaryAccent: newHex,
           glowColor: newHex,
+          themeColor: newHex,
         },
         ambiancePrompt: updatedPrompt,
       };
@@ -298,7 +307,11 @@ export const StyleDirectionPicker: React.FC<StyleDirectionPickerProps> = ({
               onClick={() => handleColorChange(item.color)}
               className={`h-7 px-2.5 rounded-lg border text-[10px] font-mono font-bold uppercase transition flex items-center gap-1.5 cursor-pointer shrink-0 focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none active:scale-95 ${
                 isSelected
-                  ? 'border-white bg-zinc-800 text-white shadow-lg ring-1 ring-white/30'
+                  ? isDayMode
+                    ? 'border-zinc-900 bg-zinc-900 text-white shadow-sm'
+                    : 'border-white bg-zinc-800 text-white shadow-lg ring-1 ring-white/30'
+                  : isDayMode
+                  ? 'border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-medium'
                   : 'border-zinc-800 bg-zinc-900/80 text-zinc-400 hover:text-white hover:border-zinc-700'
               }`}
               title={item.label}
@@ -339,8 +352,8 @@ export const StyleDirectionPicker: React.FC<StyleDirectionPickerProps> = ({
 
           {/* Label sobre "Couleur d'accent" */}
           <span
-            className={`text-xs font-mono font-medium tracking-tight transition-colors ${
-              isDayMode ? 'text-zinc-700 group-hover:text-zinc-900' : 'text-zinc-300 group-hover:text-white'
+            className={`text-xs font-mono tracking-tight transition-colors ${
+              isDayMode ? 'text-zinc-900 group-hover:text-zinc-950 font-bold' : 'text-zinc-300 group-hover:text-white font-medium'
             }`}
           >
             Couleur personnalisée
@@ -353,9 +366,9 @@ export const StyleDirectionPicker: React.FC<StyleDirectionPickerProps> = ({
         {/* Jauge 1 : Teinte de la couleur d'accent (0° à 360°) */}
         <div className="space-y-1.5">
           <div className="flex justify-between text-[10px] font-mono font-bold">
-            <span className={isDayMode ? 'text-zinc-700' : 'text-zinc-300'}>Couleur d'accent (Teinte)</span>
+            <span className={isDayMode ? 'text-zinc-900' : 'text-zinc-300'}>Couleur d'accent (Teinte)</span>
             <div className="flex items-center gap-1.5">
-              <span className="text-lime-400 font-mono">{hueValue}°</span>
+              <span className={`font-mono ${isDayMode ? 'text-zinc-900' : 'text-lime-400'}`}>{hueValue}°</span>
               <span
                 className="w-3.5 h-3.5 rounded-full border border-white/20 inline-block shadow-sm"
                 style={{ backgroundColor: currentAccentColor }}
@@ -405,8 +418,8 @@ export const StyleDirectionPicker: React.FC<StyleDirectionPickerProps> = ({
         {/* Jauge 2 : Luminosité / Éclat Néon (20% à 90%) */}
         <div className="space-y-1.5">
           <div className="flex justify-between text-[10px] font-mono font-bold">
-            <span className={isDayMode ? 'text-zinc-700' : 'text-zinc-300'}>Éclat &amp; Luminosité</span>
-            <span className="text-lime-400 font-mono">{lightnessValue} %</span>
+            <span className={isDayMode ? 'text-zinc-900' : 'text-zinc-300'}>Éclat &amp; Luminosité</span>
+            <span className={`font-mono ${isDayMode ? 'text-zinc-900' : 'text-lime-400'}`}>{lightnessValue} %</span>
           </div>
           <input
             type="range"

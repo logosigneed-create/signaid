@@ -31,6 +31,8 @@ import {
   resolveHeadlinerEventSlots,
   resolveMinimalBrandSlots,
   mapFieldToTextOffsetKey,
+  resolveSecondarySubjectTransform,
+  applySecondarySubjectUpdate,
 } from '../types';
 import { getAutoScaledFontSize } from '../utils/fontScaler';
 import { parseTextSegments, getCleanDisplayText } from '../utils/textSegmenter';
@@ -244,14 +246,14 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     : (typeof data.backgroundBrightness === 'number' ? data.backgroundBrightness : 1.0);
 
   const toneOverlay = computeToneOverlay(currentTone, isToneActive, bgBrightness);
-  const isToneCenter = toneOverlay.isNeutral || Math.abs(currentTone - 0.5) < 0.03;
+  const isToneCenter = toneOverlay.isNeutral || Math.abs(currentTone - 0.5) < 0.03 || currentTone === 0.5;
   const isLightCanvas = isToneActive && !isToneCenter && currentTone < 0.48;
   const toneRgb = isToneCenter ? 0 : Math.round(255 * (1 - currentTone));
-  const canvasBgColor = (isToneCenter || Math.abs(currentTone - 0.5) < 0.03)
-    ? '#000000'
-    : (isToneActive && !isToneCenter ? `rgb(${toneRgb}, ${toneRgb}, ${toneRgb})` : 'transparent');
+  const canvasBgColor = isToneActive && !isToneCenter
+    ? `rgb(${toneRgb}, ${toneRgb}, ${toneRgb})`
+    : 'transparent';
 
-  const primaryColor = data.accentColor || data.dynamicTheme?.primaryAccent || restProps.accentColor || '#FF6B00';
+  const primaryColor = data.themeColor || data.primaryColor || data.accentColor || data.dynamicTheme?.primaryAccent || (data.dynamicTheme as any)?.themeColor || restProps.accentColor || '#FF6B00';
 
   // 2b. Auto-Luminance par Computer Vision & Gabarits d'Intention Intelligents
   const autoLuminance = useAutoLuminance(backgroundUrl, currentTone, isToneActive, bgBrightness);
@@ -287,6 +289,13 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const isPostFormat = targetFormatKey === 'post';
   const isStoryFormat = targetFormatKey === 'story';
   const isBannerFormat = targetFormatKey === 'banner';
+  const isA3Format = targetFormatKey === 'a3';
+
+  // Hiérarchie dynamique de superposition des calques Sujet 1 vs Sujet 2
+  const isSubject1InFront =
+    data.foregroundSubject === 'subject1' ||
+    data.subjectLayerOrder === '1_over_2' ||
+    data.subjectStackOrder === 'primary-front';
 
   const masterScale = data.formatTransforms?.post?.scale ??
     (typeof data.djPhotoScale === 'number'
@@ -300,13 +309,25 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       : typeof data.subjectPositionY === 'number'
         ? data.subjectPositionY
         : 0);
+  const masterOffsetX = data.formatTransforms?.post?.offsetX ??
+    (typeof data.djPhotoOffsetX === 'number'
+      ? data.djPhotoOffsetX
+      : typeof data.subjectPositionX === 'number'
+        ? data.subjectPositionX
+        : 0);
 
-  const defaultTransforms = getDefaultFormatTransforms(masterScale, masterOffsetY);
-  const configuredTransform = data.formatTransforms?.[targetFormatKey];
-  const isLegacyDemoTransform = targetFormatKey === 'a3' && configuredTransform && configuredTransform.scale === 1 && configuredTransform.offsetY === -18;
+  const defaultTransforms = getDefaultFormatTransforms(masterScale, masterOffsetY, masterOffsetX);
+  const configuredTransform = data.formatTransforms?.[targetFormatKey] || (isA3Format ? (data.formatTransforms as any)?.flyer : undefined);
+  const isLegacyDemoTransform = isA3Format && configuredTransform && configuredTransform.scale === 1 && (configuredTransform.offsetY === -18 || configuredTransform.offsetY === -19);
   const activeTransforms = configuredTransform && configuredTransform.isCustom && !isLegacyDemoTransform
     ? configuredTransform
-    : defaultTransforms[targetFormatKey];
+    : defaultTransforms[targetFormatKey] || {
+        scale: masterScale,
+        offsetY: 0,
+        offsetX: 0,
+        alignX: 'center',
+        isCustom: false,
+      };
 
   const subjectImage = subject?.image !== undefined
     ? subject.image
@@ -315,6 +336,12 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const subjectOffsetY = subject?.y ?? activeTransforms.offsetY;
   const subjectOffsetX = subject?.x ?? (activeTransforms.offsetX ?? 0);
   const subjectAlignX = subject?.alignX ?? activeTransforms.alignX ?? 'center';
+
+  // Décor (Arrière-plan) : décalages panoramiques Drag & Drop
+  const bgOffsetX = data.backgroundOffsetX ?? 0;
+  const bgOffsetY = data.backgroundOffsetY ?? 0;
+  // Facteur de sur-dimensionnement dynamique pour que l'image reste 100% couvrante sans bord noir
+  const bgScale = Math.max(1.06, 1.06 + Math.max(Math.abs(bgOffsetX), Math.abs(bgOffsetY)) * 0.02) * (data.backgroundScale ?? 1.0);
 
   // État et contrôleurs de glisser-déposer (Drag & Drop) intuitif du Sujet 1
   const [isLocalDraggingSubject, setIsLocalDraggingSubject] = React.useState(false);
@@ -330,11 +357,16 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
 
   // Nettoyage de sécurité des écouteurs globaux si le composant est démonté pendant un drag
   const dragCleanupRef = React.useRef<(() => void) | null>(null);
+  const dragCleanup2Ref = React.useRef<(() => void) | null>(null);
   React.useEffect(() => {
     return () => {
       if (dragCleanupRef.current) {
         dragCleanupRef.current();
         dragCleanupRef.current = null;
+      }
+      if (dragCleanup2Ref.current) {
+        dragCleanup2Ref.current();
+        dragCleanup2Ref.current = null;
       }
     };
   }, []);
@@ -404,7 +436,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       const newY = Math.round((state.initialOffsetY + deltaPercentY) * 10) / 10;
 
       const clampedX = Math.max(-80, Math.min(80, newX));
-      const clampedY = Math.max(-60, Math.min(200, newY));
+      const clampedY = Math.max(-60, Math.min(60, newY));
 
       if (onUpdateSubjectPosition) {
         onUpdateSubjectPosition({ x: clampedX, y: clampedY });
@@ -474,6 +506,263 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     handleSubjectStart(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
   };
 
+  // Second sujet (duo / B2B) si présent
+  const secondarySubjectImage = data.secondaryDjPhoto || null;
+  const secondaryTr = resolveSecondarySubjectTransform(
+    data,
+    targetFormatKey,
+    subjectImage ? { scale: subjectScale, offsetY: subjectOffsetY, offsetX: subjectOffsetX, alignX: subjectAlignX } : null
+  );
+  const secondarySubjectScale = data.subject2Scale ?? data.secondaryDjPhotoScale ?? secondaryTr.scale;
+  const secondarySubjectOffsetY = data.subject2OffsetY ?? data.secondaryDjPhotoOffsetY ?? secondaryTr.offsetY;
+  const secondarySubjectOffsetX = data.subject2OffsetX ?? data.secondaryDjPhotoOffsetX ?? secondaryTr.offsetX;
+
+  // État et contrôleurs de glisser-déposer (Drag & Drop) intuitif du Sujet 2
+  const [isLocalDraggingSubject2, setIsLocalDraggingSubject2] = React.useState(false);
+  const subject2DragRef = React.useRef<{
+    startX: number;
+    startY: number;
+    initialOffsetX: number;
+    initialOffsetY: number;
+    containerWidth: number;
+    containerHeight: number;
+    hasMoved: boolean;
+  } | null>(null);
+
+  const handleSubject2Start = (
+    clientX: number,
+    clientY: number,
+    targetEl: HTMLElement,
+    originalEvent: any
+  ) => {
+    if (!isInteractive) return;
+
+    const container =
+      (targetEl.closest('[data-poster-container="true"]') as HTMLElement | null) ||
+      (targetEl.closest('[data-poster-virtual-canvas="true"]') as HTMLElement | null) ||
+      wrapperRef.current ||
+      targetEl.parentElement;
+
+    const rect = container?.getBoundingClientRect() || targetEl.getBoundingClientRect();
+    const containerWidth = rect.width > 0 ? rect.width : BASE_WIDTH;
+    const containerHeight = rect.height > 0 ? rect.height : BASE_HEIGHT;
+
+    subject2DragRef.current = {
+      startX: clientX,
+      startY: clientY,
+      initialOffsetX: secondarySubjectOffsetX,
+      initialOffsetY: secondarySubjectOffsetY,
+      containerWidth,
+      containerHeight,
+      hasMoved: false,
+    };
+
+    onVisualElementClick?.('subject2' as any);
+
+    const handleWindowMove = (moveEvt: MouseEvent | TouchEvent) => {
+      const state = subject2DragRef.current;
+      if (!state) return;
+
+      const curClientX = 'touches' in moveEvt ? moveEvt.touches[0].clientX : moveEvt.clientX;
+      const curClientY = 'touches' in moveEvt ? moveEvt.touches[0].clientY : moveEvt.clientY;
+
+      const deltaX = curClientX - state.startX;
+      const deltaY = curClientY - state.startY;
+
+      if (!state.hasMoved) {
+        if (Math.hypot(deltaX, deltaY) > 2) {
+          state.hasMoved = true;
+          setIsLocalDraggingSubject2(true);
+        } else {
+          return;
+        }
+      }
+
+      if (moveEvt.cancelable) {
+        moveEvt.preventDefault();
+      }
+
+      const deltaPercentX = (deltaX / state.containerWidth) * 100;
+      const deltaPercentY = (deltaY / state.containerHeight) * 100;
+
+      const newX = Math.round((state.initialOffsetX + deltaPercentX) * 10) / 10;
+      const newY = Math.round((state.initialOffsetY + deltaPercentY) * 10) / 10;
+
+      const clampedX = Math.max(-80, Math.min(80, newX));
+      const clampedY = Math.max(-60, Math.min(60, newY));
+
+      if (setInput) {
+        setInput((prev) => {
+          return applySecondarySubjectUpdate(
+            prev,
+            targetFormatKey,
+            { scale: subjectScale, offsetY: subjectOffsetY, offsetX: subjectOffsetX, alignX: subjectAlignX },
+            { offsetX: clampedX, offsetY: clampedY }
+          );
+        });
+      }
+    };
+
+    const handleWindowUp = (upEvt: MouseEvent | TouchEvent) => {
+      cleanup();
+      const state = subject2DragRef.current;
+      const didMove = state?.hasMoved;
+      subject2DragRef.current = null;
+      setIsLocalDraggingSubject2(false);
+
+      if (!didMove) {
+        onVisualElementClick?.('subject2' as any);
+      }
+    };
+
+    const cleanup = () => {
+      window.removeEventListener('mousemove', handleWindowMove);
+      window.removeEventListener('mouseup', handleWindowUp);
+      window.removeEventListener('touchmove', handleWindowMove);
+      window.removeEventListener('touchend', handleWindowUp);
+      window.removeEventListener('touchcancel', handleWindowUp);
+      dragCleanup2Ref.current = null;
+    };
+
+    dragCleanup2Ref.current = cleanup;
+    window.addEventListener('mousemove', handleWindowMove, { passive: false });
+    window.addEventListener('mouseup', handleWindowUp);
+    window.addEventListener('touchmove', handleWindowMove, { passive: false });
+    window.addEventListener('touchend', handleWindowUp);
+    window.addEventListener('touchcancel', handleWindowUp);
+  };
+
+  const handleSubject2MouseDown = (e: React.MouseEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    handleSubject2Start(e.clientX, e.clientY, e.currentTarget, e);
+  };
+
+  const handleSubject2TouchStart = (e: React.TouchEvent<HTMLElement>) => {
+    if (e.touches.length !== 1) return;
+    e.stopPropagation();
+    handleSubject2Start(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
+  };
+
+  // État et contrôleurs de glisser-déposer (Drag & Drop) intuitif du Décor (Arrière-plan)
+  const [isLocalDraggingBg, setIsLocalDraggingBg] = React.useState(false);
+  const bgDragRef = React.useRef<{
+    startX: number;
+    startY: number;
+    initialOffsetX: number;
+    initialOffsetY: number;
+    containerWidth: number;
+    containerHeight: number;
+    hasMoved: boolean;
+  } | null>(null);
+
+  const handleBgStart = (
+    clientX: number,
+    clientY: number,
+    targetEl: HTMLElement,
+    originalEvent: any
+  ) => {
+    if (!isInteractive) return;
+
+    const container =
+      (targetEl.closest('[data-poster-container="true"]') as HTMLElement | null) ||
+      (targetEl.closest('[data-poster-virtual-canvas="true"]') as HTMLElement | null) ||
+      wrapperRef.current ||
+      targetEl.parentElement;
+
+    const rect = container?.getBoundingClientRect() || targetEl.getBoundingClientRect();
+    const containerWidth = rect.width > 0 ? rect.width : BASE_WIDTH;
+    const containerHeight = rect.height > 0 ? rect.height : (isA3Format ? 1528 : BASE_HEIGHT);
+
+    bgDragRef.current = {
+      startX: clientX,
+      startY: clientY,
+      initialOffsetX: data.backgroundOffsetX ?? 0,
+      initialOffsetY: data.backgroundOffsetY ?? 0,
+      containerWidth,
+      containerHeight,
+      hasMoved: false,
+    };
+
+    const handleWindowMove = (moveEvt: MouseEvent | TouchEvent) => {
+      const state = bgDragRef.current;
+      if (!state) return;
+
+      const curClientX = 'touches' in moveEvt ? moveEvt.touches[0].clientX : moveEvt.clientX;
+      const curClientY = 'touches' in moveEvt ? moveEvt.touches[0].clientY : moveEvt.clientY;
+
+      const deltaX = curClientX - state.startX;
+      const deltaY = curClientY - state.startY;
+
+      if (!state.hasMoved) {
+        if (Math.hypot(deltaX, deltaY) > 2) {
+          state.hasMoved = true;
+          setIsLocalDraggingBg(true);
+        } else {
+          return;
+        }
+      }
+
+      if (moveEvt.cancelable) {
+        moveEvt.preventDefault();
+      }
+
+      const deltaPercentX = (deltaX / state.containerWidth) * 100;
+      const deltaPercentY = (deltaY / state.containerHeight) * 100;
+
+      const newX = Math.round((state.initialOffsetX + deltaPercentX) * 10) / 10;
+      const newY = Math.round((state.initialOffsetY + deltaPercentY) * 10) / 10;
+
+      const clampedX = Math.max(-35, Math.min(35, newX));
+      const clampedY = Math.max(-35, Math.min(35, newY));
+
+      if (setInput) {
+        setInput((prev) => ({
+          ...prev,
+          backgroundOffsetX: clampedX,
+          backgroundOffsetY: clampedY,
+        }));
+      }
+    };
+
+    const handleWindowUp = () => {
+      cleanup();
+      const state = bgDragRef.current;
+      const didMove = state?.hasMoved;
+      bgDragRef.current = null;
+      setIsLocalDraggingBg(false);
+
+      if (!didMove) {
+        onVisualElementClick?.('decor');
+      }
+    };
+
+    const cleanup = () => {
+      window.removeEventListener('mousemove', handleWindowMove);
+      window.removeEventListener('mouseup', handleWindowUp);
+      window.removeEventListener('touchmove', handleWindowMove);
+      window.removeEventListener('touchend', handleWindowUp);
+      window.removeEventListener('touchcancel', handleWindowUp);
+    };
+
+    window.addEventListener('mousemove', handleWindowMove, { passive: false });
+    window.addEventListener('mouseup', handleWindowUp);
+    window.addEventListener('touchmove', handleWindowMove, { passive: false });
+    window.addEventListener('touchend', handleWindowUp);
+    window.addEventListener('touchcancel', handleWindowUp);
+  };
+
+  const handleBgMouseDown = (e: React.MouseEvent<HTMLElement>) => {
+    if (e.button !== 0) return;
+    handleBgStart(e.clientX, e.clientY, e.currentTarget, e);
+  };
+
+  const handleBgTouchStart = (e: React.TouchEvent<HTMLElement>) => {
+    if (e.touches.length !== 1) return;
+    handleBgStart(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
+  };
+
   // Opacité, Dégradé Fondu Bas et Blend-Mode du sujet
   const subjectOpacity = typeof subject?.opacity === 'number'
     ? subject.opacity
@@ -497,9 +786,6 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const isHarmonized = subject?.isHarmonized ?? (data.isSubjectHarmonized ?? false);
   const rawBlendMode = subject?.blendMode || data.subjectBlendMode || 'normal';
   const blendMode = (rawBlendMode === 'auto' ? 'normal' : rawBlendMode) as React.CSSProperties['mixBlendMode'];
-
-  // Second sujet (duo / B2B) si présent
-  const secondarySubjectImage = data.secondaryDjPhoto || null;
 
   // 4. Typographie & Textes (Synchronisés sur le format actif)
   const resolvedTextScales = resolveTextScalesForFormat(data, targetFormatKey);
@@ -620,6 +906,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   // 6. Gestion interactive vs passive (Studio vs Live Hub)
   const isDecorActive = isInteractive && !isExporting && (!activeSection || activeSection === 'decor');
   const isSubjectActive = isInteractive && !isExporting && (!activeSection || activeSection === 'subject');
+  const isSubject2Active = isInteractive && !isExporting && (!activeSection || activeSection === 'subject2' || activeSection === 'subject');
   const isLogoActive = isInteractive && !isExporting && (!activeSection || activeSection === 'logo');
   const isTextsActive = isInteractive && !isExporting && (!activeSection || activeSection === 'texts' || activeSection === 'textSizes');
   const canInteractTexts = isInteractive && !isExporting;
@@ -794,7 +1081,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           const isSurtitre = item.type === 'surtitre';
           const isSoustitre = item.type === 'soustitre';
           const cleanText = getCleanDisplayText(sanitizeStudioText(item.text || ' '));
-          const segments = parseTextSegments(item.text, item.color || '#FFFFFF', item.accentColor || '#E11D48', item.highlightedWords);
+          const segments = parseTextSegments(item.text, item.color || '#FFFFFF', item.accentColor || primaryColor || '#E11D48', item.highlightedWords);
 
           const alignClass = item.align === 'left'
             ? 'justify-start text-left'
@@ -1120,11 +1407,11 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                 fontFamily: "'Permanent Marker', 'Syne', cursive, -apple-system, sans-serif",
                 fontWeight: 700,
                 fontStyle: 'italic',
-                color: isAccentFocused ? undefined : ACCENT_COLOR_ORANGE,
-                WebkitTextFillColor: isAccentFocused ? undefined : ACCENT_COLOR_ORANGE,
+                color: isAccentFocused ? undefined : primaryColor,
+                WebkitTextFillColor: isAccentFocused ? undefined : primaryColor,
                 letterSpacing: '0.04em',
                 fontSize: 'clamp(28px, 5.8cqi, 54px)',
-                textShadow: '0 2px 6px rgba(0,0,0,0.9), 0 0 25px rgba(249, 115, 22, 0.45)',
+                textShadow: `0 2px 6px rgba(0,0,0,0.9), 0 0 25px ${primaryColor}70`,
               }}
             >
               {accentText || (isAccentFocused ? ' ' : '')}
@@ -1139,7 +1426,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
             >
               <path
                 d="M3 10C35 4 80 12 118 6C155 1 195 11 235 5C246 3 255 7 257 9C248 11 225 12 198 11C152 10 108 14 62 12C38 11 16 13 3 11Z"
-                fill="#F97316"
+                fill={primaryColor}
               />
             </svg>
           </div>
@@ -1286,7 +1573,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                 e.stopPropagation();
                 onVisualElementClick?.('texts', 'bottomAccent');
               } : undefined}
-              className={`flex flex-col items-center justify-center font-bold italic text-[#F97316] ${isBannerFormat ? 'text-[clamp(22px,5cqi,42px)]' : 'text-[clamp(30px,6.5cqi,56px)]'} tracking-tight w-full transition-all select-none leading-tight mt-1 ${
+              className={`flex flex-col items-center justify-center font-bold italic ${isBannerFormat ? 'text-[clamp(22px,5cqi,42px)]' : 'text-[clamp(30px,6.5cqi,56px)]'} tracking-tight w-full transition-all select-none leading-tight mt-1 ${
                 isTextsActive
                   ? isDraggingField === 'punchline'
                     ? 'pointer-events-auto cursor-grabbing ring-2 ring-emerald-400 rounded-lg p-1 bg-emerald-400/20 text-emerald-300 shadow-[0_0_15px_rgba(52,211,153,0.85)] scale-[1.01]'
@@ -1296,6 +1583,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                   : 'pointer-events-none'
               }`}
               style={{
+                color: primaryColor,
                 transform: `translateX(${resolvedOffsetsX.punchline ?? 0}%) translateY(${resolvedOffsetsY.punchline ?? 0}cqi)`,
                 pointerEvents: isTextsActive ? 'auto' : 'none',
                 touchAction: 'none',
@@ -1305,11 +1593,11 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
 
               {/* Trait souligné vectoriel SVG STRICTEMENT encapsulé dans la condition du mot d'accent */}
               <svg
-                className={`${isBannerFormat ? 'w-36 h-1.5' : 'w-48 h-2'} text-[#F97316] mt-0.5 overflow-visible select-none pointer-events-none`}
+                className={`${isBannerFormat ? 'w-36 h-1.5' : 'w-48 h-2'} mt-0.5 overflow-visible select-none pointer-events-none`}
                 viewBox="0 0 260 16"
                 fill="currentColor"
                 xmlns="http://www.w3.org/2000/svg"
-                style={{ pointerEvents: 'none' }}
+                style={{ pointerEvents: 'none', color: primaryColor }}
               >
                 <path d="M3 10C35 4 80 12 118 6C155 1 195 11 235 5C246 3 255 7 257 9C248 11 225 12 198 11C152 10 108 14 62 12C38 11 16 13 3 11Z" />
               </svg>
@@ -1419,10 +1707,11 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                     isTextsActive
                       ? isSubRoleFocused
                         ? 'pointer-events-auto cursor-grab text-emerald-300 underline font-black ring-1 ring-emerald-400 rounded px-1'
-                        : 'pointer-events-auto cursor-grab hover:underline text-amber-400'
-                      : 'pointer-events-none text-amber-400'
+                        : 'pointer-events-auto cursor-grab hover:underline'
+                      : 'pointer-events-none'
                   }`}
                   style={{
+                    color: primaryColor,
                     fontSize: isBannerFormat ? '1.8cqi' : '2.2cqi',
                     pointerEvents: isTextsActive ? 'auto' : 'none',
                     touchAction: 'none',
@@ -1469,14 +1758,22 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                     e.stopPropagation();
                     onVisualElementClick?.('texts', 'ticketCta');
                   } : undefined}
-                  className={`font-mono font-bold tracking-wider text-emerald-400 uppercase mt-0.5 px-2.5 py-0.5 rounded-full bg-emerald-400/15 border border-emerald-400/30 transition-all select-none ${
+                  className={`font-mono font-bold tracking-wider uppercase mt-0.5 px-2.5 py-0.5 rounded-full transition-all select-none ${
                     isTextsActive
                       ? isTicketFocused
-                        ? 'pointer-events-auto cursor-pointer ring-1 ring-emerald-400'
-                        : 'pointer-events-auto cursor-pointer hover:bg-emerald-400/25'
+                        ? 'pointer-events-auto cursor-pointer ring-1'
+                        : 'pointer-events-auto cursor-pointer hover:opacity-90'
                       : 'pointer-events-none'
                   }`}
-                  style={{ fontSize: isBannerFormat ? '1.5cqi' : '1.8cqi', pointerEvents: isTextsActive ? 'auto' : 'none' }}
+                  style={{
+                    fontSize: isBannerFormat ? '1.5cqi' : '1.8cqi',
+                    pointerEvents: isTextsActive ? 'auto' : 'none',
+                    color: primaryColor,
+                    borderColor: `${primaryColor}66`,
+                    backgroundColor: `${primaryColor}22`,
+                    borderWidth: '1px',
+                    borderStyle: 'solid',
+                  }}
                 >
                   {ticketCta || (isTicketFocused ? ' ' : '')}
                 </div>
@@ -1550,7 +1847,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         )}
 
         {/* Filet séparateur subtil */}
-        <div className="w-14 h-[2px] bg-emerald-500/80 my-2.5 rounded-full" />
+        <div className="w-14 h-[2px] my-2.5 rounded-full" style={{ backgroundColor: primaryColor }} />
 
         {/* Slogan / Manifeste : Typographie fine & épurée */}
         {Boolean(tagline?.trim() || isTaglineFocused) && (
@@ -1602,14 +1899,14 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
               e.stopPropagation();
               onVisualElementClick?.('texts', 'releaseDate');
             } : undefined}
-            className={`font-mono font-bold uppercase mt-3.5 inline-block px-3 py-1 rounded bg-black/60 border border-emerald-500/40 backdrop-blur-sm shadow-md transition-all select-none ${
+            className={`font-mono font-bold uppercase mt-3.5 inline-block px-3 py-1 rounded bg-black/60 backdrop-blur-sm shadow-md transition-all select-none ${
               isTextsActive
                 ? isDraggingField === 'infoBadge'
                   ? 'pointer-events-auto cursor-grabbing ring-2 ring-emerald-400 text-emerald-300'
                   : isReleaseDateFocused
                     ? 'pointer-events-auto cursor-grab ring-2 ring-emerald-400 text-emerald-300'
-                    : 'pointer-events-auto cursor-grab hover:border-emerald-400 text-emerald-400'
-                : 'pointer-events-none text-emerald-400'
+                    : 'pointer-events-auto cursor-grab hover:opacity-90'
+                : 'pointer-events-none'
             }`}
             style={{
               transform: `translateX(${resolvedOffsetsX.infoBadge ?? 0}%) translateY(${resolvedOffsetsY.infoBadge ?? 0}cqi)`,
@@ -1617,6 +1914,10 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
               fontSize: isBannerFormat ? '1.5cqi' : '1.8cqi',
               pointerEvents: isTextsActive ? 'auto' : 'none',
               touchAction: 'none',
+              color: primaryColor,
+              borderColor: `${primaryColor}66`,
+              borderWidth: '1px',
+              borderStyle: 'solid',
             }}
           >
             {releaseDate || (isReleaseDateFocused ? ' ' : '')}
@@ -1644,7 +1945,9 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       ? '9 / 16'
       : isBannerFormat
         ? '16 / 9'
-        : '4 / 5';
+        : isA3Format
+          ? '1 / 1.414'
+          : '4 / 5';
 
   const containerAspectClass = isPostFormat
     ? 'aspect-square'
@@ -1652,7 +1955,9 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       ? 'aspect-[9/16]'
       : isBannerFormat
         ? 'aspect-[16/9]'
-        : 'aspect-[4/5]';
+        : isA3Format
+          ? 'aspect-[1/1.414]'
+          : 'aspect-[4/5]';
 
   const virtualCanvasHeight = isPostFormat
     ? BASE_WIDTH
@@ -1660,7 +1965,9 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       ? 1920
       : isBannerFormat
         ? 608
-        : BASE_HEIGHT;
+        : isA3Format
+          ? 1528
+          : BASE_HEIGHT;
 
   return (
     <div
@@ -1686,7 +1993,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       */}
       <div
         data-poster-virtual-canvas="true"
-        className="@container relative overflow-hidden select-none"
+        className="@container relative overflow-visible select-none"
         style={{
           width: `${BASE_WIDTH}px`,
           height: `${virtualCanvasHeight}px`,
@@ -1696,7 +2003,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           transformOrigin: 'top left',
           transform: `scale(${scaleFactor})`,
           containerType: 'inline-size',
-          backgroundColor: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03) ? '#000000' : canvasBgColor,
+          backgroundColor: canvasBgColor,
           WebkitTouchCallout: 'none',
           WebkitUserSelect: 'none',
           userSelect: 'none',
@@ -1723,51 +2030,60 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
             </filter>
           </defs>
         </svg>
-        {/* 1. Fond du Décor / Ambiance */}
+        {/* 1. Fond du Décor / Ambiance avec Drag & Drop */}
         <div
           data-canvas-bg="true"
-          className={`absolute inset-0 transition-colors duration-300 select-none z-0 ${
-            isDecorActive
-              ? 'pointer-events-auto cursor-pointer ring-1 ring-inset ring-dashed ring-lime-400/60 shadow-[inset_0_0_15px_rgba(163,230,53,0.15)]'
+          className={`absolute inset-0 w-full h-full transition-colors duration-300 select-none z-0 overflow-hidden ${
+            isInteractive
+              ? isLocalDraggingBg
+                ? 'pointer-events-auto cursor-grabbing active:cursor-grabbing'
+                : 'pointer-events-auto cursor-grab active:cursor-grabbing'
               : 'pointer-events-none'
+          } ${
+            isDecorActive
+              ? 'ring-1 ring-inset ring-dashed ring-lime-400/60 shadow-[inset_0_0_15px_rgba(163,230,53,0.15)]'
+              : ''
           }`}
           style={{
-            backgroundColor: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03) ? '#000000' : canvasBgColor,
-            pointerEvents: isDecorActive ? 'auto' : 'none',
+            backgroundColor: canvasBgColor,
+            pointerEvents: isInteractive ? 'auto' : 'none',
           }}
-          onClick={isDecorActive ? (e) => {
-            e.stopPropagation();
-            onVisualElementClick?.('decor');
+          onMouseDown={isInteractive ? handleBgMouseDown : undefined}
+          onTouchStart={isInteractive ? handleBgTouchStart : undefined}
+          onClick={isInteractive ? (e) => {
+            if (!bgDragRef.current?.hasMoved) {
+              e.stopPropagation();
+              onVisualElementClick?.('decor');
+            }
           } : undefined}
-          title={isDecorActive ? "Cliquer pour configurer le décor" : undefined}
-        />
-
-        {backgroundUrl && (
-          <img
-            src={backgroundUrl}
-            crossOrigin="anonymous"
-            alt="Décor de fond"
-            draggable={false}
-            width={BASE_WIDTH}
-            height={BASE_HEIGHT}
-            loading="eager"
-            fetchPriority="high"
-            decoding="async"
-            onContextMenu={(e) => e.preventDefault()}
-            className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none -webkit-touch-callout-none z-0 transition-opacity duration-300"
-            style={{
-              WebkitTouchCallout: 'none',
-              WebkitUserSelect: 'none',
-              userSelect: 'none',
-              touchAction: 'none',
-              opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03)
-                ? 1
-                : (data.backgroundOpacity ?? 0.75),
-              filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03 || toneOverlay.filterCss === 'none') ? 'none' : toneOverlay.filterCss,
-            }}
-            title={isDecorActive ? "Cliquer pour configurer le fond (Décor & Ambiance)" : undefined}
-          />
-        )}
+          title={isInteractive ? "Glisser pour déplacer le décor (ou cliquer pour régler)" : undefined}
+        >
+          {backgroundUrl && (
+            <img
+              src={backgroundUrl}
+              crossOrigin="anonymous"
+              alt="Décor de fond"
+              draggable={false}
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
+              onContextMenu={(e) => e.preventDefault()}
+              className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none -webkit-touch-callout-none transition-opacity duration-300"
+              style={{
+                WebkitTouchCallout: 'none',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+                touchAction: 'none',
+                transform: `translate(${bgOffsetX}%, ${bgOffsetY}%) scale(${bgScale})`,
+                transformOrigin: 'center center',
+                opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03)
+                  ? 1
+                  : (data.backgroundOpacity ?? 1),
+                filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03 || toneOverlay.filterCss === 'none') ? 'none' : toneOverlay.filterCss,
+              }}
+            />
+          )}
+        </div>
 
       {/* Calque de Tonalité Blanc ↔ Noir */}
       {isToneActive && !isToneCenter && Math.abs(currentTone - 0.5) >= 0.03 && (
@@ -1781,8 +2097,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         />
       )}
 
-      {/* Lueur colorée (backlight/glow) d'ambiance de fond (strictement sous les textes et le sujet) */}
-      {subjectImage && (
+      {/* Lueur colorée (backlight/glow) d'ambiance de fond (strictement sous les textes et le sujet) - désactivée si fond présent ou tonalité neutre */}
+      {subjectImage && !backgroundUrl && !isToneCenter && (
         <div
           className="absolute inset-0 pointer-events-none z-[5] flex items-center justify-center"
           style={{
@@ -1792,8 +2108,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         />
       )}
 
-      {/* Calque d'ambiance de fond (strictement sous les textes et le sujet) */}
-      {subjectImage && isHarmonized && (
+      {/* Calque d'ambiance de fond (strictement sous les textes et le sujet) - désactivé en position neutre (50%) pour préserver l'image de fond brute */}
+      {subjectImage && isHarmonized && !isToneCenter && (
         <div
           className="absolute inset-0 pointer-events-none z-[6] transition-all duration-300"
           style={{
@@ -1820,7 +2136,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         renderSmartComposition('behind', 10)
       )}
 
-      {/* 4. Image du Sujet 1 (100% opaque, au premier plan de la scène, z-index: 20) */}
+      {/* 4. Image du Sujet 1 (100% opaque, au premier plan de la scène) */}
       {subjectImage && (
         <div
           className={`absolute inset-0 flex ${
@@ -1829,18 +2145,18 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
               : subjectAlignX === 'left'
                 ? 'justify-start pl-[8%]'
                 : 'justify-center'
-          } items-end pointer-events-none z-20 pt-[5%]`}
+          } items-end pointer-events-none ${isSubject1InFront ? 'z-[22]' : 'z-20'} overflow-visible`}
           style={{
             transform: `translate(${subjectOffsetX}%, ${subjectOffsetY}%) scale(${subjectScale})`,
             transformOrigin: 'bottom center',
             opacity: subjectOpacity,
             mixBlendMode: blendMode,
-            ...containerFadeMask,
             pointerEvents: 'none',
+            zIndex: isSubject1InFront ? 22 : 20,
           }}
         >
           <div
-            className={`relative inline-flex items-end justify-center max-h-full max-w-full ${
+            className={`relative inline-flex items-end justify-center overflow-visible ${
               isInteractive
                 ? (isLocalDraggingSubject || isDraggingSubject)
                   ? 'cursor-grabbing active:cursor-grabbing pointer-events-auto'
@@ -1856,8 +2172,6 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
               crossOrigin="anonymous"
               alt="Sujet Flyer"
               draggable={false}
-              width={BASE_WIDTH}
-              height={BASE_HEIGHT}
               loading="eager"
               fetchPriority="high"
               decoding="async"
@@ -1895,41 +2209,78 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         </div>
       )}
 
-      {/* Second Sujet B2B si présent (z-index: 21) */}
+      {/* Second Sujet B2B si présent avec Drag & Drop interactif */}
       {secondarySubjectImage && (
         <div
-          className="absolute inset-0 flex items-end justify-center pointer-events-none z-[21] pt-[5%]"
+          className={`absolute inset-0 flex items-end justify-center pointer-events-none ${isSubject1InFront ? 'z-20' : 'z-[22]'} overflow-visible`}
           style={{
+            transform: `translate(${secondarySubjectOffsetX}%, ${secondarySubjectOffsetY}%) scale(${secondarySubjectScale})`,
             transformOrigin: 'bottom center',
             mixBlendMode: 'normal',
             opacity: typeof data.secondaryDjPhotoOpacity === 'number' ? data.secondaryDjPhotoOpacity : 1,
             pointerEvents: 'none',
+            zIndex: isSubject1InFront ? 20 : 22,
           }}
         >
-          <img
-            src={secondarySubjectImage}
-            crossOrigin="anonymous"
-            alt="Second Sujet B2B"
-            draggable={false}
-            className="max-h-full max-w-full object-contain object-bottom select-none pointer-events-none"
-            style={{ pointerEvents: 'none' }}
-          />
+          <div
+            className={`relative inline-flex items-end justify-center overflow-visible ${
+              isInteractive
+                ? isLocalDraggingSubject2
+                  ? 'cursor-grabbing active:cursor-grabbing pointer-events-auto'
+                  : 'cursor-grab active:cursor-grabbing pointer-events-auto'
+                : 'pointer-events-none cursor-default'
+            }`}
+            style={{
+              pointerEvents: isInteractive ? 'auto' : 'none',
+            }}
+          >
+            <img
+              src={secondarySubjectImage}
+              crossOrigin="anonymous"
+              alt="Second Sujet B2B"
+              draggable={false}
+              onContextMenu={(e) => e.preventDefault()}
+              onMouseDown={isInteractive ? handleSubject2MouseDown : undefined}
+              onTouchStart={isInteractive ? handleSubject2TouchStart : undefined}
+              onClick={isInteractive ? (e) => {
+                e.stopPropagation();
+                onVisualElementClick?.('subject2' as any);
+              } : undefined}
+              title={isInteractive ? "Glisser-déposer pour déplacer librement le sujet 2" : undefined}
+              className={`max-h-full max-w-full object-contain object-bottom select-none image-render-hd transition-all ${
+                isInteractive
+                  ? isLocalDraggingSubject2
+                    ? 'pointer-events-auto cursor-grabbing active:cursor-grabbing ring-2 ring-lime-400 shadow-[0_0_25px_rgba(163,230,53,0.85)] scale-[1.01]'
+                    : isSubject2Active
+                      ? 'pointer-events-auto cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-lime-400/80 ring-1 ring-dashed ring-lime-400/80 shadow-[0_0_15px_rgba(163,230,53,0.25)] rounded-xl'
+                      : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:ring-1 hover:ring-lime-400/50'
+                  : 'pointer-events-none cursor-default'
+              }`}
+              style={{
+                WebkitTouchCallout: 'none',
+                WebkitUserSelect: 'none',
+                userSelect: 'none',
+                touchAction: 'none',
+                pointerEvents: isInteractive ? 'auto' : 'none',
+              }}
+            />
+          </div>
         </div>
       )}
 
-      {/* Calque de rehaussement de contraste (Scrim) haute précision (z-index: 24) :
-          Dégradé doux linéaire noir partant de transparent vers un noir 100% opaque à la base du flyer (#000000)
-          garantissant l'absence totale de corps transparent et une lisibilité parfaite des textes */}
-      <div
-        data-scrim-contrast="true"
-        className="absolute inset-0 pointer-events-none z-[24]"
-        style={{
-          pointerEvents: 'none',
-          background: layoutTemplateId === 'duality_campaign'
-            ? 'linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0) 42%, rgba(0, 0, 0, 0.45) 62%, rgba(0, 0, 0, 0.92) 82%, #000000 100%)'
-            : 'linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.25) 65%, rgba(0, 0, 0, 0.6) 82%, rgba(0, 0, 0, 0.85) 100%)',
-        }}
-      />
+      {/* Calque de rehaussement de contraste (Scrim) : strictement désactivé en position neutre (50%) ou avec fond d'image pour préserver la fidélité de l'arrière-plan */}
+      {!isToneCenter && currentTone > 0.5 && !backgroundUrl && (
+        <div
+          data-scrim-contrast="true"
+          className="absolute inset-0 pointer-events-none z-[24]"
+          style={{
+            pointerEvents: 'none',
+            background: layoutTemplateId === 'duality_campaign'
+              ? 'linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0) 42%, rgba(0, 0, 0, 0.45) 62%, rgba(0, 0, 0, 0.92) 82%, #000000 100%)'
+              : 'linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.25) 65%, rgba(0, 0, 0, 0.6) 82%, rgba(0, 0, 0, 0.85) 100%)',
+          }}
+        />
+      )}
 
       {/* 5. Logo superposé déplaçable librement (z-index: 25) */}
       <OverlayLogo

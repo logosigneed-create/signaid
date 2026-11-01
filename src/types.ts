@@ -578,12 +578,17 @@ export interface EventInput {
   lineup?: string;
   colorPalette?: VisualPalette;
   tshirtColor?: TshirtColor;
+  themeColor?: string;
+  primaryColor?: string;
   // --- SECOND SUJET (DUO / B2B) ---
   secondaryDjPhoto?: string;
   rawSecondaryDjPhoto?: string;
   secondaryDjPhotoScale?: number;
   secondaryDjPhotoOffsetX?: number;
   secondaryDjPhotoOffsetY?: number;
+  subject2Scale?: number;
+  subject2OffsetX?: number;
+  subject2OffsetY?: number;
   // 📌 Ancrage relatif du Sujet 2 au Sujet 1 (mêmes conventions que le logo)
   secondaryIsPinnedToSubject?: boolean;
   secondaryRelativeOffsetX?: number;
@@ -591,6 +596,8 @@ export interface EventInput {
   secondaryRelativeScale?: number;
   /** Ordre de superposition des deux sujets (défaut : le Sujet 2 passe devant). */
   subjectStackOrder?: 'secondary-front' | 'primary-front';
+  foregroundSubject?: 'subject1' | 'subject2';
+  subjectLayerOrder?: '1_over_2' | '2_over_1';
   flyerConfig?: any;
   secondaryDjPhotoOpacity?: number;
   secondarySubjectFadeIntensity?: number;
@@ -693,6 +700,9 @@ export interface EventInput {
   backgroundBrightness?: number; // 0.3 to 1.8 (default 1.0)
   backgroundTone?: number; // 0 = Fond Blanc Pur (#ffffff), 1 = Fond Noir Pur (#000000), défaut 0.8
   isBackgroundToneEnabled?: boolean; // par défaut true si défini, ou false
+  backgroundOffsetX?: number; // Décalage horizontal du décor en % (-40 à +40)
+  backgroundOffsetY?: number; // Décalage vertical du décor en % (-40 à +40)
+  backgroundScale?: number; // Facteur d'échelle du décor (défaut 1.0)
 
   // DJ photo options & clean AI integration
   djPhoto?: string;
@@ -830,22 +840,22 @@ export function getDefaultFormatTransforms(
       isCustom: false,
     },
     a3: {
-      scale: Number((masterScale * 1.05).toFixed(2)),
-      offsetY: Number((masterOffsetY * 1.05 - 2).toFixed(1)),
+      scale: Number((masterScale * 1.0).toFixed(2)),
+      offsetY: 0,
       offsetX: masterOffsetX + 0,
       alignX: 'center',
       isCustom: false,
     },
     story: {
-      scale: Number((masterScale * 1.15).toFixed(2)),
-      offsetY: Number((masterOffsetY * 1.25 - 20).toFixed(1)),
+      scale: Number((masterScale * 1.08).toFixed(2)),
+      offsetY: Number((masterOffsetY * 1.10 - 5).toFixed(1)),
       offsetX: masterOffsetX + 0,
       alignX: 'center',
       isCustom: false,
     },
     banner: {
-      scale: Number((masterScale * 1.25).toFixed(2)),
-      offsetY: Number((masterOffsetY * 0.70 + 25).toFixed(1)),
+      scale: Number((masterScale * 0.70).toFixed(2)),
+      offsetY: Number((masterOffsetY * 0.70 + 8).toFixed(1)),
       offsetX: masterOffsetX + 0,
       alignX: 'center',
       isCustom: false,
@@ -2721,8 +2731,10 @@ export const DEFAULT_STUDIO_DATA = {
   ambiancePrompt: 'Technologie ville, futuristic dark aesthetics, sharp cybernetic glow, deep black contrast with neon lime highlights, accent color #F2F2F2',
   backgroundTone: 0.5, // 0.5 = Neutre au centre
   isBackgroundToneEnabled: true,
-  backgroundOpacity: 0.7,
+  backgroundOpacity: 1.0,
   backgroundBrightness: 1.0,
+  backgroundOffsetX: 0,
+  backgroundOffsetY: 0,
 
   djPhoto: '/demo/artist-demo.webp',
   subjectScale: 1.0,
@@ -2887,7 +2899,7 @@ export const INITIAL_DEMO_STATE: EventInput = {
   },
   formatTransforms: {
     post: { scale: 1.23, offsetY: 15, alignX: 'center', isCustom: true },
-    a3: { scale: 1.0, offsetY: -18, alignX: 'center', isCustom: true },
+    a3: { scale: 1.0, offsetY: 0, alignX: 'center', isCustom: false },
     story: { scale: 1.23, offsetY: -19, alignX: 'center', isCustom: true },
     banner: { scale: 1.28, offsetY: 29, alignX: 'center', isCustom: true },
     tshirt: { scale: 1.0, offsetY: 15, alignX: 'center', isCustom: false },
@@ -3000,8 +3012,10 @@ export const SE_FAIRE_ENTENDRE_PROJECT: EventInput = {
   },
   backgroundTone: 0.5,
   isBackgroundToneEnabled: true,
-  backgroundOpacity: 0.95,
+  backgroundOpacity: 1.0,
   backgroundBrightness: 1.0,
+  backgroundOffsetX: 0,
+  backgroundOffsetY: 0,
   djPhoto: '/demo/artist-demo.webp',
   subjectScale: 1.0,
   djPhotoScale: 1.23,
@@ -3168,8 +3182,10 @@ export const BLANK_STUDIO_DATA: EventInput = {
   ambianceEngine: 'Gemini AI Image',
   backgroundTone: 0.5,
   isBackgroundToneEnabled: true,
-  backgroundOpacity: 0.75,
+  backgroundOpacity: 1.0,
   backgroundBrightness: 1.0,
+  backgroundOffsetX: 0,
+  backgroundOffsetY: 0,
 
   djPhoto: '',
   rawDjPhoto: '',
@@ -3233,6 +3249,8 @@ export const BLANK_STUDIO_DATA: EventInput = {
   // Typographie & Style neutres
   typographyStyle: 'futur',
   accentColor: '#FF6B00',
+  themeColor: '#FF6B00',
+  primaryColor: '#FF6B00',
   layoutTemplate: 'duality_campaign',
   templateData: {
     topTextLeft: 'DESCENDRE DANS LA RUE.',
@@ -3534,9 +3552,9 @@ export function resolveSecondarySubjectTransform(
     };
   }
   return {
-    offsetX: input.secondaryDjPhotoOffsetX ?? 25,
-    offsetY: input.secondaryDjPhotoOffsetY ?? 0,
-    scale: input.secondaryDjPhotoScale ?? 1.0,
+    offsetX: input.subject2OffsetX ?? input.secondaryDjPhotoOffsetX ?? 25,
+    offsetY: input.subject2OffsetY ?? input.secondaryDjPhotoOffsetY ?? 0,
+    scale: input.subject2Scale ?? input.secondaryDjPhotoScale ?? 1.0,
     isPinned: false,
   };
 }
@@ -3546,9 +3564,9 @@ export function pinSecondaryToSubject(
   previewFormat: string,
   subjectTr: SubjectAnchorTransform
 ): EventInput {
-  const offX = prev.secondaryDjPhotoOffsetX ?? 25;
-  const offY = prev.secondaryDjPhotoOffsetY ?? 0;
-  const scale = prev.secondaryDjPhotoScale ?? 1.0;
+  const offX = prev.subject2OffsetX ?? prev.secondaryDjPhotoOffsetX ?? 25;
+  const offY = prev.subject2OffsetY ?? prev.secondaryDjPhotoOffsetY ?? 0;
+  const scale = prev.subject2Scale ?? prev.secondaryDjPhotoScale ?? 1.0;
   const rel = canvasToRelative({ x: 50 + offX, y: 100 + offY }, subjectTr, previewFormat);
   return {
     ...prev,
@@ -3571,6 +3589,9 @@ export function unpinSecondaryFromSubject(
     secondaryDjPhotoOffsetX: cur.offsetX,
     secondaryDjPhotoOffsetY: cur.offsetY,
     secondaryDjPhotoScale: cur.scale,
+    subject2OffsetX: cur.offsetX,
+    subject2OffsetY: cur.offsetY,
+    subject2Scale: cur.scale,
   };
 }
 
@@ -3588,9 +3609,9 @@ export function applySecondarySubjectUpdate(
   if (!prev.secondaryIsPinnedToSubject || !prev.djPhoto) {
     return {
       ...prev,
-      ...(updates.offsetX !== undefined ? { secondaryDjPhotoOffsetX: updates.offsetX } : {}),
-      ...(updates.offsetY !== undefined ? { secondaryDjPhotoOffsetY: updates.offsetY } : {}),
-      ...(updates.scale !== undefined ? { secondaryDjPhotoScale: updates.scale } : {}),
+      ...(updates.offsetX !== undefined ? { secondaryDjPhotoOffsetX: updates.offsetX, subject2OffsetX: updates.offsetX } : {}),
+      ...(updates.offsetY !== undefined ? { secondaryDjPhotoOffsetY: updates.offsetY, subject2OffsetY: updates.offsetY } : {}),
+      ...(updates.scale !== undefined ? { secondaryDjPhotoScale: updates.scale, subject2Scale: updates.scale } : {}),
     };
   }
   const cur = resolveSecondarySubjectTransform(prev, previewFormat, subjectTr);

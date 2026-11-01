@@ -277,7 +277,7 @@ const Instagram = (props: any) => (
   </svg>
 );
 
-export type ActiveSection = 'decor' | 'subject' | 'logo' | 'theme' | 'texts' | 'textSizes' | 'marketing' | null;
+export type ActiveSection = 'decor' | 'subject' | 'subject2' | 'logo' | 'theme' | 'texts' | 'textSizes' | 'marketing' | null;
 
 // Ordre logique : Visuels 2D (Post -> Story -> Bannière -> Flyers) puis Produit Physique (Merch Vêtement)
 const FORMAT_CYCLE: Array<'post' | 'story' | 'banner' | 'a3'> = ['post', 'story', 'banner', 'a3'];
@@ -610,7 +610,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
       slug: finalSlug,
       backgroundTone: typeof sourceInput.backgroundTone === 'number' ? sourceInput.backgroundTone : 0.5,
       isBackgroundToneEnabled: sourceInput.isBackgroundToneEnabled !== false,
-      backgroundOpacity: typeof sourceInput.backgroundOpacity === 'number' ? sourceInput.backgroundOpacity : 0.75,
+      backgroundOpacity: typeof sourceInput.backgroundOpacity === 'number' ? sourceInput.backgroundOpacity : 1,
       backgroundBrightness: typeof sourceInput.backgroundBrightness === 'number' ? sourceInput.backgroundBrightness : 1.0,
       subjectFadeIntensity: typeof sourceInput.subjectFadeIntensity === 'number' ? sourceInput.subjectFadeIntensity : 35,
       isSubjectHarmonized: sourceInput.isSubjectHarmonized ?? false,
@@ -727,7 +727,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
         accentColor: sourceInput.accentColor || sourceInput.dynamicTheme?.primaryAccent || '#FF6B00',
         backgroundTone: typeof sourceInput.backgroundTone === 'number' ? sourceInput.backgroundTone : 0.5,
         isBackgroundToneEnabled: sourceInput.isBackgroundToneEnabled !== false,
-        backgroundOpacity: typeof sourceInput.backgroundOpacity === 'number' ? sourceInput.backgroundOpacity : 0.75,
+        backgroundOpacity: typeof sourceInput.backgroundOpacity === 'number' ? sourceInput.backgroundOpacity : 1,
         backgroundBrightness: typeof sourceInput.backgroundBrightness === 'number' ? sourceInput.backgroundBrightness : 1.0,
       },
     };
@@ -2522,6 +2522,12 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
     onActiveSectionChange?.(activeSection);
   }, [activeSection, onActiveSectionChange]);
 
+  useEffect(() => {
+    if (activeSection === 'subject2') {
+      setActiveSubjectTab('secondary');
+    }
+  }, [activeSection]);
+
   const toggleSection = (section: NonNullable<ActiveSection>) => {
     const resolved = section === 'texts' ? 'textSizes' : section;
     setActiveSection((prev) => (prev === resolved ? null : resolved));
@@ -2984,7 +2990,8 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
     const blank = createBlankEventInput();
     setInput(blank);
     try {
-      safeSaveProjectToLocalStorage(['signaid_studio_current_project', 'droppaid_last_event_input'], blank);
+      localStorage.setItem('signaid_studio_project_draft', JSON.stringify(blank));
+      safeSaveProjectToLocalStorage(['signaid_studio_current_project', 'droppaid_last_event_input', 'signaid_studio_project_draft'], blank);
     } catch { }
     setIsHeroDismissed(true);
     setActiveSection('decor');
@@ -2993,6 +3000,36 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
       section1Ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   };
+
+  // Synchronisation automatique en continu de l'état complet du projet actif dans le localStorage
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!input || Object.keys(input).length === 0) return;
+    try {
+      localStorage.setItem('signaid_studio_project_draft', JSON.stringify(input));
+    } catch {
+      try {
+        safeSaveProjectToLocalStorage('signaid_studio_project_draft', input);
+      } catch { }
+    }
+  }, [input]);
+
+  // Restauration de sécurité au montage si l'état input est vide
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isBlank = !input.eventName && !input.djName && !input.djPhoto && !input.backgroundImage;
+    if (isBlank) {
+      try {
+        const saved = localStorage.getItem('signaid_studio_project_draft');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === 'object') {
+            setInput((prev) => ({ ...prev, ...parsed }));
+          }
+        }
+      } catch { }
+    }
+  }, []);
 
   const [isGeneratingBg, setIsGeneratingBg] = useState(false);
   const [isGeneratingSubject, setIsGeneratingSubject] = useState(false);
@@ -3009,7 +3046,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
   // Détourage interactif par Pipette (Color Picker / Chroma Key)
   const [isPickingColor, setIsPickingColor] = useState(false);
   const [selectedChromakeyColor, setSelectedChromakeyColor] = useState<{ r: number; g: number; b: number } | null>(null);
-  const [chromakeyTolerance, setChromakeyTolerance] = useState<number>(20);
+  const [chromakeyTolerance, setChromakeyTolerance] = useState<number>(25);
   const [isChromakeyContiguous, setIsChromakeyContiguous] = useState<boolean>(true);
   const [primaryRemovedColors, setPrimaryRemovedColors] = useState<RemovedColorItem[]>([]);
   const [secondaryRemovedColors, setSecondaryRemovedColors] = useState<RemovedColorItem[]>([]);
@@ -5125,11 +5162,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
     }
   };
 
-  const cardBg = isDayMode ? 'bg-white border-zinc-300 text-zinc-950 shadow-md' : 'bg-zinc-950/95 border border-zinc-800/80 text-zinc-100 shadow-2xl backdrop-blur-md';
-  const innerBg = isDayMode ? 'bg-zinc-100 border-zinc-300 text-zinc-900' : 'bg-zinc-900/80 border border-zinc-800/80 text-zinc-200';
-  const inputBg = isDayMode ? 'bg-white border-zinc-300 text-zinc-900' : 'bg-zinc-900/90 border border-zinc-800 text-white focus:border-lime-400 focus:ring-1 focus:ring-lime-400/30';
+  const cardBg = isDayMode ? 'bg-white border-zinc-200 text-zinc-900 shadow-sm' : 'bg-zinc-950/95 border border-zinc-800/80 text-zinc-100 shadow-2xl backdrop-blur-md';
+  const innerBg = isDayMode ? 'bg-zinc-50 border-zinc-200 text-zinc-900' : 'bg-zinc-900/80 border border-zinc-800/80 text-zinc-200';
+  const inputBg = isDayMode ? 'bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900/10' : 'bg-zinc-900/90 border border-zinc-800 text-white placeholder:text-zinc-500 focus:border-lime-400 focus:ring-1 focus:ring-lime-400/30';
   const textMuted = isDayMode ? 'text-zinc-600' : 'text-zinc-400';
-  const textSubtle = isDayMode ? 'text-zinc-500' : 'text-zinc-500';
+  const textSubtle = isDayMode ? 'text-zinc-600' : 'text-zinc-500';
   const borderColor = isDayMode ? 'border-zinc-200' : 'border-zinc-800/80';
   const isBanner = previewFormat === 'banner';
   const formatStyle = getFormatAspectRatio(previewFormat);
@@ -5510,7 +5547,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               : 'pointer-events-none'
             }`}
           style={{
-            backgroundColor: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03) ? '#000000' : canvasBgColor,
+            backgroundColor: canvasBgColor,
             touchAction: 'none',
             pointerEvents: isDecorActive ? 'auto' : 'none',
           }}
@@ -5583,7 +5620,9 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               WebkitUserSelect: 'none',
               userSelect: 'none',
               touchAction: 'none',
-              opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03) ? 1 : (input.backgroundOpacity ?? 0.75),
+              transform: `translate(${input.backgroundOffsetX ?? 0}%, ${input.backgroundOffsetY ?? 0}%) scale(${Math.max(1.06, 1.06 + Math.max(Math.abs(input.backgroundOffsetX ?? 0), Math.abs(input.backgroundOffsetY ?? 0)) * 0.02)})`,
+              transformOrigin: 'center center',
+              opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03) ? 1 : (input.backgroundOpacity ?? 1),
               filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03 || toneOverlay.filterCss === 'none') ? 'none' : toneOverlay.filterCss,
             }}
             title="Cliquer pour configurer le fond (Décor & Ambiance)"
@@ -5605,7 +5644,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
 
         {/* Calque d'harmonisation & compression d'ambiance du sujet */}
-        {input.djPhoto && input.isSubjectHarmonized && !input.isSubjectMerged && (
+        {input.djPhoto && input.isSubjectHarmonized && !input.isSubjectMerged && !isToneCenter && (
           <div
             className="absolute inset-0 pointer-events-none z-[19] transition-all duration-300"
             style={{
@@ -5630,7 +5669,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                 : activeTransforms?.alignX === 'left'
                   ? 'justify-start pl-[6%] sm:pl-[10%]'
                   : 'justify-center'
-              } items-end pointer-events-none ${input.subjectStackOrder === 'primary-front' ? 'z-[21]' : 'z-20'} ${activeIsBanner ? '' : 'pt-16'
+              } items-end pointer-events-none ${(input.foregroundSubject === 'subject1' || input.subjectStackOrder === 'primary-front' || input.subjectLayerOrder === '1_over_2') ? 'z-[21]' : 'z-20'} ${activeIsBanner ? '' : 'pt-16'
               }`}
             style={{
               transform: `translate(${activeTransforms.offsetX ?? 0}%, ${activeTransforms.offsetY}%) scale(${activeTransforms.scale})`,
@@ -5752,7 +5791,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
           );
           return (
             <div
-              className={`absolute inset-0 flex items-end justify-center pointer-events-none ${input.subjectStackOrder === 'primary-front' ? 'z-20' : 'z-[21]'} ${activeIsBanner ? '' : 'pt-16'
+              className={`absolute inset-0 flex items-end justify-center pointer-events-none ${(input.foregroundSubject === 'subject1' || input.subjectStackOrder === 'primary-front' || input.subjectLayerOrder === '1_over_2') ? 'z-20' : 'z-[21]'} ${activeIsBanner ? '' : 'pt-16'
                 }`}
               style={{
                 transform: `translate(${secondaryResolved.offsetX}%, ${secondaryResolved.offsetY}%) scale(${secondaryResolved.scale})`,
@@ -6816,18 +6855,18 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
     >
       {/* BARRE D'EN-TÊTE DU STUDIO (DESKTOP) & BADGE D'AUTO-SAVE */}
       <div className="hidden min-[920px]:flex items-center justify-between px-1.5 py-1 -mb-1 select-none">
-        <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+        <span className={`text-[11px] font-mono font-bold uppercase tracking-wider ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
           Studio Composer
         </span>
         <div className="flex items-center gap-1.5 text-[10px] font-mono select-none transition-opacity duration-200">
           {saveStatus === 'saving' && (
-            <span className="flex items-center gap-1 text-zinc-400">
+            <span className={`flex items-center gap-1 ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
               <span>Enregistrement...</span>
             </span>
           )}
           {saveStatus === 'saved' && (
-            <span className="flex items-center gap-1 text-lime-400">
+            <span className={`flex items-center gap-1 font-bold ${isDayMode ? 'text-emerald-700' : 'text-lime-400'}`}>
               <span>✓</span>
               <span>Enregistré</span>
             </span>
@@ -6838,23 +6877,27 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
       {/* --- EN-TÊTE FIXE COMPACT MOBILE (< 920px) : SÉLECTEURS D'ÉTAPES ERGONOMIQUES ÉLARGIS --- */}
       <div
         data-step-header="true"
-        className={`min-[920px]:hidden sticky top-0 z-20 ${isDayMode ? 'bg-white/95 border-zinc-200 text-zinc-900' : 'bg-zinc-950/95 border-zinc-800 text-zinc-100'
-          } backdrop-blur-md border rounded-2xl p-2.5 sm:p-3 shadow-lg select-none`}
+        className={`min-[920px]:hidden sticky top-0 z-20 ${isDayMode ? 'bg-white/95 border-zinc-200 text-zinc-900 shadow-sm' : 'bg-zinc-950/95 border-zinc-800 text-zinc-100 shadow-lg'
+          } backdrop-blur-md border rounded-2xl p-2.5 sm:p-3 select-none`}
       >
-        {/* Stepper compact : flèches ‹ › + pastilles numérotées (le rappel textuel « ÉTAPE X/6 » a été supprimé) */}
+        {/* Stepper compact : flèches ‹ › + pastilles numérotées */}
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => goToMobileStep(effectiveStepIndex - 1)}
             disabled={effectiveStepIndex === 0}
-            className="w-9 h-11 shrink-0 flex items-center justify-center rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-20 disabled:pointer-events-none transition cursor-pointer font-bold text-sm focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none active:scale-95"
+            className={`w-9 h-11 shrink-0 flex items-center justify-center rounded-xl transition cursor-pointer font-bold text-sm disabled:opacity-20 disabled:pointer-events-none active:scale-95 ${
+              isDayMode
+                ? 'text-zinc-700 hover:text-zinc-950 hover:bg-zinc-100'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+            }`}
             aria-label="Étape précédente"
             title="Étape précédente"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          {/* Barre de progression et sélecteurs d'étapes à zone tactile élargie (Hitbox 44px+) */}
+          {/* Barre de progression et sélecteurs d'étapes à zone tactile élargie */}
           <div
             role="tablist"
             aria-label="Navigation des étapes du studio"
@@ -6873,9 +6916,9 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   aria-label={`Aller à ${step.label}`}
                   data-testid={`mobile-step-${idx}`}
                   onClick={() => goToMobileStep(idx)}
-                  className={`group relative flex-1 flex flex-col items-center justify-center py-2 px-1 min-h-[44px] rounded-xl transition-all duration-200 cursor-pointer touch-manipulation active:scale-95 focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none ${isActive
+                  className={`group relative flex-1 flex flex-col items-center justify-center py-2 px-1 min-h-[44px] rounded-xl transition-all duration-200 cursor-pointer touch-manipulation active:scale-95 focus-visible:outline-none ${isActive
                     ? isDayMode
-                      ? 'bg-lime-400/20 border border-lime-500/40 shadow-sm'
+                      ? 'bg-zinc-900 text-white shadow-sm border border-zinc-900'
                       : 'bg-lime-400/15 border border-lime-400/30 shadow-sm shadow-lime-400/10'
                     : isDayMode
                       ? 'hover:bg-zinc-100 border border-transparent'
@@ -6887,9 +6930,13 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   <div className="flex items-center justify-center gap-0.5 mb-1">
                     <span
                       className={`text-[11px] font-mono transition-all leading-none ${isActive
-                        ? 'font-black text-lime-400 scale-110 drop-shadow-[0_0_8px_rgba(163,230,53,0.5)]'
+                        ? isDayMode
+                          ? 'font-black text-white scale-110'
+                          : 'font-black text-lime-400 scale-110 drop-shadow-[0_0_8px_rgba(163,230,53,0.5)]'
                         : isCompleted
-                          ? 'font-bold text-lime-400/75'
+                          ? isDayMode
+                            ? 'font-bold text-zinc-700'
+                            : 'font-bold text-lime-400/75'
                           : isDayMode
                             ? 'font-semibold text-zinc-400'
                             : 'font-semibold text-zinc-500'
@@ -6898,16 +6945,20 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                       {idx + 1}
                     </span>
                     {isCompleted && (
-                      <span className="text-[8px] text-lime-400/80 leading-none">✓</span>
+                      <span className={`text-[8px] leading-none ${isDayMode ? 'text-zinc-600' : 'text-lime-400/80'}`}>✓</span>
                     )}
                   </div>
 
-                  {/* Barre de progression épaissie et lisible (hauteur augmentée) */}
+                  {/* Barre de progression */}
                   <div
                     className={`w-full h-2 rounded-full transition-all duration-300 ${isActive
-                      ? 'bg-lime-400 shadow-md shadow-lime-400/60 ring-1 ring-lime-400/40'
+                      ? isDayMode
+                        ? 'bg-white'
+                        : 'bg-lime-400 shadow-md shadow-lime-400/60 ring-1 ring-lime-400/40'
                       : isCompleted
-                        ? 'bg-lime-400/40 group-hover:bg-lime-400/60'
+                        ? isDayMode
+                          ? 'bg-zinc-300'
+                          : 'bg-lime-400/40 group-hover:bg-lime-400/60'
                         : isDayMode
                           ? 'bg-zinc-200 group-hover:bg-zinc-300'
                           : 'bg-zinc-800 group-hover:bg-zinc-700'
@@ -6922,7 +6973,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
             type="button"
             onClick={() => goToMobileStep(effectiveStepIndex + 1)}
             disabled={effectiveStepIndex === MOBILE_STEPS.length - 1}
-            className="w-9 h-11 shrink-0 flex items-center justify-center rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 disabled:opacity-20 disabled:pointer-events-none transition cursor-pointer font-bold text-sm focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none active:scale-95"
+            className={`w-9 h-11 shrink-0 flex items-center justify-center rounded-xl transition cursor-pointer font-bold text-sm disabled:opacity-20 disabled:pointer-events-none active:scale-95 ${
+              isDayMode
+                ? 'text-zinc-700 hover:text-zinc-950 hover:bg-zinc-100'
+                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+            }`}
             aria-label="Étape suivante"
             title="Étape suivante"
           >
@@ -6933,7 +6988,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping shrink-0" aria-label="Enregistrement..." />
           )}
           {saveStatus === 'saved' && (
-            <span className="text-[10px] font-mono text-lime-400 shrink-0" aria-label="Enregistré">✓</span>
+            <span className={`text-[10px] font-mono shrink-0 font-bold ${isDayMode ? 'text-emerald-700' : 'text-lime-400'}`} aria-label="Enregistré">✓</span>
           )}
         </div>
       </div>
@@ -6942,17 +6997,25 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
       {!isHeroDismissed && (
         <div
           ref={heroRef}
-          className={`min-[920px]:hidden ${cardBg} rounded-2xl p-4 space-y-3 relative border overflow-hidden shadow-xl animate-fadeIn`}
+          className={`min-[920px]:hidden ${cardBg} rounded-2xl p-4 space-y-3 relative border overflow-hidden shadow-sm animate-fadeIn`}
         >
           <div className="flex items-start justify-between gap-3">
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-lime-400/10 text-lime-600 dark:text-lime-400 border border-lime-400/20 text-[10px] font-mono font-bold uppercase tracking-wider">
-              <Sparkles className="w-3 h-3 text-lime-500 dark:text-lime-400 shrink-0" />
+            <div className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider border ${
+              isDayMode
+                ? 'bg-zinc-100 text-zinc-800 border-zinc-200'
+                : 'bg-lime-400/10 text-lime-400 border-lime-400/20'
+            }`}>
+              <Sparkles className={`w-3 h-3 shrink-0 ${isDayMode ? 'text-zinc-700' : 'text-lime-400'}`} />
               <span>AUTOMATISATION BRANDING &amp; MERCH</span>
             </div>
             <button
               type="button"
               onClick={() => setIsHeroDismissed(true)}
-              className="p-1 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition cursor-pointer shrink-0"
+              className={`p-1 rounded-lg transition cursor-pointer shrink-0 ${
+                isDayMode
+                  ? 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+              }`}
               aria-label="Fermer l'accueil"
               title="Fermer"
             >
@@ -6961,10 +7024,10 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
           </div>
 
           <div className="space-y-1">
-            <h2 className="text-base sm:text-lg font-bold tracking-tight text-zinc-900 dark:text-white">
+            <h2 className={`text-base sm:text-lg font-bold tracking-tight ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
               Créez vos Visuels &amp; Merch Officiel en 1 Clic
             </h2>
-            <p className="text-xs text-zinc-600 dark:text-zinc-400">
+            <p className={`text-xs ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
               Générez un visuel pro multi-formats, vos t-shirts DTF et votre Hub interactif sans compétence graphique.
             </p>
           </div>
@@ -6973,15 +7036,15 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
             <button
               type="button"
               onClick={handleLoadDemoExample}
-              className="w-full py-2.5 px-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-black font-mono text-xs flex items-center justify-center gap-2 shadow-lg shadow-lime-400/10 active:scale-[0.98] transition cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400"
+              className="w-full py-2.5 px-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-zinc-950 font-bold font-mono text-xs flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition cursor-pointer"
             >
-              <Zap className="w-3.5 h-3.5 fill-black text-black" />
+              <Zap className="w-3.5 h-3.5 fill-zinc-950 text-zinc-950" />
               <span>Démarrer avec un exemple</span>
             </button>
             <button
               type="button"
               onClick={handleStartFromScratch}
-              className={`w-full py-2.5 px-3 rounded-xl font-bold font-mono text-xs flex items-center justify-center gap-2 border transition cursor-pointer active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-lime-400 ${isDayMode
+              className={`w-full py-2.5 px-3 rounded-xl font-bold font-mono text-xs flex items-center justify-center gap-2 border transition cursor-pointer active:scale-[0.98] ${isDayMode
                 ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300'
                 : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border-zinc-800 hover:border-zinc-700'
                 }`}
@@ -7000,18 +7063,22 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
           className="flex items-center justify-between cursor-pointer select-none"
         >
           <div className="flex items-center gap-2 text-left">
-            <div className="p-1.5 rounded-lg bg-lime-400/10 text-lime-400 border border-lime-400/20"><Layers className="w-4 h-4" /></div>
+            <div className={`p-1.5 rounded-lg border ${isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-200' : 'bg-lime-400/10 text-lime-400 border-lime-400/20'}`}><Layers className="w-4 h-4" /></div>
             <div>
               <h3 className={`text-xs font-bold font-mono uppercase tracking-wider ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
                 <span>1. DÉCOR &amp; FOND</span>
-                {activeSection === 'decor' ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400 ml-1 inline" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400 ml-1 inline" />}
+                {activeSection === 'decor' ? <ChevronUp className={`w-3.5 h-3.5 ml-1 inline ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`} /> : <ChevronDown className={`w-3.5 h-3.5 ml-1 inline ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`} />}
               </h3>
             </div>
           </div>
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); bgInputRefDesktop.current?.click(); }}
-            className="text-[10px] font-mono font-bold px-2.5 py-1.5 rounded-xl bg-zinc-900 text-zinc-300 border border-zinc-800 hover:border-lime-400/40 transition cursor-pointer"
+            className={`text-[10px] font-mono font-bold px-2.5 py-1.5 rounded-xl transition cursor-pointer border ${
+              isDayMode
+                ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300'
+                : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-lime-400/40'
+            }`}
           >
             Importer Fond
           </button>
@@ -7045,7 +7112,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   onContextMenu={(e) => e.preventDefault()}
                   className="w-full h-full object-cover select-none pointer-events-none -webkit-touch-callout-none group-hover:scale-105 transition-transform"
                   style={{
-                    opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03) ? 1 : (input.backgroundOpacity ?? 0.75),
+                    opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03) ? 1 : (input.backgroundOpacity ?? 1),
                     filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03) ? 'none' : toneOverlay.filterCss,
                     WebkitTouchCallout: 'none',
                     WebkitUserSelect: 'none',
@@ -7071,6 +7138,20 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   />
                 )}
                 <div className="absolute top-2 right-2 flex items-center gap-1.5 z-10">
+                  {((input.backgroundOffsetX && input.backgroundOffsetX !== 0) || (input.backgroundOffsetY && input.backgroundOffsetY !== 0)) && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setInput((p) => ({ ...p, backgroundOffsetX: 0, backgroundOffsetY: 0 }));
+                      }}
+                      className="py-1 px-2 rounded-lg bg-black/80 hover:bg-black text-lime-400 border border-lime-400/40 text-[9px] font-mono font-bold flex items-center gap-1 transition shadow-md cursor-pointer"
+                      title="Recentrer le décor au centre du canvas"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5" />
+                      <span>Recentrer</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => {
@@ -7087,7 +7168,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setInput((p) => ({ ...p, backgroundImage: '', bgImage: '', customBackground: '' }));
+                      setInput((p) => ({ ...p, backgroundImage: '', bgImage: '', customBackground: '', backgroundOffsetX: 0, backgroundOffsetY: 0 }));
                       if (bgInputRefDesktop.current) {
                         bgInputRefDesktop.current.value = '';
                       }
@@ -7101,11 +7182,38 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               </div>
             )}
 
+            {/* CONTRÔLE DE DÉPLACEMENT DU DÉCOR */}
+            {hasCustomBackground && (
+              <div className={`flex items-center justify-between p-2 rounded-xl border ${isDayMode ? 'border-zinc-200 bg-zinc-50' : 'border-zinc-800 bg-zinc-900/60'} text-[10px] font-mono`}>
+                <span className={`${isDayMode ? 'text-zinc-600' : 'text-zinc-400'} flex items-center gap-1.5`}>
+                  <span>Glissez sur le fond</span>
+                  {((input.backgroundOffsetX && input.backgroundOffsetX !== 0) || (input.backgroundOffsetY && input.backgroundOffsetY !== 0)) && (
+                    <span className="text-lime-400 font-bold">
+                      ({input.backgroundOffsetX > 0 ? `+${input.backgroundOffsetX}` : input.backgroundOffsetX}%, {input.backgroundOffsetY > 0 ? `+${input.backgroundOffsetY}` : input.backgroundOffsetY}%)
+                    </span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setInput((p) => ({ ...p, backgroundOffsetX: 0, backgroundOffsetY: 0 }))}
+                  className={`px-2 py-1 rounded-lg border text-[10px] font-bold font-mono transition flex items-center gap-1.5 cursor-pointer ${
+                    (input.backgroundOffsetX || input.backgroundOffsetY)
+                      ? 'border-lime-400/60 text-lime-400 bg-lime-400/10 hover:bg-lime-400/20'
+                      : isDayMode ? 'border-zinc-300 text-zinc-600 hover:text-black' : 'border-zinc-700 text-zinc-400 hover:text-white'
+                  }`}
+                  title="Recentrer le décor au centre du canvas"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>Recentrer le décor</span>
+                </button>
+              </div>
+            )}
+
             {/* GÉNÉRATEUR IA DE DÉCOR (TOUJOURS DISPONIBLE) */}
-            <div className={`${innerBg} p-2.5 rounded-xl border border-zinc-800 space-y-2 animate-fadeIn`}>
-              <div className="flex items-center justify-between text-[10px] font-mono font-bold text-zinc-300">
+            <div className={`${innerBg} p-2.5 rounded-xl border ${isDayMode ? 'border-zinc-200' : 'border-zinc-800'} space-y-2 animate-fadeIn`}>
+              <div className={`flex items-center justify-between text-[10px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>
                 <span className="flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-lime-400" />
+                  <Sparkles className={`w-3 h-3 ${isDayMode ? 'text-zinc-700' : 'text-lime-400'}`} />
                   <span>{hasCustomBackground ? "Remplacer ou régénérer le décor par l'IA" : "Générer un décor avec l'IA"}</span>
                 </span>
               </div>
@@ -7114,14 +7222,14 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                 value={input.ambiancePrompt || input.bgPrompt || ''}
                 onChange={(e) => setInput((p) => ({ ...p, ambiancePrompt: e.target.value, bgPrompt: e.target.value }))}
                 placeholder="Ex: Paysage urbain nocturne sous la pluie, perspective de rue métropolitaine, reflets néons..."
-                className={`w-full ${inputBg} border border-zinc-800 rounded-lg px-2.5 py-1.5 text-[11px] font-mono`}
+                className={`w-full ${inputBg} border ${isDayMode ? 'border-zinc-200' : 'border-zinc-800'} rounded-lg px-2.5 py-1.5 text-[11px] font-mono`}
               />
 
               <button
                 type="button"
                 disabled={isGeneratingBg}
                 onClick={() => handleGenerateAiBackground()}
-                className="w-full py-2 bg-lime-400 hover:bg-lime-300 text-black font-black font-mono text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-2 bg-lime-400 hover:bg-lime-300 text-zinc-950 font-bold font-mono text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
               >
                 {isGeneratingBg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                 <span>{hasCustomBackground ? 'Régénérer Décor avec ce Prompt' : 'Générer Décor'}</span>
@@ -7129,10 +7237,10 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
             </div>
 
             {/* CURSEUR DE TONALITÉ FOND (BLANC <-> NOIR) */}
-            <div className={`${innerBg} p-2.5 rounded-xl border space-y-2`}>
-              <div className="flex items-center justify-between text-[10px] font-mono font-bold">
+            <div className={`${innerBg} p-2.5 rounded-xl border ${isDayMode ? 'border-zinc-200' : 'border-zinc-800'} space-y-2`}>
+              <div className={`flex items-center justify-between text-[10px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>
                 <span>Tonalité (Blanc ↔ Noir)</span>
-                <span className="text-lime-400">
+                <span className={isDayMode ? 'text-zinc-900 font-bold' : 'text-lime-400'}>
                   {toneOverlay.isNeutral
                     ? '50 % (Neutre)'
                     : `${Math.round((input.backgroundTone ?? 0.5) * 100)} %`}
@@ -7211,14 +7319,14 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                     setLiveScrubData((p) => p ? { ...p, value: isNeutral ? '50 % (Neutre)' : `${Math.round(val * 100)} %` } : null);
                   }
                 }}
-                className="w-full accent-lime-400 h-1.5 rounded-lg cursor-pointer transition-all bg-zinc-800 touch-none focus-visible:ring-2 focus-visible:ring-lime-400"
+                className={`w-full ${isDayMode ? 'accent-zinc-900 bg-zinc-200' : 'accent-lime-400 bg-zinc-800'} h-1.5 rounded-lg cursor-pointer transition-all touch-none focus-visible:ring-2 focus-visible:ring-lime-400`}
                 aria-label="Tonalité du fond (Blanc à Noir)"
               />
-              <div className="flex justify-between text-[9px] font-mono text-zinc-400 pt-1">
+              <div className={`flex justify-between text-[9px] font-mono ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'} pt-1`}>
                 <button
                   type="button"
                   onClick={() => setInput((p) => ({ ...p, backgroundTone: 0, isBackgroundToneEnabled: true, logoColorMode: 'black' }))}
-                  className="hover:text-white transition cursor-pointer flex items-center gap-1 focus-visible:ring-1 focus-visible:ring-lime-400"
+                  className={`${isDayMode ? 'hover:text-zinc-950 text-zinc-700' : 'hover:text-white text-zinc-400'} transition cursor-pointer flex items-center gap-1 focus-visible:ring-1 focus-visible:ring-lime-400`}
                 >
                   <span className="w-2 h-2 rounded-full bg-white border border-zinc-400 inline-block" />
                   <span>Blanc (0%)</span>
@@ -7236,15 +7344,15 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                       subjectHueRotate: 0,
                     }))
                   }
-                  className="text-lime-400 hover:text-lime-300 font-bold transition cursor-pointer flex items-center gap-1 focus-visible:ring-1 focus-visible:ring-lime-400"
+                  className={`${isDayMode ? 'text-zinc-900 font-bold hover:text-black' : 'text-lime-400 hover:text-lime-300 font-bold'} transition cursor-pointer flex items-center gap-1 focus-visible:ring-1 focus-visible:ring-lime-400`}
                 >
-                  <span className="w-2 h-2 rounded-full bg-lime-400 inline-block" />
+                  <span className={`w-2 h-2 rounded-full ${isDayMode ? 'bg-zinc-900' : 'bg-lime-400'} inline-block`} />
                   <span>Neutre (50%)</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setInput((p) => ({ ...p, backgroundTone: 1, isBackgroundToneEnabled: true, logoColorMode: 'white' }))}
-                  className="hover:text-white transition cursor-pointer flex items-center gap-1 focus-visible:ring-1 focus-visible:ring-lime-400"
+                  className={`${isDayMode ? 'hover:text-zinc-950 text-zinc-700' : 'hover:text-white text-zinc-400'} transition cursor-pointer flex items-center gap-1 focus-visible:ring-1 focus-visible:ring-lime-400`}
                 >
                   <span className="w-2 h-2 rounded-full bg-black border border-zinc-600 inline-block" />
                   <span>Noir (100%)</span>
@@ -7268,7 +7376,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
             <div>
               <h3 className={`text-xs font-bold font-mono uppercase tracking-wider ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
                 <span>2. SUJET (ARTISTE)</span>
-                {activeSection === 'subject' ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400 ml-1 inline" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400 ml-1 inline" />}
+                {activeSection === 'subject' || activeSection === 'subject2' ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400 ml-1 inline" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400 ml-1 inline" />}
               </h3>
             </div>
           </div>
@@ -7289,7 +7397,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
           )}
         </div>
 
-        {activeSection === 'subject' && (() => {
+        {(activeSection === 'subject' || activeSection === 'subject2') && (() => {
           const isSecondary = activeSubjectTab === 'secondary';
           const activeSubjectPhoto = isSecondary ? input.secondaryDjPhoto : input.djPhoto;
           const activeRemovedColors = isSecondary ? secondaryRemovedColors : primaryRemovedColors;
@@ -7339,17 +7447,32 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setInput((prev) => ({
-                        ...prev,
-                        subjectStackOrder: prev.subjectStackOrder === 'primary-front' ? 'secondary-front' : 'primary-front',
-                      }));
+                      setInput((prev) => {
+                        const isCurrentlyS1Front =
+                          prev.foregroundSubject === 'subject1' ||
+                          prev.subjectLayerOrder === '1_over_2' ||
+                          prev.subjectStackOrder === 'primary-front';
+                        const nextFront = isCurrentlyS1Front ? 'subject2' : 'subject1';
+                        return {
+                          ...prev,
+                          foregroundSubject: nextFront,
+                          subjectStackOrder: nextFront === 'subject1' ? 'primary-front' : 'secondary-front',
+                          subjectLayerOrder: nextFront === 'subject1' ? '1_over_2' : '2_over_1',
+                        };
+                      });
                     }}
-                    title={input.subjectStackOrder === 'primary-front' ? "Sujet 1 au premier plan (cliquer pour inverser)" : "Sujet 2 au premier plan (cliquer pour inverser)"}
-                    className="p-1.5 rounded-lg border border-zinc-700/80 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 hover:text-lime-400 transition cursor-pointer flex items-center gap-1 text-[10px] font-mono shrink-0 shadow-sm"
+                    title={
+                      (input.foregroundSubject === 'subject1' || input.subjectStackOrder === 'primary-front' || input.subjectLayerOrder === '1_over_2')
+                        ? "Sujet 1 au 1er plan (cliquer pour inverser)"
+                        : "Sujet 2 au 1er plan (cliquer pour inverser)"
+                    }
+                    className="p-1.5 rounded-lg border border-zinc-700/80 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-200 hover:text-lime-400 transition cursor-pointer flex items-center gap-1.5 text-[10px] font-mono shrink-0 shadow-sm"
                   >
                     <ArrowUpDown className="w-3.5 h-3.5 text-lime-400" />
-                    <span className="hidden sm:inline font-bold">
-                      {input.subjectStackOrder === 'primary-front' ? 'S1 devant' : 'S2 devant'}
+                    <span className="font-bold">
+                      {(input.foregroundSubject === 'subject1' || input.subjectStackOrder === 'primary-front' || input.subjectLayerOrder === '1_over_2')
+                        ? 'S1 devant'
+                        : 'S2 devant'}
                     </span>
                   </button>
                 )}
@@ -7508,13 +7631,17 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   type="button"
                   onClick={() => handleActiveSubjectCutout(isSecondary)}
                   disabled={!activeSubjectPhoto || isCuttingBg || isRemasteringSubject}
-                  className="py-2.5 px-2 rounded-xl text-xs font-bold font-mono border border-lime-500/40 text-lime-400 bg-lime-400/5 hover:bg-lime-400/15 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className={`py-2.5 px-2 rounded-xl text-xs font-mono border transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                    isDayMode
+                      ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium'
+                      : 'border-lime-500/40 text-lime-400 bg-lime-400/5 hover:bg-lime-400/15 font-bold'
+                  }`}
                   title={`Détourer ${isSecondary ? 'le sujet 2' : 'le sujet 1'} en supprimant le fond`}
                 >
                   {isCuttingBg ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-lime-400" />
+                    <Loader2 className={`w-3.5 h-3.5 animate-spin ${isDayMode ? 'text-zinc-800' : 'text-lime-400'}`} />
                   ) : (
-                    <Scissors className="w-3.5 h-3.5 text-lime-400" />
+                    <Scissors className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-700' : 'text-lime-400'}`} />
                   )}
                   <span>Retirer le fond</span>
                 </button>
@@ -7530,10 +7657,15 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                     }
                   }}
                   disabled={!activeSubjectPhoto || isCuttingBg}
-                  className={`py-2.5 px-2 rounded-xl text-xs font-bold font-mono border transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${isPickingColor
-                      ? 'bg-amber-400 text-black font-black border-amber-400 ring-2 ring-amber-400/50 shadow-lg shadow-amber-400/25 animate-pulse'
-                      : 'border-amber-500/40 text-amber-400 bg-amber-400/5 hover:bg-amber-400/15'
-                    }`}
+                  className={`py-2.5 px-2 rounded-xl text-xs font-mono border transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                    isPickingColor
+                      ? isDayMode
+                        ? 'bg-zinc-900 text-white shadow-sm border-zinc-900 font-bold'
+                        : 'bg-amber-400 text-black font-black border-amber-400 ring-2 ring-amber-400/50 shadow-lg shadow-amber-400/25 animate-pulse'
+                      : isDayMode
+                      ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium'
+                      : 'border-amber-500/40 text-amber-400 bg-amber-400/5 hover:bg-amber-400/15 font-bold'
+                  }`}
                   title="Pipette de détourage : cliquer sur une zone pour en extraire la couleur et la retirer sur mesure"
                 >
                   <Pipette className="w-3.5 h-3.5 text-current" />
@@ -7545,18 +7677,23 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   type="button"
                   onClick={handleRemasterSubjectAi}
                   disabled={!activeSubjectPhoto || isCuttingBg || isRemasteringSubject}
-                  className={`py-2.5 px-2 rounded-xl text-xs font-bold font-mono border transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${remasterSubjectSuccess
-                    ? 'bg-lime-400 text-black font-black border-lime-400 shadow-lg shadow-lime-400/25 scale-[1.01]'
-                    : 'bg-lime-400/10 text-lime-400 border-lime-500/40 hover:bg-lime-400/20 active:scale-[0.99]'
-                    }`}
+                  className={`py-2.5 px-2 rounded-xl text-xs font-mono border transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                    remasterSubjectSuccess
+                      ? isDayMode
+                        ? 'bg-zinc-900 text-white shadow-sm border-zinc-900 font-bold'
+                        : 'bg-lime-400 text-black font-black border-lime-400 shadow-lg shadow-lime-400/25 scale-[1.01]'
+                      : isDayMode
+                      ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium'
+                      : 'bg-lime-400/10 text-lime-400 border-lime-500/40 hover:bg-lime-400/20 active:scale-[0.99] font-bold'
+                  }`}
                   title="Super-résolution IA : upscaler et nettoyer la définition du sujet en un clic (calibré 300 DPI)"
                 >
                   {isRemasteringSubject ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-lime-400" />
+                    <Loader2 className={`w-3.5 h-3.5 animate-spin ${isDayMode ? 'text-zinc-800' : 'text-lime-400'}`} />
                   ) : remasterSubjectSuccess ? (
-                    <Check className="w-3.5 h-3.5 text-black stroke-[3]" />
+                    <Check className={`w-3.5 h-3.5 stroke-[3] ${isDayMode ? 'text-white' : 'text-black'}`} />
                   ) : (
-                    <Sparkles className="w-3.5 h-3.5 text-lime-400" />
+                    <Sparkles className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-700' : 'text-lime-400'}`} />
                   )}
                   <span>
                     {isRemasteringSubject
@@ -7573,19 +7710,25 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                 <button
                   type="button"
                   onClick={handleResetCutout}
-                  className="w-full py-1.5 px-3 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 text-[11px] font-mono font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-[0.99]"
+                  className={`w-full py-1.5 px-3 rounded-xl border text-[11px] font-mono font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs active:scale-[0.99] ${
+                    isDayMode
+                      ? 'border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-800'
+                      : 'border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300'
+                  }`}
                   title="Revenir immédiatement à la photo originale non détourée"
                 >
-                  <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
+                  <RotateCcw className={`w-3.5 h-3.5 ${isDayMode ? 'text-rose-700' : 'text-rose-400'}`} />
                   <span>↺ Réinitialiser le détourage</span>
                 </button>
               )}
 
               {/* PANNEAU DE CONTRÔLE PIPETTE (SENSIBILITÉ & HISTORIQUE CUMULATIF) */}
               {(selectedChromakeyColor || isPickingColor || activeRemovedColors.length > 0) && (
-                <div className="p-2.5 rounded-xl border border-amber-500/30 bg-amber-950/20 space-y-2.5 animate-fadeIn">
+                <div className={`p-2.5 rounded-xl border space-y-2.5 animate-fadeIn ${
+                  isDayMode ? 'bg-zinc-100/80 border-zinc-200' : 'border-amber-500/30 bg-amber-950/20'
+                }`}>
                   <div className="flex items-center justify-between text-[11px] font-mono">
-                    <span className="flex items-center gap-1.5 text-amber-400 font-bold">
+                    <span className={`flex items-center gap-1.5 font-bold ${isDayMode ? 'text-zinc-900' : 'text-amber-400'}`}>
                       <Pipette className="w-3.5 h-3.5" />
                       <span>Détourage Pipette cumulatif</span>
                     </span>
@@ -7610,7 +7753,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                           else setPrimaryRemovedColors(nextList);
                           await executeCumulativeChromakey(nextList, isSecondary, false);
                         }}
-                        className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 flex items-center gap-1 transition cursor-pointer"
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono flex items-center gap-1 transition cursor-pointer ${
+                          isDayMode
+                            ? 'bg-white hover:bg-zinc-200 text-zinc-800 border border-zinc-300 shadow-xs'
+                            : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700'
+                        }`}
                         title="Ajouter le fond blanc à la liste des teintes à supprimer"
                       >
                         <span className="w-2 h-2 rounded-full bg-white inline-block border border-black/40" />
@@ -7636,7 +7783,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                           else setPrimaryRemovedColors(nextList);
                           await executeCumulativeChromakey(nextList, isSecondary, false);
                         }}
-                        className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 flex items-center gap-1 transition cursor-pointer"
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono flex items-center gap-1 transition cursor-pointer ${
+                          isDayMode
+                            ? 'bg-white hover:bg-zinc-200 text-zinc-800 border border-zinc-300 shadow-xs'
+                            : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700'
+                        }`}
                         title="Ajouter le fond noir à la liste des teintes à supprimer"
                       >
                         <span className="w-2 h-2 rounded-full bg-black inline-block border border-white/60" />
@@ -7647,7 +7798,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         <button
                           type="button"
                           onClick={() => setIsPickingColor(false)}
-                          className="px-2 py-0.5 rounded text-[9px] font-mono bg-amber-400 hover:bg-amber-300 text-black font-bold transition cursor-pointer"
+                          className={`px-2 py-0.5 rounded text-[9px] font-mono font-bold transition cursor-pointer ${
+                            isDayMode
+                              ? 'bg-zinc-900 hover:bg-zinc-800 text-white'
+                              : 'bg-amber-400 hover:bg-amber-300 text-black'
+                          }`}
                         >
                           Terminer
                         </button>
@@ -7657,16 +7812,18 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
                   {/* PASTILLES DES COULEURS CUMULÉES RETIRÉES AVEC CROIX DE SUPPRESSION */}
                   {activeRemovedColors.length > 0 && (
-                    <div className="space-y-1.5 p-2 rounded-lg bg-zinc-900/90 border border-zinc-800">
+                    <div className={`space-y-1.5 p-2 rounded-lg border ${
+                      isDayMode ? 'bg-white border-zinc-200' : 'bg-zinc-900/90 border border-zinc-800'
+                    }`}>
                       <div className="flex items-center justify-between text-[10px] font-mono">
-                        <span className="text-zinc-300 font-bold flex items-center gap-1">
-                          <Layers className="w-3 h-3 text-lime-400" />
+                        <span className={`font-bold flex items-center gap-1 ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>
+                          <Layers className={`w-3 h-3 ${isDayMode ? 'text-zinc-700' : 'text-lime-400'}`} />
                           <span>Nuances retirées ({activeRemovedColors.length}) :</span>
                         </span>
                         <button
                           type="button"
                           onClick={handleResetCutout}
-                          className="text-rose-400 hover:text-rose-300 flex items-center gap-0.5 text-[9px] hover:underline cursor-pointer"
+                          className={`${isDayMode ? 'text-rose-600 hover:text-rose-700' : 'text-rose-400 hover:text-rose-300'} flex items-center gap-0.5 text-[9px] hover:underline cursor-pointer`}
                           title="Réinitialiser toutes les couleurs et restaurer l'image originale"
                         >
                           <RotateCcw className="w-2.5 h-2.5" />
@@ -7678,23 +7835,29 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         {activeRemovedColors.map((item) => (
                           <div
                             key={item.id}
-                            className="flex items-center gap-1.5 pl-1.5 pr-1 py-0.5 rounded-md bg-zinc-800/90 border border-zinc-700/80 text-[10px] font-mono text-zinc-200 shadow-sm"
+                            className={`flex items-center gap-1.5 pl-1.5 pr-1 py-0.5 rounded-md border text-[10px] font-mono shadow-xs ${
+                              isDayMode
+                                ? 'bg-zinc-100 border-zinc-300 text-zinc-800'
+                                : 'bg-zinc-800/90 border-zinc-700/80 text-zinc-200'
+                            }`}
                           >
                             <div
-                              className="w-3.5 h-3.5 rounded-full border border-white/50 shrink-0 shadow-inner"
+                              className="w-3.5 h-3.5 rounded-full border border-black/20 shrink-0 shadow-inner"
                               style={{ backgroundColor: `rgb(${item.r}, ${item.g}, ${item.b})` }}
                               title={`RGB(${item.r}, ${item.g}, ${item.b}) - Tolérance ${item.tolerance}%`}
                             />
-                            <span className="text-zinc-300 font-semibold text-[9px]">
+                            <span className={`font-semibold text-[9px] ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>
                               RGB({item.r},{item.g},{item.b})
                             </span>
-                            <span className="text-amber-400 text-[8px] font-bold">
+                            <span className={`text-[8px] font-bold ${isDayMode ? 'text-zinc-700' : 'text-amber-400'}`}>
                               {item.tolerance}%
                             </span>
                             <button
                               type="button"
                               onClick={() => handleRemoveColor(item.id)}
-                              className="p-0.5 rounded hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 transition cursor-pointer"
+                              className={`p-0.5 rounded transition cursor-pointer ${
+                                isDayMode ? 'hover:bg-zinc-200 text-zinc-500 hover:text-rose-600' : 'hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400'
+                              }`}
                               title="Annuler le retrait de cette nuance"
                             >
                               <X className="w-2.5 h-2.5" />
@@ -7705,107 +7868,124 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                     </div>
                   )}
 
-                  {isPickingColor ? (
-                    <div className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                      <p className="text-[10px] text-amber-300/90 font-mono italic animate-pulse">
+                  {isPickingColor && (
+                    <div className={`flex items-center justify-between gap-2 p-1.5 rounded-lg border ${
+                      isDayMode ? 'bg-amber-50 border-amber-200' : 'bg-amber-500/10 border border-amber-500/30'
+                    }`}>
+                      <p className={`text-[10px] font-mono italic animate-pulse ${isDayMode ? 'text-amber-900' : 'text-amber-300/90'}`}>
                         👉 Cliquez sur chaque couleur/ombre à supprimer l'une après l'autre.
                       </p>
                       <button
                         type="button"
                         onClick={() => setIsPickingColor(false)}
-                        className="px-2 py-0.5 rounded bg-amber-400 text-black font-bold text-[9px] hover:bg-amber-300 transition cursor-pointer shrink-0"
+                        className={`px-2 py-0.5 rounded font-bold text-[9px] transition cursor-pointer shrink-0 ${
+                          isDayMode ? 'bg-zinc-900 hover:bg-zinc-800 text-white' : 'bg-amber-400 text-black hover:bg-amber-300'
+                        }`}
                       >
                         Valider
                       </button>
                     </div>
-                  ) : (
-                    <>
-                      {/* Curseur de tolérance interactif en temps réel */}
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between text-[10px] font-mono text-zinc-300">
-                          <span>Tolérance {activeRemovedColors.length > 0 ? '(dernière nuance)' : ''} :</span>
-                          <span className="font-bold text-amber-400">{chromakeyTolerance} %</span>
-                        </div>
-                        <input
-                          type="range"
-                          min="1"
-                          max="100"
-                          value={chromakeyTolerance}
-                          onChange={(e) => handleToleranceChange(Number(e.target.value))}
-                          onPointerUp={handleToleranceCommit}
-                          className="w-full accent-amber-400 cursor-pointer h-1.5 bg-zinc-800 rounded-lg"
-                        />
-                        <div className="flex justify-between text-[8px] font-mono text-zinc-500">
-                          <span>1% (Strict)</span>
-                          <span>25% (Standard)</span>
-                          <span>50%</span>
-                          <span>100% (Large)</span>
-                        </div>
-                      </div>
-
-                      {/* Options & Boutons d'action */}
-                      <div className="flex items-center justify-between gap-2 pt-1 text-[10px] font-mono">
-                        <label className="flex items-center gap-1.5 text-zinc-400 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={isChromakeyContiguous}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setIsChromakeyContiguous(checked);
-                              const currentList = isSecondary ? secondaryRemovedColors : primaryRemovedColors;
-                              if (currentList.length > 0) {
-                                const nextList = currentList.map((c) => ({ ...c, isContiguous: checked }));
-                                if (isSecondary) setSecondaryRemovedColors(nextList);
-                                else setPrimaryRemovedColors(nextList);
-                                executeCumulativeChromakey(nextList, isSecondary, true);
-                              }
-                            }}
-                            className="rounded border-zinc-700 text-amber-500 focus:ring-0"
-                          />
-                          <span>Contours connectés</span>
-                        </label>
-
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const currentList = isSecondary ? secondaryRemovedColors : primaryRemovedColors;
-                              executeCumulativeChromakey(currentList, isSecondary, false);
-                            }}
-                            disabled={isCuttingBg}
-                            className="px-2 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[9px] font-bold cursor-pointer transition"
-                            title="Recalculer le détourage cumulatif"
-                          >
-                            Réappliquer
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={handleResetCutout}
-                            className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 text-[9px] cursor-pointer transition"
-                            title="Annuler le détourage et restaurer la photo originale"
-                          >
-                            Restaurer
-                          </button>
-                        </div>
-                      </div>
-                    </>
                   )}
+
+                  {/* Curseur de tolérance interactif en temps réel (toujours visible) */}
+                  <div className="space-y-1">
+                    <div className={`flex items-center justify-between text-[10px] font-mono ${isDayMode ? 'text-zinc-800' : 'text-zinc-300'}`}>
+                      <span>Tolérance de la pipette {activeRemovedColors.length > 0 ? '(dernière nuance)' : ''} :</span>
+                      <span className={`font-bold ${isDayMode ? 'text-zinc-900' : 'text-amber-400'}`}>{chromakeyTolerance} %</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={chromakeyTolerance}
+                      onChange={(e) => handleToleranceChange(Number(e.target.value))}
+                      onPointerUp={handleToleranceCommit}
+                      className={`w-full cursor-pointer h-1.5 rounded-lg ${
+                        isDayMode ? 'accent-zinc-900 bg-zinc-300' : 'accent-amber-400 bg-zinc-800'
+                      }`}
+                    />
+                    <div className={`flex justify-between text-[8px] font-mono ${isDayMode ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                      <span>0% (Strict)</span>
+                      <span>25% (Standard)</span>
+                      <span>50%</span>
+                      <span>100% (Large)</span>
+                    </div>
+                  </div>
+
+                  {/* Options & Boutons d'action */}
+                  <div className="flex items-center justify-between gap-2 pt-1 text-[10px] font-mono">
+                    <label className={`flex items-center gap-1.5 cursor-pointer select-none ${isDayMode ? 'text-zinc-800' : 'text-zinc-400'}`}>
+                      <input
+                        type="checkbox"
+                        checked={isChromakeyContiguous}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setIsChromakeyContiguous(checked);
+                          const currentList = isSecondary ? secondaryRemovedColors : primaryRemovedColors;
+                          if (currentList.length > 0) {
+                            const nextList = currentList.map((c) => ({ ...c, isContiguous: checked }));
+                            if (isSecondary) setSecondaryRemovedColors(nextList);
+                            else setPrimaryRemovedColors(nextList);
+                            executeCumulativeChromakey(nextList, isSecondary, true);
+                          }
+                        }}
+                        className="rounded border-zinc-400 text-zinc-900 focus:ring-0"
+                      />
+                      <span>Contours connectés</span>
+                    </label>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentList = isSecondary ? secondaryRemovedColors : primaryRemovedColors;
+                          executeCumulativeChromakey(currentList, isSecondary, false);
+                        }}
+                        disabled={isCuttingBg}
+                        className={`px-2 py-1 rounded text-[9px] font-bold cursor-pointer transition ${
+                          isDayMode
+                            ? 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800 border border-zinc-300'
+                            : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+                        }`}
+                        title="Recalculer le détourage cumulatif"
+                      >
+                        Réappliquer
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleResetCutout}
+                        className={`px-2 py-1 rounded text-[9px] cursor-pointer transition ${
+                          isDayMode
+                            ? 'bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-300'
+                            : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700'
+                        }`}
+                        title="Annuler le détourage et restaurer la photo originale"
+                      >
+                        Restaurer
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
               {/* GÉNÉRATEUR IA SUJET (GÉNÉRATION OU STYLISATION DU SUJET) */}
-              <div className={`${innerBg} p-3 rounded-xl border border-zinc-800 space-y-2.5 animate-fadeIn`}>
+              <div className={`${innerBg} p-3 rounded-xl border ${borderColor} space-y-2.5 animate-fadeIn`}>
                 <div className="flex items-center justify-between text-[11px] font-mono font-bold">
-                  <span className="flex items-center gap-1.5 text-lime-400">
-                    <Sparkles className="w-3.5 h-3.5 text-lime-400" />
+                  <span className={`flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-lime-400'}`}>
+                    <Sparkles className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-900' : 'text-lime-400'}`} />
                     <span>{activeSubjectPhoto ? `Transformer ${isSecondary ? 'le sujet 2' : 'le sujet 1'} avec l'IA` : `Générer ${isSecondary ? 'le sujet 2' : 'le sujet 1'} avec l'IA`}</span>
                   </span>
-                  <span className={`text-[9px] font-mono px-2 py-0.5 rounded border ${activeSubjectPhoto ? 'bg-lime-400/10 text-lime-400 border-lime-400/30 font-bold' : 'bg-zinc-800 text-zinc-400 border-zinc-700'}`}>
+                  <span className={`text-[9px] font-mono px-2 py-0.5 rounded border ${
+                    activeSubjectPhoto
+                      ? (isDayMode ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-bold' : 'bg-lime-400/10 text-lime-400 border-lime-400/30 font-bold')
+                      : (isDayMode ? 'bg-zinc-100 text-zinc-700 border-zinc-300' : 'bg-zinc-800 text-zinc-400 border-zinc-700')
+                  }`}>
                     {activeSubjectPhoto ? `Photo ${isSecondary ? 'Sujet 2' : 'Sujet 1'} active` : (isSecondary ? 'Sujet 2' : 'Sujet 1')}
                   </span>
                 </div>
-                <p className="text-[10px] text-zinc-400 font-mono leading-tight">
+                <p className={`text-[10px] font-mono leading-tight ${textSubtle}`}>
                   {activeSubjectPhoto
                     ? "L'IA applique votre consigne de style ou d'attitude tout en préservant le visage et l'identité du sujet. Le fond blanc est automatiquement détouré."
                     : "Décrivez le sujet souhaité. L'IA génère le personnage en studio et retire automatiquement le fond."}
@@ -7822,13 +8002,13 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                       ? "Ex: Veste cyberpunk holographique, néons subtils, lunettes de soleil futuristes..."
                       : (isSecondary ? "Ex: DJ femme casque fluo, pose profil énergique, studio..." : "Ex: DJ masculin casquette, silhouette dynamique, studio...")
                   }
-                  className={`w-full ${inputBg} border border-zinc-800 rounded-lg px-2.5 py-1.5 text-[11px] font-mono`}
+                  className={`w-full ${inputBg} border ${borderColor} rounded-lg px-2.5 py-1.5 text-[11px] font-mono ${isDayMode ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-zinc-100'}`}
                 />
                 <button
                   type="button"
                   disabled={isGeneratingSubject || isCuttingBg}
                   onClick={() => handleGenerateAiSubject(isSecondary)}
-                  className="w-full py-2.5 font-bold font-mono text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed bg-lime-400 hover:bg-lime-300 text-black font-black"
+                  className="w-full py-2.5 font-bold font-mono text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition shadow-md disabled:opacity-50 disabled:cursor-not-allowed bg-lime-400 hover:bg-lime-300 text-zinc-950 font-black"
                 >
                   {isGeneratingSubject ? (
                     <>
@@ -7850,21 +8030,21 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
               {/* TOGGLE ÉPINGLAGE AU SUJET 1 POUR LE SUJET 2 */}
               {isSecondary && input.secondaryDjPhoto && input.djPhoto && (
-                <div className={`${innerBg} p-2.5 rounded-xl border flex items-center justify-between gap-3`}>
+                <div className={`${innerBg} p-2.5 rounded-xl border ${borderColor} flex items-center justify-between gap-3`}>
                   <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-lime-400/10 text-lime-400 border border-lime-400/20">
+                    <div className={`p-1.5 rounded-lg border ${isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-300' : 'bg-lime-400/10 text-lime-400 border-lime-400/20'}`}>
                       <Pin className="w-3.5 h-3.5" />
                     </div>
                     <div>
-                      <div className="text-xs font-bold font-mono flex items-center gap-1.5">
+                      <div className={`text-xs font-bold font-mono flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-zinc-100'}`}>
                         <span>📌 Épingler au Sujet 1</span>
                         {input.secondaryIsPinnedToSubject && (
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-lime-400/20 text-lime-400 border border-lime-400/30">
+                          <span className={`text-[9px] px-1.5 py-0.2 rounded border ${isDayMode ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-lime-400/20 text-lime-400 border-lime-400/30'}`}>
                             Actif
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px] text-zinc-400 font-mono leading-tight">
+                      <p className={`text-[10px] font-mono leading-tight ${textSubtle}`}>
                         Le Sujet 2 suit les mouvements et la taille du Sujet 1 sur tous les formats d'affiche.
                       </p>
                     </div>
@@ -7884,10 +8064,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                           : pinSecondaryToSubject(prev, previewFormat, subjectTr)
                       );
                     }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 ${input.secondaryIsPinnedToSubject
-                        ? 'bg-lime-400 text-black shadow-sm font-black'
-                        : 'bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700'
-                      }`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                      input.secondaryIsPinnedToSubject
+                        ? (isDayMode ? 'bg-zinc-900 text-white shadow-sm font-bold' : 'bg-lime-400 text-black shadow-sm font-black')
+                        : (isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-300 font-medium' : 'bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700')
+                    }`}
                   >
                     <span>{input.secondaryIsPinnedToSubject ? 'Épinglé' : 'Détaché'}</span>
                   </button>
@@ -7929,17 +8110,19 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               <div className="space-y-2">
 
                 {/* ACCORDÉON « AJUSTEMENTS MANUELS PRÉCIS » : Fondu, Opacité, Taille, Position */}
-                <details open data-testid="subject-advanced-accordion" className={`group ${innerBg} rounded-xl border`}>
-                  <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none flex items-center justify-between px-3 py-2.5 text-xs font-bold font-mono text-zinc-300 hover:text-white">
+                <details open data-testid="subject-advanced-accordion" className={`group ${innerBg} rounded-xl border ${borderColor}`}>
+                  <summary className={`list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none flex items-center justify-between px-3 py-2.5 text-xs font-bold font-mono transition ${
+                    isDayMode ? 'text-zinc-800 hover:text-zinc-900' : 'text-zinc-300 hover:text-white'
+                  }`}>
                     <span>Ajustements manuels précis</span>
                     <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
                   </summary>
                   <div className="p-2.5 pt-0 space-y-2">
                     {/* CURSEUR DE FONDU BAS DU SUJET ACTIF */}
-                    <div className={`${innerBg} p-2.5 rounded-xl border space-y-1.5`}>
-                      <div className="flex justify-between text-[10px] font-mono font-bold">
+                    <div className={`${innerBg} p-2.5 rounded-xl border ${borderColor} space-y-1.5`}>
+                      <div className={`flex justify-between text-[10px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>
                         <span>Fondu Bas ({isSecondary ? 'Sujet 2' : 'Sujet 1'})</span>
-                        <span className="text-lime-400">{activeFadeIntensity} %</span>
+                        <span className={isDayMode ? 'text-zinc-900 font-bold' : 'text-lime-400'}>{activeFadeIntensity} %</span>
                       </div>
                       <input
                         type="range"
@@ -7969,15 +8152,15 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                             ...(isSecondary ? { secondarySubjectFadeIntensity: val } : { subjectFadeIntensity: val }),
                           }));
                         }}
-                        className="w-full accent-lime-400 h-1.5 bg-zinc-800 rounded-lg cursor-pointer touch-none"
+                        className={`w-full accent-lime-400 h-1.5 ${isDayMode ? 'bg-zinc-200' : 'bg-zinc-800'} rounded-lg cursor-pointer touch-none`}
                       />
                     </div>
 
                     {/* CURSEUR D'OPACITÉ DU SUJET ACTIF */}
-                    <div className={`${innerBg} p-2.5 rounded-xl border space-y-1.5`}>
-                      <div className="flex justify-between text-[10px] font-mono font-bold">
+                    <div className={`${innerBg} p-2.5 rounded-xl border ${borderColor} space-y-1.5`}>
+                      <div className={`flex justify-between text-[10px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>
                         <span>Opacité ({isSecondary ? 'Sujet 2' : 'Sujet 1'})</span>
-                        <span className="text-lime-400">{Math.round(activeOpacity * 100)} %</span>
+                        <span className={isDayMode ? 'text-zinc-900 font-bold' : 'text-lime-400'}>{Math.round(activeOpacity * 100)} %</span>
                       </div>
                       <input
                         type="range"
@@ -8005,7 +8188,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                             ...(isSecondary ? { secondaryDjPhotoOpacity: val } : { djPhotoOpacity: val }),
                           }));
                         }}
-                        className="w-full accent-lime-400 h-1.5 bg-zinc-800 rounded-lg cursor-pointer touch-none"
+                        className={`w-full accent-lime-400 h-1.5 ${isDayMode ? 'bg-zinc-200' : 'bg-zinc-800'} rounded-lg cursor-pointer touch-none`}
                       />
                     </div>
 
@@ -8013,9 +8196,9 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                       <div className={`space-y-2 pt-2 border-t ${borderColor}`}>
                         {/* TAILLE DU SUJET ACTIF */}
                         <div className="space-y-1">
-                          <div className="flex justify-between text-[10px] font-mono font-bold">
+                          <div className={`flex justify-between text-[10px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>
                             <span>Taille ({isSecondary ? 'Sujet 2' : 'Sujet 1'})</span>
-                            <span className="text-lime-400">{Math.round(activeScale * 100)} %</span>
+                            <span className={isDayMode ? 'text-zinc-900 font-bold' : 'text-lime-400'}>{Math.round(activeScale * 100)} %</span>
                           </div>
                           <input
                             type="range"
@@ -8097,15 +8280,15 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                 }));
                               }
                             }}
-                            className="w-full accent-lime-400 h-1.5 bg-zinc-800 rounded-lg cursor-pointer touch-none"
+                            className={`w-full accent-lime-400 h-1.5 ${isDayMode ? 'bg-zinc-200' : 'bg-zinc-800'} rounded-lg cursor-pointer touch-none`}
                           />
                         </div>
 
                         {/* POSITION Y DU SUJET ACTIF */}
                         <div className="space-y-1">
-                          <div className="flex justify-between text-[10px] font-mono font-bold">
+                          <div className={`flex justify-between text-[10px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>
                             <span>Position Y ({isSecondary ? 'Sujet 2' : 'Sujet 1'})</span>
-                            <span className="text-lime-400">{activeOffsetY} %</span>
+                            <span className={isDayMode ? 'text-zinc-900 font-bold' : 'text-lime-400'}>{activeOffsetY} %</span>
                           </div>
                           <input
                             type="range"
@@ -8152,15 +8335,15 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                               }
                               if (isLiveScrubbing) setLiveScrubData((p) => p ? { ...p, value: `${val} %` } : null);
                             }}
-                            className="w-full accent-lime-400 h-1.5 bg-zinc-800 rounded-lg cursor-pointer touch-none"
+                            className={`w-full accent-lime-400 h-1.5 ${isDayMode ? 'bg-zinc-200' : 'bg-zinc-800'} rounded-lg cursor-pointer touch-none`}
                           />
                         </div>
 
                         {/* POSITION X (DÉCALAGE HORIZONTAL GAUCHE ↔ DROITE) */}
                         <div className="space-y-1">
-                          <div className="flex justify-between text-[10px] font-mono font-bold">
+                          <div className={`flex justify-between text-[10px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>
                             <span>Décalage X ({isSecondary ? 'Sujet 2' : 'Sujet 1'})</span>
-                            <span className="text-lime-400">{activeOffsetX} %</span>
+                            <span className={isDayMode ? 'text-zinc-900 font-bold' : 'text-lime-400'}>{activeOffsetX} %</span>
                           </div>
                           <input
                             type="range"
@@ -8207,7 +8390,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                               }
                               if (isLiveScrubbing) setLiveScrubData((p) => p ? { ...p, value: `${val} %` } : null);
                             }}
-                            className="w-full accent-lime-400 h-1.5 bg-zinc-800 rounded-lg cursor-pointer touch-none"
+                            className={`w-full accent-lime-400 h-1.5 ${isDayMode ? 'bg-zinc-200' : 'bg-zinc-800'} rounded-lg cursor-pointer touch-none`}
                           />
                         </div>
                       </div>
@@ -8258,7 +8441,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                 className="flex items-center justify-between cursor-pointer select-none"
               >
                 <div className="flex items-center gap-2 text-left">
-                  <div className="p-1.5 rounded-lg bg-lime-400/10 text-lime-400 border border-lime-400/20">
+                  <div className={`p-1.5 rounded-lg border ${isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-300' : 'bg-lime-400/10 text-lime-400 border-lime-400/20'}`}>
                     {isTargetApparel ? <Shirt className="w-4 h-4" /> : <ShieldCheck className="w-4 h-4" />}
                   </div>
                   <div className="flex items-center gap-2">
@@ -8277,7 +8460,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                           </span>
                         )}
                         {saveStatus === 'saved' && (
-                          <span className="flex items-center gap-1 text-lime-400">
+                          <span className={`flex items-center gap-1 ${isDayMode ? 'text-emerald-700 font-bold' : 'text-lime-400'}`}>
                             <span>✓</span>
                             <span>Enregistré</span>
                           </span>
@@ -8288,7 +8471,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                 </div>
                 {logoTarget === 'poster' && previewFormat !== 'tshirt' && (
                   previewFormat === 'post' ? (
-                    <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-lime-400/10 text-lime-400 border border-lime-400/30 font-bold">Format Maître (1:1) ★</span>
+                    <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full border font-bold ${isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-300' : 'bg-lime-400/10 text-lime-400 border-lime-400/30'}`}>Format Maître (1:1) ★</span>
                   ) : currentLogoTransform.isCustom ? (
                     <button
                       type="button"
@@ -8296,13 +8479,13 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         e.stopPropagation();
                         setInput((p) => resetLogoTransformForFormat(p, previewFormat));
                       }}
-                      className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-lime-400/10 text-lime-400 border border-lime-400/30 font-bold flex items-center gap-1 cursor-pointer hover:bg-lime-400/20"
+                      className={`text-[9px] font-mono px-2 py-0.5 rounded-full border font-bold flex items-center gap-1 cursor-pointer transition ${isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300' : 'bg-lime-400/10 text-lime-400 border-lime-400/30 hover:bg-lime-400/20'}`}
                       title="Rétablir l'héritage automatique des marges depuis le format maître Post (1:1)"
                     >
                       <RotateCcw className="w-2.5 h-2.5" /><span>Reset Auto</span>
                     </button>
                   ) : (
-                    <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-lime-400/10 text-lime-400 border border-lime-400/30 font-bold flex items-center gap-1" title="Marges héritées automatiquement du format maître">
+                    <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full border font-bold flex items-center gap-1 ${isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-300' : 'bg-lime-400/10 text-lime-400 border-lime-400/30'}`} title="Marges héritées automatiquement du format maître">
                       <Sparkles className="w-2.5 h-2.5" /><span>Auto Actif</span>
                     </span>
                   )
@@ -8312,17 +8495,18 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               {activeSection === 'logo' && (
                 <div className={`space-y-3 pt-2 border-t ${borderColor} animate-fadeIn`} onClick={(e) => e.stopPropagation()}>
                   {/* Commutateur Affiche / Vêtement */}
-                  <div className="flex items-center gap-1.5 p-1 bg-zinc-900/80 border border-zinc-800 rounded-xl">
+                  <div className={`flex items-center gap-1.5 p-1 ${isDayMode ? 'bg-zinc-100 border-zinc-200' : 'bg-zinc-900/80 border-zinc-800'} border rounded-xl`}>
                     <button
                       type="button"
                       onClick={() => {
                         setLogoTarget('poster');
                         if (previewFormat === 'tshirt') onSelectFormat?.('post');
                       }}
-                      className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-mono font-bold transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none ${logoTarget === 'poster'
-                        ? 'bg-lime-400 text-black shadow-sm font-black'
-                        : isDayMode ? 'bg-zinc-200 text-zinc-700 hover:text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'
-                        }`}
+                      className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-mono font-bold transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none ${
+                        logoTarget === 'poster'
+                          ? (isDayMode ? 'bg-zinc-900 text-white shadow-xs font-bold' : 'bg-lime-400 text-black shadow-sm font-black')
+                          : (isDayMode ? 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/50' : 'text-zinc-400 hover:text-white')
+                      }`}
                     >
                       <FileText className="w-3.5 h-3.5" />
                       <span>Affiche</span>
@@ -8337,10 +8521,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         onSelectFormat?.('tshirt');
                         onTriggerDtfPress?.();
                       }}
-                      className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-mono font-bold transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none ${logoTarget === 'apparel'
-                        ? 'bg-lime-400 text-black shadow-sm font-black'
-                        : isDayMode ? 'bg-zinc-200 text-zinc-700 hover:text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'
-                        }`}
+                      className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-mono font-bold transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none ${
+                        logoTarget === 'apparel'
+                          ? (isDayMode ? 'bg-zinc-900 text-white shadow-xs font-bold' : 'bg-lime-400 text-black shadow-sm font-black')
+                          : (isDayMode ? 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-200/50' : 'text-zinc-400 hover:text-white')
+                      }`}
                     >
                       <Shirt className="w-3.5 h-3.5" />
                       <span>Stand Merch (0 € stock)</span>
@@ -8356,19 +8541,22 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
                   {/* Sélecteur « Vue Active Calibrage » directement au-dessus de la zone de chargement du logo */}
                   {isTargetApparel && (
-                    <div className="flex items-center justify-between px-2.5 py-1.5 rounded-xl bg-zinc-900/70 border border-zinc-800/80">
+                    <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-xl ${isDayMode ? 'bg-zinc-100/80 border-zinc-200' : 'bg-zinc-900/70 border-zinc-800/80'} border`}>
                       <span className={`text-[10px] font-mono font-bold ${textMuted}`}>
                         Vue Active Calibrage :
                       </span>
-                      <div className="flex items-center gap-0.5 bg-zinc-950 border border-zinc-800 p-0.5 rounded-lg shadow-sm">
+                      <div className={`flex items-center gap-0.5 ${isDayMode ? 'bg-white border-zinc-200' : 'bg-zinc-950 border-zinc-800'} border p-0.5 rounded-lg shadow-xs`}>
                         <button
                           type="button"
                           onClick={() => {
                             setActiveView('face');
                             onSelectFormat?.('tshirt');
                           }}
-                          className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold transition cursor-pointer flex items-center gap-1 ${activeView === 'face' ? 'bg-lime-400 text-black font-black shadow-sm' : 'text-zinc-400 hover:text-white'
-                            }`}
+                          className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold transition cursor-pointer flex items-center gap-1 ${
+                            activeView === 'face'
+                              ? (isDayMode ? 'bg-zinc-900 text-white font-bold shadow-xs' : 'bg-lime-400 text-black font-black shadow-sm')
+                              : (isDayMode ? 'text-zinc-600 hover:text-zinc-900' : 'text-zinc-400 hover:text-white')
+                          }`}
                           title="Vue Face (poitrine)"
                         >
                           <Shirt className="w-3 h-3" />
@@ -8380,7 +8568,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                             setActiveView(activeView === 'face' ? 'dos' : 'face');
                             onSelectFormat?.('tshirt');
                           }}
-                          className="text-zinc-500 hover:text-lime-400 px-1 py-0.5 text-[9px] transition cursor-pointer select-none flex items-center justify-center"
+                          className={`px-1 py-0.5 text-[9px] transition cursor-pointer select-none flex items-center justify-center ${isDayMode ? 'text-zinc-400 hover:text-zinc-900' : 'text-zinc-500 hover:text-lime-400'}`}
                           title="Inverser la vue Face / Dos"
                           aria-label="Inverser la vue Face / Dos"
                         >
@@ -8392,8 +8580,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                             setActiveView('dos');
                             onSelectFormat?.('tshirt');
                           }}
-                          className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold transition cursor-pointer flex items-center gap-1 ${activeView === 'dos' ? 'bg-lime-400 text-black font-black shadow-sm' : 'text-zinc-400 hover:text-white'
-                            }`}
+                          className={`px-2.5 py-1 rounded text-[10px] font-mono font-bold transition cursor-pointer flex items-center gap-1 ${
+                            activeView === 'dos'
+                              ? (isDayMode ? 'bg-zinc-900 text-white font-bold shadow-xs' : 'bg-lime-400 text-black font-black shadow-sm')
+                              : (isDayMode ? 'text-zinc-600 hover:text-zinc-900' : 'text-zinc-400 hover:text-white')
+                          }`}
                           title="Vue Dos"
                         >
                           <span>Dos</span>
@@ -8438,13 +8629,17 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
                         {/* Badges d'état */}
                         {isTargetApparel && isApparelExclusive && (
-                          <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-lime-400 text-black font-mono font-black text-[9px] flex items-center gap-1 shadow-md z-10">
+                          <div className={`absolute top-2 left-2 px-2 py-0.5 rounded-md font-mono font-bold text-[9px] flex items-center gap-1 shadow-md z-10 ${
+                            isDayMode ? 'bg-zinc-900 text-white' : 'bg-lime-400 text-black font-black'
+                          }`}>
                             <Shirt className="w-2.5 h-2.5" />
                             <span>{activeView === 'dos' ? 'Exclusif Dos ★' : 'Exclusif Vêtement ★'}</span>
                           </div>
                         )}
                         {isTargetApparel && isApparelInherited && (
-                          <div className="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-zinc-800/90 text-zinc-300 border border-zinc-700 font-mono font-bold text-[9px] flex items-center gap-1 shadow-md z-10">
+                          <div className={`absolute top-2 left-2 px-2 py-0.5 rounded-md border font-mono font-bold text-[9px] flex items-center gap-1 shadow-md z-10 ${
+                            isDayMode ? 'bg-zinc-100 text-zinc-700 border-zinc-300' : 'bg-zinc-800/90 text-zinc-300 border-zinc-700'
+                          }`}>
                             <span>{activeView === 'dos' ? 'Hérité de la Face' : 'Hérité Affiche (Partagé)'}</span>
                           </div>
                         )}
@@ -8583,14 +8778,14 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                       </>
                     ) : (
                       <div className="flex flex-col items-center justify-center text-center p-3 gap-1">
-                        <Upload className="w-4 h-4 text-lime-400 mb-1" />
-                        <span className="text-[11px] font-mono font-bold">
+                        <Upload className={`w-4 h-4 mb-1 ${isDayMode ? 'text-zinc-800' : 'text-lime-400'}`} />
+                        <span className={`text-[11px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>
                           {isTargetApparel
                             ? (activeView === 'dos' ? 'Uploader Logo Dos (Vue Vierge)' : 'Uploader Logo Vêtement')
                             : 'Uploader Logo Affiche (1 clic)'}
                         </span>
                         {isTargetApparel && (
-                          <span className="text-[9px] font-mono text-zinc-500 max-w-[220px]">
+                          <span className={`text-[9px] font-mono ${textSubtle} max-w-[220px]`}>
                             {activeView === 'dos'
                               ? 'Glissez un fichier ou cliquez pour uploader un logo Dos exclusif'
                               : "100% Exclusif au vêtement (non ajouté sur l'affiche)"}
@@ -8610,7 +8805,9 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                               notifyHubProjectUpdated();
                               showToast('Logo hérité de la Face réactivé sur le Dos.', 'info');
                             }}
-                            className="mt-1 py-1 px-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-lime-400 border border-zinc-700 text-[9px] font-mono font-bold flex items-center gap-1 transition cursor-pointer"
+                            className={`mt-1 py-1 px-2.5 rounded-lg border text-[9px] font-mono font-bold flex items-center gap-1 transition cursor-pointer ${
+                              isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300' : 'bg-zinc-800 hover:bg-zinc-700 text-lime-400 border-zinc-700'
+                            }`}
                             title="Rétablir le logo de la Face sur le Dos"
                           >
                             <RotateCcw className="w-2.5 h-2.5" />
@@ -8646,10 +8843,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         type="button"
                         disabled={!currentTargetLogo}
                         onClick={() => handleLogoColorModeSelect('knockout_black')}
-                        className={`py-2 px-2.5 rounded-xl text-xs font-mono font-bold border transition ${currentTargetColorMode === 'knockout_black'
-                          ? 'bg-lime-400 text-black border-lime-400 font-black'
-                          : 'bg-zinc-900 text-zinc-300 border-zinc-800'
-                          }`}
+                        className={`py-2 px-2.5 rounded-xl text-xs font-mono font-bold border transition ${
+                          currentTargetColorMode === 'knockout_black'
+                            ? (isDayMode ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs' : 'bg-lime-400 text-black border-lime-400 font-black')
+                            : (isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium' : 'bg-zinc-900 text-zinc-300 border-zinc-800')
+                        }`}
                       >
                         Noirs Découpés ✂️
                       </button>
@@ -8657,11 +8855,15 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         type="button"
                         disabled={!currentTargetLogo || isCroppingLogoBg}
                         onClick={handleRemoveLogoBackground}
-                        className="py-2 px-2.5 rounded-xl text-xs font-mono font-bold border border-lime-500/40 text-lime-400 bg-lime-400/5 hover:bg-lime-400/15 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40"
+                        className={`py-2 px-2.5 rounded-xl text-xs font-mono font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 ${
+                          isDayMode
+                            ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium'
+                            : 'border-lime-500/40 text-lime-400 bg-lime-400/5 hover:bg-lime-400/15'
+                        }`}
                       >
                         {isCroppingLogoBg ? (
                           <>
-                            <Loader2 className="w-3 h-3 animate-spin text-lime-400" />
+                            <Loader2 className={`w-3 h-3 animate-spin ${isDayMode ? 'text-zinc-800' : 'text-lime-400'}`} />
                             <span>Détourage...</span>
                           </>
                         ) : (
@@ -8681,10 +8883,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                               key={mode}
                               type="button"
                               onClick={() => handleLogoColorModeSelect(mode)}
-                              className={`py-1.5 rounded-lg text-[11px] font-mono font-bold border cursor-pointer transition ${currentTargetColorMode === mode
-                                ? 'bg-lime-400 text-black font-black'
-                                : 'bg-zinc-900 text-zinc-400 border-zinc-800'
-                                }`}
+                              className={`py-1.5 rounded-lg text-[11px] font-mono font-bold border cursor-pointer transition ${
+                                currentTargetColorMode === mode
+                                  ? (isDayMode ? 'bg-zinc-900 text-white font-bold border-zinc-900 shadow-xs' : 'bg-lime-400 text-black font-black')
+                                  : (isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300' : 'bg-zinc-900 text-zinc-400 border-zinc-800')
+                              }`}
                             >
                               {mode.charAt(0).toUpperCase() + mode.slice(1)}
                             </button>
@@ -8704,10 +8907,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                 key={key}
                                 type="button"
                                 onClick={() => handleLogoColorModeSelect(key)}
-                                className={`py-1.5 px-1 rounded-lg text-[10px] font-mono font-bold border cursor-pointer transition text-center truncate ${currentTargetColorMode === key
-                                  ? 'bg-lime-400 text-black font-black border-lime-400 shadow-sm'
-                                  : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700'
-                                  }`}
+                                className={`py-1.5 px-1 rounded-lg text-[10px] font-mono font-bold border cursor-pointer transition text-center truncate ${
+                                  currentTargetColorMode === key
+                                    ? (isDayMode ? 'bg-zinc-900 text-white font-bold border-zinc-900 shadow-xs' : 'bg-lime-400 text-black font-black border-lime-400 shadow-sm')
+                                    : (isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white hover:border-zinc-700')
+                                }`}
                                 title={key === 'auto' ? 'Accordé automatiquement au décor et à la tonalité' : label}
                               >
                                 {label}
@@ -8715,12 +8919,14 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                             ))}
                           </div>
                           {/* Indicateur de statut de liaison Décor ➔ Logo */}
-                          <div className="mt-1 px-2.5 py-1.5 rounded-xl bg-zinc-900/90 border border-zinc-800/80 text-[10px] font-mono flex items-center justify-between">
-                            <span className="text-zinc-400 flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-lime-400 animate-pulse" />
+                          <div className={`mt-1 px-2.5 py-1.5 rounded-xl border text-[10px] font-mono flex items-center justify-between ${
+                            isDayMode ? 'bg-zinc-100 border-zinc-200' : 'bg-zinc-900/90 border-zinc-800/80'
+                          }`}>
+                            <span className={`flex items-center gap-1.5 ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${isDayMode ? 'bg-emerald-600' : 'bg-lime-400 animate-pulse'}`} />
                               Liaison Décor ➔ Logo :
                             </span>
-                            <span className="text-lime-400 font-bold flex items-center gap-1">
+                            <span className={`font-bold flex items-center gap-1 ${isDayMode ? 'text-zinc-900' : 'text-lime-400'}`}>
                               {isLightTone
                                 ? 'Sombre Contrasté (Fond Clair)'
                                 : `Lueur Néon Active (${activeStyleKey})`}
@@ -8734,15 +8940,16 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                       type="button"
                       onClick={handleRemasterLogoAi}
                       disabled={!currentTargetLogo || isCroppingLogoBg || isRemasteringLogo}
-                      className={`w-full py-2.5 px-3 text-[10px] font-mono font-bold rounded-lg border flex items-center justify-center gap-2 transition-all duration-300 cursor-pointer ${remasterSuccess
-                        ? 'bg-lime-400 text-black font-black border-lime-400 shadow-lg shadow-lime-400/25 scale-[1.01]'
-                        : 'bg-lime-400/10 text-lime-400 border-lime-500/40 hover:bg-lime-400/20 active:scale-[0.99]'
-                        }`}
+                      className={`w-full py-2.5 px-3 text-[10px] font-mono font-bold rounded-lg border flex items-center justify-center gap-2 transition-all duration-300 cursor-pointer ${
+                        remasterSuccess
+                          ? (isDayMode ? 'bg-zinc-900 text-white font-bold border-zinc-900 shadow-xs' : 'bg-lime-400 text-black font-black border-lime-400 shadow-lg shadow-lime-400/25 scale-[1.01]')
+                          : (isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium' : 'bg-lime-400/10 text-lime-400 border-lime-500/40 hover:bg-lime-400/20 active:scale-[0.99]')
+                      }`}
                     >
                       {isRemasteringLogo ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-lime-400" />
+                        <Loader2 className={`w-3.5 h-3.5 animate-spin ${isDayMode ? 'text-zinc-800' : 'text-lime-400'}`} />
                       ) : remasterSuccess ? (
-                        <Check className="w-3.5 h-3.5 text-black stroke-[3] animate-bounce" />
+                        <Check className={`w-3.5 h-3.5 stroke-[3] animate-bounce ${isDayMode ? 'text-white' : 'text-black'}`} />
                       ) : (
                         <Sparkles className="w-3.5 h-3.5" />
                       )}
@@ -8765,7 +8972,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                               <span className={`text-[10px] font-mono font-bold ${textMuted}`}>
                                 Préréglages Calibrage DTF :
                               </span>
-                              <span className="text-[9px] font-mono text-lime-400 font-bold">Face</span>
+                              <span className={`text-[9px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-lime-400'}`}>Face</span>
                             </div>
                             <div className="grid grid-cols-2 gap-1.5">
                               <button
@@ -8780,7 +8987,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                   }));
                                   notifyHubProjectUpdated();
                                 }}
-                                className="py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-lime-400 hover:text-white transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-1 focus-visible:ring-lime-400"
+                                className={`py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-1 focus-visible:ring-lime-400 ${
+                                  isDayMode
+                                    ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium'
+                                    : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-lime-400 hover:text-white'
+                                }`}
                               >
                                 <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0 inline-block" />
                                 <span>Cœur Standard (68%, 34%)</span>
@@ -8797,9 +9008,13 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                   }));
                                   notifyHubProjectUpdated();
                                 }}
-                                className="py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-lime-400 hover:text-white transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-1 focus-visible:ring-lime-400"
+                                className={`py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-1 focus-visible:ring-lime-400 ${
+                                  isDayMode
+                                    ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium'
+                                    : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-lime-400 hover:text-white'
+                                }`}
                               >
-                                <Shirt className="w-3 h-3 text-lime-400 shrink-0" />
+                                <Shirt className={`w-3 h-3 shrink-0 ${isDayMode ? 'text-zinc-800' : 'text-lime-400'}`} />
                                 <span>Poitrine Centrée (50%, 34%)</span>
                               </button>
                             </div>
@@ -8807,17 +9022,19 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         )}
 
                         {/* ACCORDÉON « AJUSTEMENTS MANUELS PRÉCIS » LOGO TEXTILE (FERMÉ PAR DÉFAUT) */}
-                        <details data-testid="logo-advanced-accordion" className={`group ${innerBg} rounded-xl border`}>
-                          <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none flex items-center justify-between px-3 py-2.5 text-xs font-bold font-mono text-zinc-300 hover:text-white">
+                        <details data-testid="logo-advanced-accordion" className={`group ${innerBg} rounded-xl border ${borderColor}`}>
+                          <summary className={`list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none flex items-center justify-between px-3 py-2.5 text-xs font-bold font-mono transition ${
+                            isDayMode ? 'text-zinc-800 hover:text-zinc-900' : 'text-zinc-300 hover:text-white'
+                          }`}>
                             <span>Ajustements manuels précis</span>
                             <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
                           </summary>
                           <div className="p-2.5 pt-0 space-y-2">
                             {/* Échelle / Taille du Logo (curseur unique simplifié et toujours stable) */}
                             <div className="space-y-1">
-                              <div className="flex justify-between text-[10px] font-mono font-bold">
+                              <div className={`flex justify-between text-[10px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>
                                 <span>Taille du Logo ({activeView === 'dos' ? 'Dos' : 'Face'})</span>
-                                <span className="text-lime-400">
+                                <span className={isDayMode ? 'text-zinc-900 font-bold' : 'text-lime-400'}>
                                   {Math.round((activeView === 'dos' ? backPlacement.scale : frontPlacement.scale) * 100)} %
                                 </span>
                               </div>
@@ -8860,7 +9077,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                     notifyHubProjectUpdated();
                                   }
                                 }}
-                                className="w-full accent-lime-400 h-1.5 bg-zinc-800 rounded-lg cursor-pointer touch-none"
+                                className={`w-full accent-lime-400 h-1.5 ${isDayMode ? 'bg-zinc-200' : 'bg-zinc-800'} rounded-lg cursor-pointer touch-none`}
                               />
                             </div>
                           </div>
@@ -8871,21 +9088,21 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         <div className={`space-y-3 pt-2 border-t ${borderColor}`}>
                           {/* TOGGLE ÉPINGLAGE AU SUJET 1 POUR LE LOGO */}
                           {input.djPhoto && (
-                            <div className={`${innerBg} p-2.5 rounded-xl border flex items-center justify-between gap-3`}>
+                            <div className={`${innerBg} p-2.5 rounded-xl border ${borderColor} flex items-center justify-between gap-3`}>
                               <div className="flex items-center gap-2">
-                                <div className="p-1.5 rounded-lg bg-lime-400/10 text-lime-400 border border-lime-400/20">
+                                <div className={`p-1.5 rounded-lg border ${isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-300' : 'bg-lime-400/10 text-lime-400 border-lime-400/20'}`}>
                                   <Pin className="w-3.5 h-3.5" />
                                 </div>
                                 <div>
-                                  <div className="text-xs font-bold font-mono flex items-center gap-1.5">
+                                  <div className={`text-xs font-bold font-mono flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-zinc-100'}`}>
                                     <span>📌 Épingler au Sujet 1</span>
                                     {input.isPinnedToSubject && (
-                                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-lime-400/20 text-lime-400 border border-lime-400/30">
+                                      <span className={`text-[9px] px-1.5 py-0.2 rounded border ${isDayMode ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-lime-400/20 text-lime-400 border-lime-400/30'}`}>
                                         Actif
                                       </span>
                                     )}
                                   </div>
-                                  <p className="text-[10px] text-zinc-400 font-mono leading-tight">
+                                  <p className={`text-[10px] font-mono leading-tight ${textSubtle}`}>
                                     Le logo suit les mouvements et la taille du sujet sur tous les formats.
                                   </p>
                                 </div>
@@ -8899,10 +9116,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                       : pinLogoToSubject(prev, previewFormat, currentSubjectTransformForLogo)
                                   );
                                 }}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 ${input.isPinnedToSubject
-                                    ? 'bg-lime-400 text-black shadow-sm font-black'
-                                    : 'bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700'
-                                  }`}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 ${
+                                  input.isPinnedToSubject
+                                    ? (isDayMode ? 'bg-zinc-900 text-white shadow-xs font-bold' : 'bg-lime-400 text-black shadow-sm font-black')
+                                    : (isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium' : 'bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700')
+                                }`}
                               >
                                 <span>{input.isPinnedToSubject ? 'Épinglé' : 'Détaché'}</span>
                               </button>
@@ -8917,7 +9135,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                   Préréglages Rapides :
                                 </span>
                                 {previewFormat === 'post' ? (
-                                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-lime-400/10 text-lime-400 border border-lime-400/20 font-bold">Maître (1:1) ★</span>
+                                  <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border font-bold ${isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-300' : 'bg-lime-400/10 text-lime-400 border-lime-400/20'}`}>Maître (1:1) ★</span>
                                 ) : currentLogoTransform.isCustom ? (
                                   <button
                                     type="button"
@@ -8925,18 +9143,18 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                       e.stopPropagation();
                                       setInput((p) => resetLogoTransformForFormat(p, previewFormat));
                                     }}
-                                    className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-400/10 text-amber-400 border border-amber-400/20 font-bold flex items-center gap-1 cursor-pointer hover:bg-amber-400/20"
+                                    className={`text-[9px] font-mono px-1.5 py-0.5 rounded border font-bold flex items-center gap-1 cursor-pointer transition ${isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300' : 'bg-amber-400/10 text-amber-400 border-amber-400/20 hover:bg-amber-400/20'}`}
                                     title="Rétablir l'héritage automatique des marges depuis le format maître Post (1:1)"
                                   >
                                     <RotateCcw className="w-2.5 h-2.5" /><span>Reset Auto</span>
                                   </button>
                                 ) : (
-                                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-lime-400/10 text-lime-400 border border-lime-400/20 font-bold flex items-center gap-1" title="Marges héritées automatiquement du format maître">
+                                  <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border font-bold flex items-center gap-1 ${isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-300' : 'bg-lime-400/10 text-lime-400 border-lime-400/20'}`} title="Marges héritées automatiquement du format maître">
                                     <Sparkles className="w-2.5 h-2.5" /><span>Auto Actif</span>
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[9px] font-mono text-zinc-500">Coins &amp; Centre</span>
+                              <span className={`text-[9px] font-mono ${textSubtle}`}>Coins &amp; Centre</span>
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                               <button
@@ -8950,10 +9168,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                     setInput((p) => updateLogoTransform(p, previewFormat, { x: 10, y: 10 }));
                                   }
                                 }}
-                                className={`py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border cursor-pointer transition flex items-center justify-center gap-1 ${Math.round(currentLogoTransform.x) === 10 && Math.round(currentLogoTransform.y) === 10
-                                  ? 'bg-lime-400 text-black font-black border-lime-400 shadow-sm'
-                                  : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700 hover:text-white'
-                                  }`}
+                                className={`py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border cursor-pointer transition flex items-center justify-center gap-1 ${
+                                  Math.round(currentLogoTransform.x) === 10 && Math.round(currentLogoTransform.y) === 10
+                                    ? (isDayMode ? 'bg-zinc-900 text-white font-bold border-zinc-900 shadow-xs' : 'bg-lime-400 text-black font-black border-lime-400 shadow-sm')
+                                    : (isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium' : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700 hover:text-white')
+                                }`}
                                 title="Haut-Gauche (X: 10%, Y: 10%)"
                               >
                                 <span>↖ Haut-Gauche</span>
@@ -8970,10 +9189,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                     setInput((p) => updateLogoTransform(p, previewFormat, { x: 85, y: 8 }));
                                   }
                                 }}
-                                className={`py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border cursor-pointer transition flex items-center justify-center gap-1 ${Math.round(currentLogoTransform.x) === 85 && Math.round(currentLogoTransform.y) === 8
-                                  ? 'bg-lime-400 text-black font-black border-lime-400 shadow-sm'
-                                  : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700 hover:text-white'
-                                  }`}
+                                className={`py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border cursor-pointer transition flex items-center justify-center gap-1 ${
+                                  Math.round(currentLogoTransform.x) === 85 && Math.round(currentLogoTransform.y) === 8
+                                    ? (isDayMode ? 'bg-zinc-900 text-white font-bold border-zinc-900 shadow-xs' : 'bg-lime-400 text-black font-black border-lime-400 shadow-sm')
+                                    : (isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium' : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700 hover:text-white')
+                                }`}
                                 title="Haut-Droite (X: 85%, Y: 8%)"
                               >
                                 <span>↗ Haut-Droite</span>
@@ -8990,10 +9210,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                     setInput((p) => updateLogoTransform(p, previewFormat, { x: 50 }));
                                   }
                                 }}
-                                className={`py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border cursor-pointer transition flex items-center justify-center gap-1 ${Math.round(currentLogoTransform.x) === 50
-                                  ? 'bg-lime-400 text-black font-black border-lime-400 shadow-sm'
-                                  : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700 hover:text-white'
-                                  }`}
+                                className={`py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border cursor-pointer transition flex items-center justify-center gap-1 ${
+                                  Math.round(currentLogoTransform.x) === 50
+                                    ? (isDayMode ? 'bg-zinc-900 text-white font-bold border-zinc-900 shadow-xs' : 'bg-lime-400 text-black font-black border-lime-400 shadow-sm')
+                                    : (isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium' : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700 hover:text-white')
+                                }`}
                                 title="Centrer horizontalement (X: 50%)"
                               >
                                 <span>↔ Centré</span>
@@ -9010,10 +9231,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                     setInput((p) => updateLogoTransform(p, previewFormat, { x: 85, y: 88 }));
                                   }
                                 }}
-                                className={`py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border cursor-pointer transition flex items-center justify-center gap-1 ${Math.round(currentLogoTransform.x) === 85 && Math.round(currentLogoTransform.y) === 88
-                                  ? 'bg-lime-400 text-black font-black border-lime-400 shadow-sm'
-                                  : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700 hover:text-white'
-                                  }`}
+                                className={`py-1.5 px-2 rounded-lg text-[10px] font-mono font-bold border cursor-pointer transition flex items-center justify-center gap-1 ${
+                                  Math.round(currentLogoTransform.x) === 85 && Math.round(currentLogoTransform.y) === 88
+                                    ? (isDayMode ? 'bg-zinc-900 text-white font-bold border-zinc-900 shadow-xs' : 'bg-lime-400 text-black font-black border-lime-400 shadow-sm')
+                                    : (isDayMode ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium' : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700 hover:text-white')
+                                }`}
                                 title="Bas-Droite (X: 85%, Y: 88%)"
                               >
                                 <span>↘ Bas-Droite</span>
@@ -9022,17 +9244,19 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                           </div>
 
                           {/* ACCORDÉON « AJUSTEMENTS MANUELS PRÉCIS » LOGO AFFICHE */}
-                          <details open data-testid="logo-advanced-accordion" className={`group ${innerBg} rounded-xl border`}>
-                            <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none flex items-center justify-between px-3 py-2.5 text-xs font-bold font-mono text-zinc-300 hover:text-white">
+                          <details open data-testid="logo-advanced-accordion" className={`group ${innerBg} rounded-xl border ${borderColor}`}>
+                            <summary className={`list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none flex items-center justify-between px-3 py-2.5 text-xs font-bold font-mono transition ${
+                              isDayMode ? 'text-zinc-800 hover:text-zinc-900' : 'text-zinc-300 hover:text-white'
+                            }`}>
                               <span>Ajustements manuels précis</span>
                               <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
                             </summary>
                             <div className="p-2.5 pt-0">
                               {/* Taille / Échelle : slider de 20% à 250% */}
                               <div className="space-y-1">
-                                <div className="flex justify-between text-[10px] font-mono font-bold">
+                                <div className={`flex justify-between text-[10px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>
                                   <span>Taille du Logo / Échelle</span>
-                                  <span className="text-lime-400">{Math.round((currentLogoTransform.scale ?? 0.6) * 100)} %</span>
+                                  <span className={isDayMode ? 'text-zinc-900 font-bold' : 'text-lime-400'}>{Math.round((currentLogoTransform.scale ?? 0.6) * 100)} %</span>
                                 </div>
                                 <input
                                   type="range"
@@ -9083,15 +9307,15 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                       setLiveScrubData((prev) => prev ? { ...prev, value: `${Math.round(val * 100)} %` } : null);
                                     }
                                   }}
-                                  className="w-full accent-lime-400 h-1.5 bg-zinc-800 rounded-lg cursor-pointer touch-none"
+                                  className={`w-full accent-lime-400 h-1.5 ${isDayMode ? 'bg-zinc-200' : 'bg-zinc-800'} rounded-lg cursor-pointer touch-none`}
                                 />
                               </div>
 
                               {/* Position Y / Déplacement vertical : slider de 0% à 100% */}
-                              <div className="space-y-1 pt-2 border-t border-zinc-800/60">
-                                <div className="flex justify-between text-[10px] font-mono font-bold">
+                              <div className={`space-y-1 pt-2 border-t ${borderColor}`}>
+                                <div className={`flex justify-between text-[10px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-200'}`}>
                                   <span>Déplacement Y (Hauteur)</span>
-                                  <span className="text-lime-400">{Math.round(currentLogoTransform.y ?? 12)} %</span>
+                                  <span className={isDayMode ? 'text-zinc-900 font-bold' : 'text-lime-400'}>{Math.round(currentLogoTransform.y ?? 12)} %</span>
                                 </div>
                                 <input
                                   type="range"
@@ -9140,7 +9364,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                       setLiveScrubData((prev) => prev ? { ...prev, value: `${Math.round(val)} %` } : null);
                                     }
                                   }}
-                                  className="w-full accent-lime-400 h-1.5 bg-zinc-800 rounded-lg cursor-pointer touch-none"
+                                  className={`w-full accent-lime-400 h-1.5 ${isDayMode ? 'bg-zinc-200' : 'bg-zinc-800'} rounded-lg cursor-pointer touch-none`}
                                 />
                               </div>
                             </div>
@@ -9231,15 +9455,15 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
           <div className={`pt-2 border-t ${borderColor} space-y-4 animate-fadeIn w-full max-w-full overflow-hidden`} onClick={(e) => e.stopPropagation()}>
             {/* 1. Sélecteur Visuel de 3 Gabarits d'Intention Intelligents (Wireframe Cards) */}
             <div className="space-y-2" data-testid="step5-composition-selector">
-              <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
-                <span className="flex items-center gap-1.5 font-bold uppercase text-zinc-300">
-                  <LayoutTemplate className="w-3.5 h-3.5 text-emerald-400" />
+              <div className="flex items-center justify-between text-[10px] font-mono">
+                <span className={`flex items-center gap-1.5 font-bold uppercase ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>
+                  <LayoutTemplate className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-900' : 'text-emerald-400'}`} />
                   <span>Gabarit d'Intention :</span>
                 </span>
-                <span className="text-emerald-400 font-bold flex items-center gap-1.5">
-                  {activeLayoutTemplate === 'duality_campaign' && <Layers className="w-3.5 h-3.5 text-lime-400" />}
-                  {activeLayoutTemplate === 'headliner_event' && <Flame className="w-3.5 h-3.5 text-orange-400" />}
-                  {activeLayoutTemplate === 'minimal_brand' && <Tag className="w-3.5 h-3.5 text-emerald-400" />}
+                <span className={`font-bold flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-emerald-400'}`}>
+                  {activeLayoutTemplate === 'duality_campaign' && <Layers className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-900' : 'text-lime-400'}`} />}
+                  {activeLayoutTemplate === 'headliner_event' && <Flame className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-900' : 'text-orange-400'}`} />}
+                  {activeLayoutTemplate === 'minimal_brand' && <Tag className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-900' : 'text-emerald-400'}`} />}
                   <span>
                     {activeLayoutTemplate === 'duality_campaign'
                       ? 'Campagne Duale'
@@ -9255,17 +9479,17 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                 {[
                   {
                     id: 'duality_campaign' as const,
-                    iconElement: <Layers className="w-3.5 h-3.5 text-lime-400" />,
+                    iconElement: <Layers className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-900' : 'text-lime-400'}`} />,
                     title: 'Campagne Duale',
                     subtitle: 'Accroches scindées haut + Titre d\'impact bas',
                     wireframe: (
-                      <div className="w-full h-10 rounded bg-black/70 border border-zinc-800 p-1 flex flex-col justify-between overflow-hidden">
+                      <div className={`w-full h-10 rounded border p-1 flex flex-col justify-between overflow-hidden ${isDayMode ? 'bg-zinc-100 border-zinc-300' : 'bg-black/70 border-zinc-800'}`}>
                         <div className="flex justify-between items-center px-0.5">
-                          <div className="h-1 w-5 rounded-xs bg-white" />
+                          <div className={`h-1 w-5 rounded-xs ${isDayMode ? 'bg-zinc-800' : 'bg-white'}`} />
                           <div className="h-1 w-5 rounded-xs bg-zinc-500" />
                         </div>
                         <div className="flex flex-col items-center gap-0.5 pb-0.5">
-                          <div className="h-1.5 w-10 rounded-xs bg-white" />
+                          <div className={`h-1.5 w-10 rounded-xs ${isDayMode ? 'bg-zinc-800' : 'bg-white'}`} />
                           <div className="h-1 w-8 rounded-xs bg-[#F97316]" />
                         </div>
                       </div>
@@ -9273,13 +9497,13 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   },
                   {
                     id: 'headliner_event' as const,
-                    iconElement: <Flame className="w-3.5 h-3.5 text-orange-400" />,
+                    iconElement: <Flame className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-900' : 'text-orange-400'}`} />,
                     title: 'Headliner Event',
                     subtitle: 'Nom artiste massif traversant + Date cartouche',
                     wireframe: (
-                      <div className="w-full h-10 rounded bg-black/70 border border-zinc-800 p-1 flex flex-col justify-between items-center overflow-hidden">
-                        <div className="mt-1 h-2 w-14 rounded-xs bg-white shadow-xs" />
-                        <div className="h-1.5 w-12 rounded-full bg-neutral-900 border border-zinc-700 flex items-center justify-center">
+                      <div className={`w-full h-10 rounded border p-1 flex flex-col justify-between items-center overflow-hidden ${isDayMode ? 'bg-zinc-100 border-zinc-300' : 'bg-black/70 border-zinc-800'}`}>
+                        <div className={`mt-1 h-2 w-14 rounded-xs ${isDayMode ? 'bg-zinc-800' : 'bg-white'} shadow-xs`} />
+                        <div className={`h-1.5 w-12 rounded-full border flex items-center justify-center ${isDayMode ? 'bg-zinc-200 border-zinc-300' : 'bg-neutral-900 border-zinc-700'}`}>
                           <div className="h-0.5 w-8 rounded-full bg-amber-400" />
                         </div>
                       </div>
@@ -9287,13 +9511,13 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   },
                   {
                     id: 'minimal_brand' as const,
-                    iconElement: <Tag className="w-3.5 h-3.5 text-emerald-400" />,
+                    iconElement: <Tag className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-900' : 'text-emerald-400'}`} />,
                     title: 'Drop Minimal',
                     subtitle: 'Typographie épurée verticale à gauche',
                     wireframe: (
-                      <div className="w-full h-10 rounded bg-black/70 border border-zinc-800 p-1 flex flex-col justify-center items-start gap-0.5 pl-1.5 overflow-hidden">
-                        <div className="h-1.5 w-9 rounded-xs bg-white" />
-                        <div className="h-0.5 w-3 rounded-full bg-emerald-400" />
+                      <div className={`w-full h-10 rounded border p-1 flex flex-col justify-center items-start gap-0.5 pl-1.5 overflow-hidden ${isDayMode ? 'bg-zinc-100 border-zinc-300' : 'bg-black/70 border-zinc-800'}`}>
+                        <div className={`h-1.5 w-9 rounded-xs ${isDayMode ? 'bg-zinc-800' : 'bg-white'}`} />
+                        <div className="h-0.5 w-3 rounded-full bg-emerald-500" />
                         <div className="h-1 w-12 rounded-xs bg-zinc-400" />
                       </div>
                     ),
@@ -9322,20 +9546,19 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                           return next;
                         });
                       }}
-                      className={`p-2.5 rounded-xl text-left transition cursor-pointer flex flex-col gap-2 select-none focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none active:scale-[0.98] ${isActive
-                          ? 'border-2 border-emerald-500 bg-neutral-900/90 text-white shadow-lg'
-                          : isDayMode
-                            ? 'border border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
-                            : 'border border-zinc-800 bg-neutral-950/60 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
-                        }`}
+                      className={`p-2.5 rounded-xl text-left transition cursor-pointer flex flex-col gap-2 select-none focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none active:scale-[0.98] ${
+                        isActive
+                          ? (isDayMode ? 'border-2 border-zinc-900 bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-900/10' : 'border-2 border-emerald-500 bg-neutral-900/90 text-white shadow-lg')
+                          : (isDayMode ? 'border border-zinc-300 bg-zinc-50 hover:bg-zinc-100 text-zinc-700' : 'border border-zinc-800 bg-neutral-950/60 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200')
+                      }`}
                     >
                       {tmpl.wireframe}
                       <div className="min-w-0">
-                        <div className="text-xs font-mono font-bold flex items-center gap-1.5">
+                        <div className={`text-xs font-mono font-bold flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-zinc-100'}`}>
                           {tmpl.iconElement}
                           <span className="truncate">{tmpl.title}</span>
                         </div>
-                        <div className="text-[9px] font-mono text-zinc-400 leading-tight mt-0.5 line-clamp-2">
+                        <div className={`text-[9px] font-mono ${textSubtle} leading-tight mt-0.5 line-clamp-2`}>
                           {tmpl.subtitle}
                         </div>
                       </div>
@@ -9349,26 +9572,32 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
             {activeLayoutTemplate === 'duality_campaign' && (
               <div className="space-y-3 animate-fadeIn">
                 {/* Indicateur d'Auto-Luminance */}
-                <div className="p-2.5 rounded-xl border border-emerald-500/25 bg-emerald-500/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] font-mono">
+                <div className={`p-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] font-mono ${
+                  isDayMode ? 'bg-zinc-100/80 border-zinc-200 text-zinc-800' : 'border-emerald-500/25 bg-emerald-500/5'
+                }`}>
                   <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span className="text-zinc-300 font-bold">Auto-Luminance Active :</span>
-                    <span className="text-zinc-500 hidden md:inline text-[10px]">Contraste automatique par quadrant</span>
+                    <Sparkles className={`w-4 h-4 shrink-0 ${isDayMode ? 'text-zinc-800' : 'text-emerald-400'}`} />
+                    <span className={`font-bold ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>Auto-Luminance Active :</span>
+                    <span className={`${textSubtle} hidden md:inline text-[10px]`}>Contraste automatique par quadrant</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-[10px] font-bold">
-                    <span className={`px-2 py-0.5 rounded border ${autoLuminance.topLeftColor === '#FFFFFF'
-                        ? 'bg-zinc-900 text-white border-zinc-700'
+                    <span className={`px-2 py-0.5 rounded border ${
+                      autoLuminance.topLeftColor === '#FFFFFF'
+                        ? (isDayMode ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-zinc-900 text-white border-zinc-700')
                         : 'bg-white text-black border-zinc-300 shadow-xs'
-                      }`}>
+                    }`}>
                       Gauche: {autoLuminance.topLeftColor === '#FFFFFF' ? '⚪ Blanc' : '⚫ Noir'}
                     </span>
-                    <span className={`px-2 py-0.5 rounded border ${autoLuminance.topRightColor === '#FFFFFF'
-                        ? 'bg-zinc-900 text-white border-zinc-700'
+                    <span className={`px-2 py-0.5 rounded border ${
+                      autoLuminance.topRightColor === '#FFFFFF'
+                        ? (isDayMode ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-zinc-900 text-white border-zinc-700')
                         : 'bg-white text-black border-zinc-300 shadow-xs'
-                      }`}>
+                    }`}>
                       Droite: {autoLuminance.topRightColor === '#FFFFFF' ? '⚪ Blanc' : '⚫ Noir'}
                     </span>
-                    <span className="px-2 py-0.5 rounded border bg-emerald-500/15 text-emerald-300 border-emerald-500/30">
+                    <span className={`px-2 py-0.5 rounded border ${
+                      isDayMode ? 'bg-zinc-200 text-zinc-800 border-zinc-300' : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+                    }`}>
                       Bas: Scrim 100% Opaque
                     </span>
                   </div>
@@ -9377,14 +9606,14 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                 {/* Slots de Saisie Gabarit Campagne Duale */}
                 <div className="space-y-2.5">
                   {/* Input 1 : Accroche Gauche */}
-                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-emerald-400/40`}>
+                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-zinc-400`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono font-bold uppercase text-zinc-300 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shrink-0" />
+                      <label className={`text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0" />
                         <span>Accroche Gauche</span>
-                        <span className="text-zinc-500 font-normal hidden sm:inline">(Top 6% • Left 8% • Blanc)</span>
+                        <span className={`${textSubtle} font-normal hidden sm:inline`}>({autoLuminance.topLeftColor === '#FFFFFF' ? 'Blanc' : 'Noir'})</span>
                       </label>
-                      <span className={`text-[10px] font-mono ${dualitySlots.topTextLeft.length >= 35 ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                      <span className={`text-[10px] font-mono ${dualitySlots.topTextLeft.length >= 35 ? 'text-red-500 font-bold' : textSubtle}`}>
                         {dualitySlots.topTextLeft.length}/35
                       </span>
                     </div>
@@ -9418,19 +9647,19 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         });
                       }}
                       placeholder="ex: DESCENDRE DANS LA RUE."
-                      className={`w-full ${inputBg} border rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400`}
+                      className={`w-full ${inputBg} border ${borderColor} rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-zinc-500 ${isDayMode ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-zinc-100'}`}
                     />
                   </div>
 
                   {/* Input 2 : Accroche Droite */}
-                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-emerald-400/40`}>
+                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-zinc-400`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono font-bold uppercase text-zinc-300 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block shrink-0" />
+                      <label className={`text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>
+                        <span className="w-2 h-2 rounded-full bg-cyan-500 inline-block shrink-0" />
                         <span>Accroche Droite</span>
-                        <span className="text-zinc-500 font-normal hidden sm:inline">(Top 6% • Right 8% • Noir contrasté)</span>
+                        <span className={`${textSubtle} font-normal hidden sm:inline`}>({autoLuminance.topRightColor === '#FFFFFF' ? 'Blanc' : 'Noir'})</span>
                       </label>
-                      <span className={`text-[10px] font-mono ${dualitySlots.topTextRight.length >= 35 ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                      <span className={`text-[10px] font-mono ${dualitySlots.topTextRight.length >= 35 ? 'text-red-500 font-bold' : textSubtle}`}>
                         {dualitySlots.topTextRight.length}/35
                       </span>
                     </div>
@@ -9464,19 +9693,19 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         });
                       }}
                       placeholder="ex: SE FAIRE ENTENDRE AUTREMENT."
-                      className={`w-full ${inputBg} border rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400`}
+                      className={`w-full ${inputBg} border ${borderColor} rounded-lg px-3 py-2 text-xs font-mono outline-none focus:border-zinc-500 ${isDayMode ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-zinc-100'}`}
                     />
                   </div>
 
                   {/* Input 3 : Appel Principal */}
-                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-emerald-400/40`}>
+                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-zinc-400`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono font-bold uppercase text-zinc-300 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-white inline-block shrink-0" />
+                      <label className={`text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>
+                        <span className={`w-2 h-2 rounded-full inline-block shrink-0 ${isDayMode ? 'bg-zinc-800' : 'bg-white'}`} />
                         <span>Appel Principal</span>
-                        <span className="text-zinc-500 font-normal hidden sm:inline">(Bottom 9% • Blanc extra-bold)</span>
+                        <span className={`${textSubtle} font-normal hidden sm:inline`}>(Bottom • Extra-bold)</span>
                       </label>
-                      <span className={`text-[10px] font-mono ${dualitySlots.bottomTitle.length >= 25 ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                      <span className={`text-[10px] font-mono ${dualitySlots.bottomTitle.length >= 25 ? 'text-red-500 font-bold' : textSubtle}`}>
                         {dualitySlots.bottomTitle.length}/25
                       </span>
                     </div>
@@ -9510,21 +9739,21 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         });
                       }}
                       placeholder="ex: CHOISISSEZ"
-                      className={`w-full ${inputBg} border rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400`}
+                      className={`w-full ${inputBg} border ${borderColor} rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase outline-none focus:border-zinc-500 ${isDayMode ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-zinc-100'}`}
                     />
                   </div>
 
                   {/* Input 4 : Mot d'Accent */}
-                  <div className={`p-3 rounded-xl border border-amber-500/35 ${innerBg} space-y-1.5 transition-all hover:border-amber-400/60`}>
+                  <div className={`p-3 rounded-xl border ${isDayMode ? 'border-amber-300 bg-amber-50/40' : 'border-amber-500/35 ' + innerBg} space-y-1.5 transition-all hover:border-amber-400`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono font-bold uppercase text-amber-300 flex items-center gap-1.5">
+                      <label className={`text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${isDayMode ? 'text-amber-950' : 'text-amber-300'}`}>
                         <span className="w-2.5 h-2.5 rounded-full bg-[#F97316] inline-block shadow-[0_0_8px_rgba(249,115,22,0.8)] shrink-0" />
                         <span>Mot d'Accent</span>
-                        <span className="text-amber-400/90 font-mono text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 border border-amber-500/30">
+                        <span className={`font-mono text-[9px] px-1.5 py-0.2 rounded border ${isDayMode ? 'text-amber-900 bg-amber-100 border-amber-300' : 'text-amber-400/90 bg-amber-500/10 border-amber-500/30'}`}>
                           Badge Orange #F97316 • Brush SVG
                         </span>
                       </label>
-                      <span className={`text-[10px] font-mono ${dualitySlots.bottomAccent.length >= 25 ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                      <span className={`text-[10px] font-mono ${dualitySlots.bottomAccent.length >= 25 ? 'text-red-500 font-bold' : textSubtle}`}>
                         {dualitySlots.bottomAccent.length}/25
                       </span>
                     </div>
@@ -9558,7 +9787,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         });
                       }}
                       placeholder="ex: VOTRE VOIE."
-                      className={`w-full ${inputBg} border border-amber-500/40 rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase text-amber-200 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-400`}
+                      className={`w-full ${inputBg} border ${isDayMode ? 'border-amber-300 text-amber-950 font-bold' : 'border-amber-500/40 text-amber-200'} rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase outline-none focus:border-amber-500`}
                     />
                   </div>
                 </div>
@@ -9572,12 +9801,12 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   {/* Input 1 : Nom de l'Artiste / DJ */}
                   <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-emerald-400/40`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono font-bold uppercase text-zinc-300 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-white inline-block shrink-0 shadow-[0_0_8px_rgba(255,255,255,0.8)]" />
+                      <label className={`text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>
+                        <span className={`w-2 h-2 rounded-full inline-block shrink-0 ${isDayMode ? 'bg-zinc-800' : 'bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]'}`} />
                         <span>Nom de l'Artiste / DJ</span>
-                        <span className="text-zinc-500 font-normal hidden sm:inline">(Tiers supérieur • Titre géant condensé)</span>
+                        <span className={`${textSubtle} font-normal hidden sm:inline`}>(Tiers supérieur • Titre géant condensé)</span>
                       </label>
-                      <span className={`text-[10px] font-mono ${headlinerSlots.artistName.length >= 30 ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                      <span className={`text-[10px] font-mono ${headlinerSlots.artistName.length >= 30 ? 'text-red-500 font-bold' : textSubtle}`}>
                         {headlinerSlots.artistName.length}/30
                       </span>
                     </div>
@@ -9602,19 +9831,19 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         });
                       }}
                       placeholder="ex: AMELIE LENS"
-                      className={`w-full ${inputBg} border rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400`}
+                      className={`w-full ${inputBg} border ${borderColor} rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase outline-none focus:border-zinc-500 ${isDayMode ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-zinc-100'}`}
                     />
                   </div>
 
                   {/* Input 2 : Sous-titre / Style */}
-                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-emerald-400/40`}>
+                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-zinc-400`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono font-bold uppercase text-amber-300 flex items-center gap-1.5">
+                      <label className={`text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-amber-300'}`}>
                         <span className="w-2 h-2 rounded-full bg-amber-400 inline-block shrink-0" />
                         <span>Sous-titre / Style</span>
-                        <span className="text-zinc-500 font-normal hidden sm:inline">(Bandeau bas • Ex: VOCAL MELODIC TECHNO)</span>
+                        <span className={`${textSubtle} font-normal hidden sm:inline`}>(Bandeau bas • Ex: VOCAL MELODIC TECHNO)</span>
                       </label>
-                      <span className={`text-[10px] font-mono ${headlinerSlots.subRole.length >= 35 ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                      <span className={`text-[10px] font-mono ${headlinerSlots.subRole.length >= 35 ? 'text-red-500 font-bold' : textSubtle}`}>
                         {headlinerSlots.subRole.length}/35
                       </span>
                     </div>
@@ -9639,19 +9868,19 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         });
                       }}
                       placeholder="ex: VOCAL MELODIC TECHNO"
-                      className={`w-full ${inputBg} border rounded-lg px-3 py-2 text-xs font-mono uppercase text-amber-200 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400`}
+                      className={`w-full ${inputBg} border ${borderColor} rounded-lg px-3 py-2 text-xs font-mono uppercase outline-none focus:border-zinc-500 ${isDayMode ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-amber-200'}`}
                     />
                   </div>
 
                   {/* Input 3 : Date & Lieu */}
-                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-emerald-400/40`}>
+                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-zinc-400`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono font-bold uppercase text-zinc-300 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shrink-0" />
+                      <label className={`text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0" />
                         <span>Date &amp; Lieu</span>
-                        <span className="text-zinc-500 font-normal hidden sm:inline">(Bandeau bas • Ex: SAMEDI 24 OCTOBRE // CLUB VISION ROOM)</span>
+                        <span className={`${textSubtle} font-normal hidden sm:inline`}>(Bandeau bas • Ex: SAMEDI 24 OCTOBRE // CLUB VISION ROOM)</span>
                       </label>
-                      <span className={`text-[10px] font-mono ${headlinerSlots.datePlace.length >= 45 ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                      <span className={`text-[10px] font-mono ${headlinerSlots.datePlace.length >= 45 ? 'text-red-500 font-bold' : textSubtle}`}>
                         {headlinerSlots.datePlace.length}/45
                       </span>
                     </div>
@@ -9676,18 +9905,18 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         });
                       }}
                       placeholder="ex: SAMEDI 24 OCTOBRE // CLUB VISION ROOM"
-                      className={`w-full ${inputBg} border rounded-lg px-3 py-2 text-xs font-mono uppercase outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400`}
+                      className={`w-full ${inputBg} border ${borderColor} rounded-lg px-3 py-2 text-xs font-mono uppercase outline-none focus:border-zinc-500 ${isDayMode ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-zinc-100'}`}
                     />
                   </div>
 
                   {/* Input 4 : Mention Billetterie / CTA (Optionnel) */}
-                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-emerald-400/40`}>
+                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-zinc-400`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono font-bold uppercase text-emerald-400 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shrink-0" />
+                      <label className={`text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-emerald-400'}`}>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0" />
                         <span>Mention Billetterie / CTA (Optionnel)</span>
                       </label>
-                      <span className={`text-[10px] font-mono ${(headlinerSlots.ticketCta || '').length >= 30 ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                      <span className={`text-[10px] font-mono ${(headlinerSlots.ticketCta || '').length >= 30 ? 'text-red-500 font-bold' : textSubtle}`}>
                         {(headlinerSlots.ticketCta || '').length}/30
                       </span>
                     </div>
@@ -9710,7 +9939,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         });
                       }}
                       placeholder="ex: BILLETTERIE DISPONIBLE"
-                      className={`w-full ${inputBg} border rounded-lg px-3 py-2 text-xs font-mono uppercase text-emerald-300 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400`}
+                      className={`w-full ${inputBg} border ${borderColor} rounded-lg px-3 py-2 text-xs font-mono uppercase outline-none focus:border-zinc-500 ${isDayMode ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-emerald-300'}`}
                     />
                   </div>
                 </div>
@@ -9722,14 +9951,14 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               <div className="space-y-3 animate-fadeIn">
                 <div className="space-y-2.5">
                   {/* Input 1 : Nom de Marque / Collectif */}
-                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-emerald-400/40`}>
+                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-zinc-400`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono font-bold uppercase text-zinc-300 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-white inline-block shrink-0" />
+                      <label className={`text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>
+                        <span className={`w-2 h-2 rounded-full inline-block shrink-0 ${isDayMode ? 'bg-zinc-800' : 'bg-white'}`} />
                         <span>Nom de Marque / Collectif</span>
-                        <span className="text-zinc-500 font-normal hidden sm:inline">(Aligné gauche • Grand interlettrage)</span>
+                        <span className={`${textSubtle} font-normal hidden sm:inline`}>(Aligné gauche • Grand interlettrage)</span>
                       </label>
-                      <span className={`text-[10px] font-mono ${minimalSlots.brandName.length >= 35 ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                      <span className={`text-[10px] font-mono ${minimalSlots.brandName.length >= 35 ? 'text-red-500 font-bold' : textSubtle}`}>
                         {minimalSlots.brandName.length}/35
                       </span>
                     </div>
@@ -9754,19 +9983,19 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         });
                       }}
                       placeholder="ex: SIGNAID STUDIO"
-                      className={`w-full ${inputBg} border rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400`}
+                      className={`w-full ${inputBg} border ${borderColor} rounded-lg px-3 py-2 text-xs font-mono font-bold uppercase outline-none focus:border-zinc-500 ${isDayMode ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-zinc-100'}`}
                     />
                   </div>
 
                   {/* Input 2 : Slogan / Manifeste */}
-                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-emerald-400/40`}>
+                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-zinc-400`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono font-bold uppercase text-zinc-300 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shrink-0" />
+                      <label className={`text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-zinc-300'}`}>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0" />
                         <span>Slogan / Manifeste</span>
-                        <span className="text-zinc-500 font-normal hidden sm:inline">(Typographie fine • Ex: L'IMPACT VISUEL SANS CONCESSION)</span>
+                        <span className={`${textSubtle} font-normal hidden sm:inline`}>(Typographie fine • Ex: L'IMPACT VISUEL SANS CONCESSION)</span>
                       </label>
-                      <span className={`text-[10px] font-mono ${minimalSlots.tagline.length >= 50 ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                      <span className={`text-[10px] font-mono ${minimalSlots.tagline.length >= 50 ? 'text-red-500 font-bold' : textSubtle}`}>
                         {minimalSlots.tagline.length}/50
                       </span>
                     </div>
@@ -9791,19 +10020,19 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         });
                       }}
                       placeholder="ex: L'IMPACT VISUEL SANS CONCESSION"
-                      className={`w-full ${inputBg} border rounded-lg px-3 py-2 text-xs font-mono uppercase outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400`}
+                      className={`w-full ${inputBg} border ${borderColor} rounded-lg px-3 py-2 text-xs font-mono uppercase outline-none focus:border-zinc-500 ${isDayMode ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-zinc-100'}`}
                     />
                   </div>
 
                   {/* Input 3 : Mention Stand Merch / Collection */}
-                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-emerald-400/40`}>
+                  <div className={`p-3 rounded-xl border ${borderColor} ${innerBg} space-y-1.5 transition-all hover:border-zinc-400`}>
                     <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-mono font-bold uppercase text-emerald-400 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shrink-0" />
+                      <label className={`text-[10px] font-mono font-bold uppercase flex items-center gap-1.5 ${isDayMode ? 'text-zinc-900' : 'text-emerald-400'}`}>
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0" />
                         <span>Drop Merch Officiel / Collection</span>
-                        <span className="text-zinc-500 font-normal hidden sm:inline">(Ex: MERCH OFFICIEL 2026)</span>
+                        <span className={`${textSubtle} font-normal hidden sm:inline`}>(Ex: MERCH OFFICIEL 2026)</span>
                       </label>
-                      <span className={`text-[10px] font-mono ${minimalSlots.releaseDate.length >= 35 ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                      <span className={`text-[10px] font-mono ${minimalSlots.releaseDate.length >= 35 ? 'text-red-500 font-bold' : textSubtle}`}>
                         {minimalSlots.releaseDate.length}/35
                       </span>
                     </div>
@@ -9827,7 +10056,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         });
                       }}
                       placeholder="ex: COLLECTION AUTOMNE 2026"
-                      className={`w-full ${inputBg} border rounded-lg px-3 py-2 text-xs font-mono uppercase text-emerald-300 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400`}
+                      className={`w-full ${inputBg} border ${borderColor} rounded-lg px-3 py-2 text-xs font-mono uppercase outline-none focus:border-zinc-500 ${isDayMode ? 'text-zinc-900 placeholder:text-zinc-400' : 'text-emerald-300'}`}
                     />
                   </div>
                 </div>
@@ -9839,35 +10068,43 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               const eventSlug = resolveUnifiedEventSlug(input);
               const publicHubUrl = `https://signaid.eu/hub/${eventSlug}`;
               return (
-                <div className={`p-3 rounded-xl ${isDayMode ? 'bg-zinc-100 border-zinc-300' : 'bg-zinc-900 border-zinc-800'} border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 text-xs font-mono shadow-sm`}>
+                <div className={`p-3 rounded-xl ${isDayMode ? 'bg-zinc-50 border-zinc-200 shadow-xs' : 'bg-zinc-900 border-zinc-800 shadow-sm'} border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 text-xs font-mono`}>
                   <div className="min-w-0 flex-1 overflow-hidden">
-                    <span className="text-zinc-400 block text-[9px] uppercase font-bold">Lien SmartLink Public :</span>
-                    <span className="text-lime-400 font-bold truncate block">{publicHubUrl}</span>
+                    <span className={`${textSubtle} block text-[9px] uppercase font-bold`}>Lien SmartLink Public :</span>
+                    <span className={`font-bold truncate block ${isDayMode ? 'text-zinc-900' : 'text-lime-400'}`}>{publicHubUrl}</span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <a
                       href={`/customizer/${eventSlug}`}
-                      className="px-3 py-1.5 bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 font-bold font-mono text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                      className={`px-3 py-1.5 font-bold font-mono text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 ${
+                        isDayMode
+                          ? 'bg-zinc-900 text-white hover:bg-zinc-800'
+                          : 'bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40'
+                      }`}
                       title="Ouvrir le Customizer Merch Textile DTF pour ce projet"
                     >
-                      <Shirt className="w-3.5 h-3.5 text-purple-400" />
+                      <Shirt className={`w-3.5 h-3.5 ${isDayMode ? 'text-white' : 'text-purple-400'}`} />
                       <span>Customizer Merch</span>
                     </a>
                     <button
                       type="button"
                       onClick={handleOpenHubWithSync}
                       disabled={isOpeningHub}
-                      className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold font-mono text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60 shadow-sm active:scale-95"
+                      className={`px-3 py-1.5 font-bold font-mono text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer disabled:opacity-60 shadow-xs active:scale-95 ${
+                        isDayMode
+                          ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border border-zinc-300'
+                          : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+                      }`}
                       title="Synchroniser immédiatement vers Firestore et ouvrir le SmartLink Officiel"
                     >
                       {isOpeningHub ? (
                         <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin text-lime-400" />
-                          <span className="text-lime-400">Synchronisation...</span>
+                          <Loader2 className={`w-3.5 h-3.5 animate-spin ${isDayMode ? 'text-zinc-800' : 'text-lime-400'}`} />
+                          <span className={isDayMode ? 'text-zinc-800' : 'text-lime-400'}>Synchronisation...</span>
                         </>
                       ) : (
                         <>
-                          <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+                          <ExternalLink className={`w-3.5 h-3.5 ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`} />
                           <span>Voir mon SmartLink</span>
                         </>
                       )}
@@ -9875,7 +10112,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                     <button
                       type="button"
                       onClick={handleFinalActionClick}
-                      className="px-3 py-1.5 bg-lime-400 hover:bg-lime-300 text-black font-black font-mono text-xs rounded-lg transition flex items-center gap-1.5 shadow-md shadow-lime-400/20 active:scale-95 cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none"
+                      className="px-3 py-1.5 bg-lime-400 hover:bg-lime-300 text-zinc-950 font-black font-mono text-xs rounded-lg transition flex items-center gap-1.5 shadow-md shadow-lime-400/20 active:scale-95 cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none"
                     >
                       <Zap className="w-3.5 h-3.5 fill-black" />
                       <span>Mettre en Ligne mon Événement &amp; Merch</span>
@@ -9897,7 +10134,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
           className="flex items-center justify-between cursor-pointer select-none"
         >
           <div className="flex items-center gap-2 text-left">
-            <div className="p-1.5 rounded-lg bg-lime-400/10 text-lime-400 border border-lime-400/20 shrink-0">
+            <div className={`p-1.5 rounded-lg border shrink-0 ${isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-300' : 'bg-lime-400/10 text-lime-400 border-lime-400/20'}`}>
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
@@ -9914,7 +10151,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               </p>
             </div>
           </div>
-          <span className="px-2 py-0.5 rounded-full bg-lime-400/10 border border-lime-400/30 text-lime-400 text-[9px] font-mono font-bold shrink-0">
+          <span className={`px-2 py-0.5 rounded-full border text-[9px] font-mono font-bold shrink-0 ${isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-300' : 'bg-lime-400/10 border-lime-400/30 text-lime-400'}`}>
             OFFERT
           </span>
         </div>
@@ -9928,7 +10165,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   <span className={`text-[10px] font-mono font-bold uppercase tracking-wider ${textSubtle}`}>
                     Ton &amp; Angle Éditorial
                   </span>
-                  <span className="text-[9px] font-mono text-lime-400 font-bold">
+                  <span className={`text-[9px] font-mono font-bold ${isDayMode ? 'text-zinc-900' : 'text-lime-400'}`}>
                     {MARKETING_TONE_OPTIONS.find((t) => t.key === selectedMarketingTone)?.subtitle}
                   </span>
                 </div>
@@ -9938,12 +10175,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                       key={opt.key}
                       type="button"
                       onClick={() => setSelectedMarketingTone(opt.key)}
-                      className={`py-2 px-2 rounded-xl border text-[11px] font-mono font-bold transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none ${selectedMarketingTone === opt.key
-                        ? 'bg-lime-400 text-black border-lime-400 shadow-sm font-black'
-                        : isDayMode
-                          ? 'bg-zinc-100 text-zinc-700 border-zinc-200 hover:border-zinc-400'
-                          : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700'
-                        }`}
+                      className={`py-2 px-2 rounded-xl border text-[11px] font-mono font-bold transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none ${
+                        selectedMarketingTone === opt.key
+                          ? (isDayMode ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs font-bold' : 'bg-lime-400 text-black border-lime-400 shadow-sm font-black')
+                          : (isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-300 hover:bg-zinc-200 font-medium' : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:border-zinc-700')
+                      }`}
                     >
                       {opt.key === 'official' && <FileText className="w-3.5 h-3.5 shrink-0" />}
                       {opt.key === 'teaser' && <Clock className="w-3.5 h-3.5 shrink-0" />}
@@ -9959,12 +10195,12 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                 type="button"
                 disabled={isGeneratingMarketing}
                 onClick={handleGenerateMarketingPack}
-                className="w-full py-2.5 px-4 rounded-xl font-black text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 transition cursor-pointer shadow-md bg-lime-400 hover:bg-lime-300 text-black active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-2.5 px-4 rounded-xl font-black text-xs font-mono uppercase tracking-wider flex items-center justify-center gap-2 transition cursor-pointer shadow-md bg-lime-400 hover:bg-lime-300 text-zinc-950 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isGeneratingMarketing ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-black" />
+                  <Loader2 className="w-4 h-4 animate-spin text-zinc-950" />
                 ) : (
-                  <Sparkles className="w-4 h-4 text-black" />
+                  <Sparkles className="w-4 h-4 text-zinc-950" />
                 )}
                 <span>GÉNÉRER TEXTES, HASHTAGS &amp; DM</span>
               </button>
@@ -9974,14 +10210,15 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
             {marketingData && (
               <div className="space-y-3 pt-2 animate-fadeIn">
                 {/* Onglets rapides */}
-                <div className={`flex items-center gap-1.5 p-1 rounded-xl ${innerBg} border text-xs font-mono overflow-x-auto`}>
+                <div className={`flex items-center gap-1.5 p-1 rounded-xl ${innerBg} border ${borderColor} text-xs font-mono overflow-x-auto`}>
                   <button
                     type="button"
                     onClick={() => setActiveMarketingTab('post')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap text-[11px] ${activeMarketingTab === 'post'
-                      ? 'bg-lime-400 text-black shadow-sm font-black'
-                      : `${textMuted} hover:text-white`
-                      }`}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap text-[11px] ${
+                      activeMarketingTab === 'post'
+                        ? (isDayMode ? 'bg-zinc-900 text-white shadow-xs font-bold' : 'bg-lime-400 text-black shadow-sm font-black')
+                        : (isDayMode ? 'text-zinc-600 hover:text-zinc-900' : `${textMuted} hover:text-white`)
+                    }`}
                   >
                     <Instagram className="w-3.5 h-3.5" />
                     <span>Post Réseaux</span>
@@ -9989,10 +10226,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveMarketingTab('hashtags')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap text-[11px] ${activeMarketingTab === 'hashtags'
-                      ? 'bg-lime-400 text-black shadow-sm font-black'
-                      : `${textMuted} hover:text-white`
-                      }`}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap text-[11px] ${
+                      activeMarketingTab === 'hashtags'
+                        ? (isDayMode ? 'bg-zinc-900 text-white shadow-xs font-bold' : 'bg-lime-400 text-black shadow-sm font-black')
+                        : (isDayMode ? 'text-zinc-600 hover:text-zinc-900' : `${textMuted} hover:text-white`)
+                    }`}
                   >
                     <Hash className="w-3.5 h-3.5" />
                     <span>Hashtags</span>
@@ -10000,10 +10238,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveMarketingTab('dm')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap text-[11px] ${activeMarketingTab === 'dm'
-                      ? 'bg-lime-400 text-black shadow-sm font-black'
-                      : `${textMuted} hover:text-white`
-                      }`}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap text-[11px] ${
+                      activeMarketingTab === 'dm'
+                        ? (isDayMode ? 'bg-zinc-900 text-white shadow-xs font-bold' : 'bg-lime-400 text-black shadow-sm font-black')
+                        : (isDayMode ? 'text-zinc-600 hover:text-zinc-900' : `${textMuted} hover:text-white`)
+                    }`}
                   >
                     <MessageCircle className="w-3.5 h-3.5" />
                     <span>DM Promoteur</span>
@@ -10011,10 +10250,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveMarketingTab('all')}
-                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap text-[11px] ${activeMarketingTab === 'all'
-                      ? 'bg-lime-400 text-black shadow-sm font-black'
-                      : `${textMuted} hover:text-white`
-                      }`}
+                    className={`px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap text-[11px] ${
+                      activeMarketingTab === 'all'
+                        ? (isDayMode ? 'bg-zinc-900 text-white shadow-xs font-bold' : 'bg-lime-400 text-black shadow-sm font-black')
+                        : (isDayMode ? 'text-zinc-600 hover:text-zinc-900' : `${textMuted} hover:text-white`)
+                    }`}
                   >
                     <FileText className="w-3.5 h-3.5" />
                     <span>Tout Afficher</span>
@@ -10023,14 +10263,14 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
                 {/* 1. POST RÉSEAUX SOCIAUX (Instagram / Facebook) */}
                 {(activeMarketingTab === 'post' || activeMarketingTab === 'all') && marketingData.caption && (
-                  <div className={`${innerBg} border rounded-2xl p-3.5 space-y-2`}>
+                  <div className={`${innerBg} border ${borderColor} rounded-2xl p-3.5 space-y-2`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-pink-500/10 text-pink-400 border border-pink-500/20">
+                        <div className="p-1 rounded-lg bg-pink-500/10 text-pink-500 border border-pink-500/20">
                           <Instagram className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <span className="text-xs font-bold font-mono uppercase tracking-wider block">
+                          <span className={`text-xs font-bold font-mono uppercase tracking-wider block ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
                             Post Réseaux Sociaux (Instagram / Facebook)
                           </span>
                           <span className={`text-[9px] font-mono ${textSubtle} block`}>
@@ -10041,13 +10281,17 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                       <button
                         type="button"
                         onClick={() => handleCopyMarketingText(marketingData.caption || '', 'caption')}
-                        className="text-[10px] font-mono text-lime-400 hover:text-lime-300 flex items-center gap-1.5 transition bg-lime-400/10 hover:bg-lime-400/20 px-2.5 py-1 rounded-lg border border-lime-400/30 cursor-pointer"
+                        className={`text-[10px] font-mono flex items-center gap-1.5 transition px-2.5 py-1 rounded-lg border cursor-pointer ${
+                          isDayMode
+                            ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium'
+                            : 'text-lime-400 hover:text-lime-300 bg-lime-400/10 hover:bg-lime-400/20 border-lime-400/30'
+                        }`}
                       >
                         {copiedMarketingKey === 'caption' ? <Check className="w-3 h-3 stroke-[2.5]" /> : <Copy className="w-3 h-3" />}
                         <span>{copiedMarketingKey === 'caption' ? 'Copié !' : 'Copier'}</span>
                       </button>
                     </div>
-                    <div className={`p-3 ${inputBg} rounded-xl text-xs font-sans whitespace-pre-line leading-relaxed select-all border`}>
+                    <div className={`p-3 ${inputBg} border ${borderColor} rounded-xl text-xs font-sans whitespace-pre-line leading-relaxed select-all ${isDayMode ? 'text-zinc-800' : 'text-zinc-200'}`}>
                       {marketingData.caption}
                     </div>
                   </div>
@@ -10055,14 +10299,14 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
                 {/* 2. HASHTAGS OPTIMISÉS */}
                 {(activeMarketingTab === 'hashtags' || activeMarketingTab === 'all') && marketingData.hashtags && marketingData.hashtags.length > 0 && (
-                  <div className={`${innerBg} border rounded-2xl p-3.5 space-y-2.5`}>
+                  <div className={`${innerBg} border ${borderColor} rounded-2xl p-3.5 space-y-2.5`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-lime-400/10 text-lime-400 border border-lime-400/20">
+                        <div className={`p-1 rounded-lg border ${isDayMode ? 'bg-zinc-100 text-zinc-800 border-zinc-300' : 'bg-lime-400/10 text-lime-400 border-lime-400/20'}`}>
                           <Hash className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <span className="text-xs font-bold font-mono uppercase tracking-wider block">
+                          <span className={`text-xs font-bold font-mono uppercase tracking-wider block ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
                             Hashtags Optimisés
                           </span>
                           <span className={`text-[9px] font-mono ${textSubtle} block`}>
@@ -10073,7 +10317,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                       <button
                         type="button"
                         onClick={() => handleCopyMarketingText((marketingData.hashtags || []).join(' '), 'hashtags')}
-                        className="text-[10px] font-mono text-lime-400 hover:text-lime-300 flex items-center gap-1.5 transition bg-lime-400/10 hover:bg-lime-400/20 px-2.5 py-1 rounded-lg border border-lime-400/30 cursor-pointer"
+                        className={`text-[10px] font-mono flex items-center gap-1.5 transition px-2.5 py-1 rounded-lg border cursor-pointer ${
+                          isDayMode
+                            ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium'
+                            : 'text-lime-400 hover:text-lime-300 bg-lime-400/10 hover:bg-lime-400/20 border-lime-400/30'
+                        }`}
                       >
                         {copiedMarketingKey === 'hashtags' ? <Check className="w-3.5 h-3.5 stroke-[2.5]" /> : <Copy className="w-3.5 h-3.5" />}
                         <span>{copiedMarketingKey === 'hashtags' ? 'Copié !' : 'Tout copier'}</span>
@@ -10086,10 +10334,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                           type="button"
                           onClick={() => handleCopyMarketingText(tag, `tag-${idx}`)}
                           title="Cliquer pour copier ce hashtag"
-                          className={`px-2.5 py-1 rounded-lg border text-[10px] font-mono font-medium transition cursor-pointer flex items-center gap-1 ${copiedMarketingKey === `tag-${idx}`
-                            ? 'bg-lime-400 text-black border-lime-400 font-bold'
-                            : `${inputBg} hover:border-lime-400/50`
-                            }`}
+                          className={`px-2.5 py-1 rounded-lg border text-[10px] font-mono font-medium transition cursor-pointer flex items-center gap-1 ${
+                            copiedMarketingKey === `tag-${idx}`
+                              ? (isDayMode ? 'bg-zinc-900 text-white border-zinc-900 font-bold' : 'bg-lime-400 text-black border-lime-400 font-bold')
+                              : (isDayMode ? 'bg-white hover:bg-zinc-100 text-zinc-800 border-zinc-300' : `${inputBg} hover:border-lime-400/50`)
+                          }`}
                         >
                           <span>{tag}</span>
                           {copiedMarketingKey === `tag-${idx}` && <Check className="w-2.5 h-2.5 stroke-[3]" />}
@@ -10101,14 +10350,14 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
                 {/* 3. DM / MESSAGE PROMOTEUR / WHATSAPP */}
                 {(activeMarketingTab === 'dm' || activeMarketingTab === 'all') && marketingData.dmInvitation && (
-                  <div className={`${innerBg} border rounded-2xl p-3.5 space-y-2`}>
+                  <div className={`${innerBg} border ${borderColor} rounded-2xl p-3.5 space-y-2`}>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <div className="p-1 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        <div className="p-1 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
                           <MessageCircle className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <span className="text-xs font-bold font-mono uppercase tracking-wider block">
+                          <span className={`text-xs font-bold font-mono uppercase tracking-wider block ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
                             DM / Message Promoteur / WhatsApp
                           </span>
                           <span className={`text-[9px] font-mono ${textSubtle} block`}>
@@ -10119,13 +10368,17 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                       <button
                         type="button"
                         onClick={() => handleCopyMarketingText(marketingData.dmInvitation || '', 'dm')}
-                        className="text-[10px] font-mono text-lime-400 hover:text-lime-300 flex items-center gap-1.5 transition bg-lime-400/10 hover:bg-lime-400/20 px-2.5 py-1 rounded-lg border border-lime-400/30 cursor-pointer"
+                        className={`text-[10px] font-mono flex items-center gap-1.5 transition px-2.5 py-1 rounded-lg border cursor-pointer ${
+                          isDayMode
+                            ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium'
+                            : 'text-lime-400 hover:text-lime-300 bg-lime-400/10 hover:bg-lime-400/20 border-lime-400/30'
+                        }`}
                       >
                         {copiedMarketingKey === 'dm' ? <Check className="w-3.5 h-3.5 stroke-[2.5]" /> : <Copy className="w-3.5 h-3.5" />}
                         <span>{copiedMarketingKey === 'dm' ? 'Copié !' : 'Copier'}</span>
                       </button>
                     </div>
-                    <div className={`p-3 ${inputBg} rounded-xl text-xs font-sans whitespace-pre-line leading-relaxed select-all border`}>
+                    <div className={`p-3 ${inputBg} border ${borderColor} rounded-xl text-xs font-sans whitespace-pre-line leading-relaxed select-all ${isDayMode ? 'text-zinc-800' : 'text-zinc-200'}`}>
                       {marketingData.dmInvitation}
                     </div>
                   </div>
@@ -10133,12 +10386,12 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
                 {/* PUNCHLINES CLÉS (SI PRÉSENTES) */}
                 {marketingData.punchlines && marketingData.punchlines.length > 0 && (activeMarketingTab === 'post' || activeMarketingTab === 'all') && (
-                  <div className={`${innerBg} border rounded-2xl p-3.5 space-y-2`}>
+                  <div className={`${innerBg} border ${borderColor} rounded-2xl p-3.5 space-y-2`}>
                     <div className="flex items-center gap-2">
-                      <div className="p-1 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                      <div className="p-1 rounded-lg bg-sky-500/10 text-sky-500 border border-sky-500/20">
                         <Send className="w-3.5 h-3.5" />
                       </div>
-                      <span className="text-xs font-bold font-mono uppercase tracking-wider block">
+                      <span className={`text-xs font-bold font-mono uppercase tracking-wider block ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
                         Punchlines Clés
                       </span>
                     </div>
@@ -10147,12 +10400,12 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                         <div
                           key={idx}
                           onClick={() => handleCopyMarketingText(p, `p-${idx}`)}
-                          className={`p-2.5 ${inputBg} border rounded-xl text-xs flex items-center justify-between cursor-pointer hover:border-lime-400/40 transition`}
+                          className={`p-2.5 ${inputBg} border ${borderColor} rounded-xl text-xs flex items-center justify-between cursor-pointer hover:border-zinc-400 transition ${isDayMode ? 'text-zinc-800' : 'text-zinc-200'}`}
                         >
                           <span className="font-mono">« {p} »</span>
-                          <span className="text-[10px] font-mono text-zinc-400 flex items-center gap-1 shrink-0 ml-2">
+                          <span className={`text-[10px] font-mono flex items-center gap-1 shrink-0 ml-2 ${textSubtle}`}>
                             {copiedMarketingKey === `p-${idx}` ? (
-                              <span className="text-lime-400 font-bold flex items-center gap-1">
+                              <span className={`font-bold flex items-center gap-1 ${isDayMode ? 'text-emerald-700' : 'text-lime-400'}`}>
                                 <Check className="w-3 h-3 stroke-[3]" /> Copié !
                               </span>
                             ) : (
@@ -10170,25 +10423,33 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
             )}
 
             {/* --- BLOC FINAL D'ACTIVATION & DÉPLOIEMENT DU PORTAIL --- */}
-            <div className="mt-4 pt-4 border-t border-zinc-800 space-y-3">
-              <div className="p-4 rounded-2xl bg-zinc-900/90 border-2 border-lime-400/50 shadow-[0_0_30px_rgba(57,255,20,0.15)] space-y-2.5">
+            <div className={`mt-4 pt-4 border-t ${borderColor} space-y-3`}>
+              <div className={`p-4 rounded-2xl space-y-2.5 ${
+                isDayMode
+                  ? 'bg-zinc-50 border-2 border-zinc-900 shadow-sm'
+                  : 'bg-zinc-900/90 border-2 border-lime-400/50 shadow-[0_0_30px_rgba(57,255,20,0.15)]'
+              }`}>
                 <div className="flex items-center justify-between">
-                  <span className="inline-block px-2.5 py-0.5 rounded-full bg-lime-400/10 border border-lime-400/30 text-lime-400 font-mono text-[10px] font-black uppercase tracking-wider">
+                  <span className={`inline-block px-2.5 py-0.5 rounded-full border text-[10px] font-bold uppercase tracking-wider ${
+                    isDayMode
+                      ? 'bg-zinc-900 text-white border-zinc-900'
+                      : 'bg-lime-400/10 border-lime-400/30 text-lime-400 font-mono font-black'
+                  }`}>
                     ✦ PRÊT AU DÉPLOIEMENT
                   </span>
-                  <span className="text-[10px] font-mono text-zinc-400 font-bold">Étape 6 / 6</span>
+                  <span className={`text-[10px] font-mono font-bold ${textSubtle}`}>Étape 6 / 6</span>
                 </div>
-                <h4 className="text-sm font-black text-white uppercase tracking-tight">
+                <h4 className={`text-sm font-black uppercase tracking-tight ${isDayMode ? 'text-zinc-900' : 'text-white'}`}>
                   Votre événement &amp; stand merch sont finalisés
                 </h4>
-                <p className="text-xs text-zinc-300 font-mono leading-relaxed">
+                <p className={`text-xs font-mono leading-relaxed ${textSubtle}`}>
                   Activez votre SmartLink officiel, mettez en ligne votre stand merch virtuel sans avance de trésorerie et lancez vos visuels promo.
                 </p>
                 <div className="pt-1 flex flex-col sm:flex-row gap-2">
                   <button
                     type="button"
                     onClick={handleFinalActionClick}
-                    className="flex-1 py-3.5 px-4 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-black font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-lime-400/25 active:scale-98 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none"
+                    className="flex-1 py-3.5 px-4 rounded-xl bg-lime-400 hover:bg-lime-300 text-zinc-950 font-black font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-lime-400/25 active:scale-98 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none"
                   >
                     <Zap className="w-4 h-4 fill-black text-black shrink-0" />
                     <span>Mettre en Ligne mon Événement &amp; Merch</span>
@@ -10225,10 +10486,11 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               scrollToTop();
             }}
             disabled={effectiveStepIndex === 0}
-            className={`flex-1 py-3 px-3 rounded-xl border text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95 disabled:opacity-25 disabled:pointer-events-none min-h-[44px] touch-manipulation ${isDayMode
-              ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700 border-zinc-300'
-              : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border-zinc-800 hover:border-zinc-700'
-              }`}
+            className={`flex-1 py-3 px-3 rounded-xl border text-xs font-mono font-bold flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95 disabled:opacity-25 disabled:pointer-events-none min-h-[44px] touch-manipulation ${
+              isDayMode
+                ? 'bg-zinc-100 hover:bg-zinc-200 text-zinc-800 border-zinc-300 font-medium'
+                : 'bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border-zinc-800 hover:border-zinc-700'
+            }`}
             aria-label="Étape précédente"
           >
             <ChevronLeft className="w-4 h-4 shrink-0" />
@@ -10239,7 +10501,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
             <button
               type="button"
               onClick={handleFinalActionClick}
-              className="flex-[1.4] py-3 px-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-black font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95 shadow-lg shadow-lime-400/25 min-h-[44px] touch-manipulation focus-visible:ring-2 focus-visible:ring-lime-400"
+              className="flex-[1.4] py-3 px-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-zinc-950 font-black font-mono text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95 shadow-lg shadow-lime-400/25 min-h-[44px] touch-manipulation focus-visible:ring-2 focus-visible:ring-lime-400"
             >
               <Zap className="w-3.5 h-3.5 fill-black shrink-0" />
               <span>Mettre en Ligne mon Événement &amp; Merch</span>
@@ -10252,7 +10514,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                 goToMobileStep(effectiveStepIndex + 1);
                 scrollToTop();
               }}
-              className="flex-[1.4] py-3 px-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-black font-black shadow-lg shadow-lime-400/25 font-mono text-xs flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95 min-h-[44px] touch-manipulation focus-visible:ring-2 focus-visible:ring-lime-400"
+              className="flex-[1.4] py-3 px-3 rounded-xl bg-lime-400 hover:bg-lime-300 text-zinc-950 font-black shadow-lg shadow-lime-400/25 font-mono text-xs flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-95 min-h-[44px] touch-manipulation focus-visible:ring-2 focus-visible:ring-lime-400"
               aria-label="Étape suivante"
             >
               <span>Suivant</span>
