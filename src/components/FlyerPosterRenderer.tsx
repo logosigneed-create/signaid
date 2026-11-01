@@ -231,13 +231,18 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   );
 
   // 1. Fusion prioritaire des données source (projectData ou restProps)
-  const data: EventInput = projectData || (restProps as EventInput);
+  const data: EventInput & { backgroundUrl?: string } = (projectData || (restProps as EventInput)) as any;
+  const input = data;
 
   // 2. Décor / Fond d'ambiance
   const rawBg = backgroundImage !== undefined
     ? backgroundImage
-    : (data.customBackground || data.backgroundImage || data.bgImage || null);
+    : ((data as any).backgroundUrl || data.customBackground || data.backgroundImage || data.bgImage || null);
   const backgroundUrl = (rawBg && typeof rawBg === 'string') ? rawBg.trim() : '';
+
+  if (!(data as any).backgroundUrl && backgroundUrl) {
+    (data as any).backgroundUrl = backgroundUrl;
+  }
 
   const isToneActive = (restProps.isBackgroundToneEnabled !== false) && (data.isBackgroundToneEnabled !== false);
   const currentTone = typeof restProps.backgroundTone === 'number'
@@ -339,9 +344,22 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const subjectOffsetX = subject?.x ?? (activeTransforms.offsetX ?? 0);
   const subjectAlignX = subject?.alignX ?? activeTransforms.alignX ?? 'center';
 
-  // Décor (Arrière-plan) : décalages panoramiques Drag & Drop
-  const bgOffsetX = data.backgroundOffsetX ?? 0;
-  const bgOffsetY = data.backgroundOffsetY ?? 0;
+  // Décor (Arrière-plan) : décalages panoramiques Drag & Drop bornés rigoureusement entre -12% et +12%
+  const rawBgOffsetX = typeof input.backgroundOffsetX === 'number'
+    ? input.backgroundOffsetX
+    : (typeof data.backgroundOffsetX === 'number' ? data.backgroundOffsetX : 0);
+  const rawBgOffsetY = typeof input.backgroundOffsetY === 'number'
+    ? input.backgroundOffsetY
+    : (typeof data.backgroundOffsetY === 'number' ? data.backgroundOffsetY : 0);
+
+  const bgOffsetX = Math.max(-12, Math.min(12, rawBgOffsetX));
+  const bgOffsetY = Math.max(-12, Math.min(12, rawBgOffsetY));
+
+  (input as any).backgroundOffsetX = bgOffsetX;
+  (input as any).backgroundOffsetY = bgOffsetY;
+  (data as any).backgroundOffsetX = bgOffsetX;
+  (data as any).backgroundOffsetY = bgOffsetY;
+
   // Échelle fixe et couvrante avec marge de sécurité stable (1.15 min, absorbant dynamiquement les décalages de translation sans bords noirs)
   const maxBgOffset = Math.max(Math.abs(bgOffsetX), Math.abs(bgOffsetY));
   const dynamicSafetyScale = Math.max(1.15, 1.15 + (maxBgOffset / 100) * 0.4);
@@ -742,8 +760,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       const newX = Math.round((state.initialOffsetX + deltaPercentX) * 10) / 10;
       const newY = Math.round((state.initialOffsetY + deltaPercentY) * 10) / 10;
 
-      const clampedX = Math.max(-25, Math.min(25, newX));
-      const clampedY = Math.max(-25, Math.min(25, newY));
+      const clampedX = Math.max(-12, Math.min(12, newX));
+      const clampedY = Math.max(-12, Math.min(12, newY));
 
       if (setInput) {
         setInput((prev) => ({
@@ -2075,6 +2093,71 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     >
       {/* 
         =======================================================================
+        STRUCTURE DE COUVERTURE TOTALE (ZERO BANDE NOIRE)
+        - Conteneur en absolute inset-0 w-full h-full overflow-hidden pointer-events-none
+        - Aucun wrapper intermédiaire (ni max-w, max-h, aspect-square ou hauteur fixe)
+        - Débord permanent (bleed 130%, top -15%, left -15%) pour absorber les translations
+        - Offsets bornés entre -12% et +12% : 0% de pixel noir visible quel que soit le format
+        =======================================================================
+      */}
+      {(data.backgroundUrl || backgroundImage) ? (
+        <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none">
+          <img
+            src={data.backgroundUrl || backgroundImage}
+            alt="Décor"
+            crossOrigin="anonymous"
+            draggable={false}
+            loading="eager"
+            fetchPriority="high"
+            decoding="async"
+            onContextMenu={(e) => e.preventDefault()}
+            className={`absolute max-w-none max-h-none object-cover select-none ${
+              activeSection === 'decor'
+                ? isLocalDraggingBg
+                  ? 'cursor-grabbing active:cursor-grabbing'
+                  : 'cursor-grab active:cursor-grabbing'
+                : ''
+            }`}
+            style={{
+              width: '130%',
+              height: '130%',
+              top: '-15%',
+              left: '-15%',
+              transform: `translate(${input.backgroundOffsetX ?? 0}%, ${input.backgroundOffsetY ?? 0}%)`,
+              pointerEvents: activeSection === 'decor' ? 'auto' : 'none',
+              opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03)
+                ? 1
+                : (data.backgroundOpacity ?? 1),
+              filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03 || toneOverlay.filterCss === 'none') ? 'none' : toneOverlay.filterCss,
+            }}
+            onPointerDown={activeSection === 'decor' ? handleBgPointerDown : undefined}
+            onMouseDown={activeSection === 'decor' ? handleBgMouseDown : undefined}
+            onTouchStart={activeSection === 'decor' ? handleBgTouchStart : undefined}
+            onClick={activeSection === 'decor' ? (e) => {
+              if (!bgDragRef.current?.hasMoved) {
+                e.stopPropagation();
+                onVisualElementClick?.('decor');
+              }
+            } : undefined}
+            title={activeSection === 'decor' ? "Glisser pour déplacer le décor (ou cliquer pour régler)" : undefined}
+          />
+        </div>
+      ) : null}
+
+      {/* Calque de Tonalité Blanc ↔ Noir sur toute la surface */}
+      {isToneActive && !isToneCenter && Math.abs(currentTone - 0.5) >= 0.03 && (
+        <div
+          className="absolute inset-0 pointer-events-none transition-all duration-300 z-0"
+          style={{
+            backgroundColor: toneOverlay.color,
+            opacity: toneOverlay.opacity,
+            display: toneOverlay.display,
+          }}
+        />
+      )}
+
+      {/* 
+        =======================================================================
         VIRTUAL CANVAS REFERENCE & AUTO-SCALING BOX (HOMOTHETIC ENGINE)
         Dimensions immuables de référence : 1080 x 1350 px (Ratio 4:5 strict)
         Facteur d'échelle homothétique : scaleFactor = parentWidth / 1080
@@ -2082,7 +2165,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       */}
       <div
         data-poster-virtual-canvas="true"
-        className="@container relative overflow-visible select-none"
+        className="@container relative overflow-visible select-none z-[1]"
         style={{
           width: `${BASE_WIDTH}px`,
           height: `${virtualCanvasHeight}px`,
@@ -2092,7 +2175,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           transformOrigin: 'top left',
           transform: `scale(${scaleFactor})`,
           containerType: 'inline-size',
-          backgroundColor: canvasBgColor,
+          backgroundColor: 'transparent',
           WebkitTouchCallout: 'none',
           WebkitUserSelect: 'none',
           userSelect: 'none',
@@ -2119,73 +2202,6 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
             </filter>
           </defs>
         </svg>
-        {/* 1. Fond du Décor / Ambiance avec Drag & Drop */}
-        <div
-          data-canvas-bg="true"
-          className={`absolute inset-0 w-full h-full overflow-hidden transition-colors duration-300 select-none z-0 ${
-            isDecorPointerActive
-              ? isLocalDraggingBg
-                ? 'pointer-events-auto cursor-grabbing active:cursor-grabbing'
-                : 'pointer-events-auto cursor-grab active:cursor-grabbing'
-              : 'pointer-events-none'
-          } ${
-            isDecorActive
-              ? 'ring-1 ring-inset ring-dashed ring-lime-400/60 shadow-[inset_0_0_15px_rgba(163,230,53,0.15)]'
-              : ''
-          }`}
-          style={{
-            backgroundColor: canvasBgColor,
-            pointerEvents: isDecorPointerActive ? 'auto' : 'none',
-          }}
-          onPointerDown={isDecorPointerActive ? handleBgPointerDown : undefined}
-          onMouseDown={isDecorPointerActive ? handleBgMouseDown : undefined}
-          onTouchStart={isDecorPointerActive ? handleBgTouchStart : undefined}
-          onClick={isDecorPointerActive ? (e) => {
-            if (!bgDragRef.current?.hasMoved) {
-              e.stopPropagation();
-              onVisualElementClick?.('decor');
-            }
-          } : undefined}
-          title={isDecorPointerActive ? "Glisser pour déplacer le décor (ou cliquer pour régler)" : undefined}
-        >
-          {backgroundUrl && (
-            <img
-              src={backgroundUrl}
-              crossOrigin="anonymous"
-              alt="Décor de fond"
-              draggable={false}
-              loading="eager"
-              fetchPriority="high"
-              decoding="async"
-              onContextMenu={(e) => e.preventDefault()}
-              className="w-full h-full object-cover min-w-full min-h-full max-w-none pointer-events-none select-none -webkit-touch-callout-none transition-opacity duration-300"
-              style={{
-                WebkitTouchCallout: 'none',
-                WebkitUserSelect: 'none',
-                userSelect: 'none',
-                touchAction: 'none',
-                transform: `translate(${bgOffsetX}%, ${bgOffsetY}%) scale(${bgScale})`,
-                transformOrigin: 'center center',
-                opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03)
-                  ? 1
-                  : (data.backgroundOpacity ?? 1),
-                filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03 || toneOverlay.filterCss === 'none') ? 'none' : toneOverlay.filterCss,
-              }}
-            />
-          )}
-        </div>
-
-      {/* Calque de Tonalité Blanc ↔ Noir */}
-      {isToneActive && !isToneCenter && Math.abs(currentTone - 0.5) >= 0.03 && (
-        <div
-          className="absolute inset-0 pointer-events-none transition-all duration-300 z-0"
-          style={{
-            backgroundColor: toneOverlay.color,
-            opacity: toneOverlay.opacity,
-            display: toneOverlay.display,
-          }}
-        />
-      )}
 
       {/* Lueur colorée (backlight/glow) d'ambiance de fond (strictement sous les textes et le sujet) - désactivée si fond présent ou tonalité neutre */}
       {subjectImage && !backgroundUrl && !isToneCenter && (

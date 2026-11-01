@@ -692,6 +692,7 @@ export interface EventInput {
   ambiancePrompt?: string;
   ambianceEngine?: string;
   backgroundImage?: string;
+  backgroundUrl?: string;
   bgImage?: string;
   customBackground?: string;
   bgPrompt?: string;
@@ -733,6 +734,7 @@ export interface EventInput {
   isSubjectMerged?: boolean; // Vrai lorsque le sujet a été fusionné de manière générative dans le décor (Google Imagen 3)
   backupBeforeMerge?: {
     backgroundImage?: string;
+  backgroundUrl?: string;
     customBackground?: string;
     bgImage?: string;
     djPhoto?: string;
