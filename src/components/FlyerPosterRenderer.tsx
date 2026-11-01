@@ -990,7 +990,9 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     };
 
   // Sections contextuelles strictes (Décor = volet 1, Sujet = volet 2, Textes = volet 5)
-  const isDecorSection = activeSection === 'decor';
+  // Détection universelle de la section décor active :
+  const isDecorActive = activeSection === 'decor' || activeSection === 'background' || activeSection === 'fond' || !activeSection;
+  const isDecorSection = isDecorActive;
   const isSubjectSection = activeSection === 'subject' || activeSection === 'subject2';
   const isTextSection = activeSection === 'text' || activeSection === 'texts' || activeSection === 'textSizes';
   const isLogoSection = activeSection === 'logo';
@@ -999,9 +1001,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const isSubject2Tab = activeSubjectTab === 'subject2' || activeSubjectTab === 'secondary' || activeSection === 'subject2';
   const isSubject1Tab = !isSubject2Tab;
 
-  // 1. Décor réactif STRICTEMENT quand activeSection === 'decor' (ou volet 1 ouvert)
-  const isDecorPointerActive = isInteractive && !isExporting && isDecorSection;
-  const isDecorActive = isDecorPointerActive;
+  // 1. Décor réactif quand la section décor est active (ou volet 1 ouvert / par défaut)
+  const isDecorPointerActive = isInteractive && !isExporting && isDecorActive;
 
   // 2. Sujets réactifs STRICTEMENT quand activeSection === 'subject' (ou volet 2 ouvert)
   const isS1PointerActive = isInteractive && !isExporting && isSubjectSection && isSubject1Tab;
@@ -2112,7 +2113,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
             decoding="async"
             onContextMenu={(e) => e.preventDefault()}
             className={`absolute max-w-none max-h-none object-cover select-none ${
-              activeSection === 'decor'
+              isDecorPointerActive
                 ? isLocalDraggingBg
                   ? 'cursor-grabbing active:cursor-grabbing'
                   : 'cursor-grab active:cursor-grabbing'
@@ -2124,22 +2125,22 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
               top: '-15%',
               left: '-15%',
               transform: `translate(${input.backgroundOffsetX ?? 0}%, ${input.backgroundOffsetY ?? 0}%)`,
-              pointerEvents: activeSection === 'decor' ? 'auto' : 'none',
+              pointerEvents: isDecorPointerActive ? 'auto' : 'none',
               opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03)
                 ? 1
                 : (data.backgroundOpacity ?? 1),
               filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03 || toneOverlay.filterCss === 'none') ? 'none' : toneOverlay.filterCss,
             }}
-            onPointerDown={activeSection === 'decor' ? handleBgPointerDown : undefined}
-            onMouseDown={activeSection === 'decor' ? handleBgMouseDown : undefined}
-            onTouchStart={activeSection === 'decor' ? handleBgTouchStart : undefined}
-            onClick={activeSection === 'decor' ? (e) => {
+            onPointerDown={isDecorPointerActive ? handleBgPointerDown : undefined}
+            onMouseDown={isDecorPointerActive ? handleBgMouseDown : undefined}
+            onTouchStart={isDecorPointerActive ? handleBgTouchStart : undefined}
+            onClick={isDecorPointerActive ? (e) => {
               if (!bgDragRef.current?.hasMoved) {
                 e.stopPropagation();
                 onVisualElementClick?.('decor');
               }
             } : undefined}
-            title={activeSection === 'decor' ? "Glisser pour déplacer le décor (ou cliquer pour régler)" : undefined}
+            title={isDecorPointerActive ? "Glisser pour déplacer le décor (ou cliquer pour régler)" : undefined}
           />
         </div>
       ) : null}
@@ -2165,7 +2166,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       */}
       <div
         data-poster-virtual-canvas="true"
-        className="@container relative overflow-visible select-none z-[1]"
+        className="@container relative overflow-visible select-none z-[1] pointer-events-none"
         style={{
           width: `${BASE_WIDTH}px`,
           height: `${virtualCanvasHeight}px`,
@@ -2179,6 +2180,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           WebkitTouchCallout: 'none',
           WebkitUserSelect: 'none',
           userSelect: 'none',
+          pointerEvents: 'none',
         }}
       >
         {/* Pipeline automatisé Defringe : Érosion de masque de 1px + Blur 0.5px sur le canal Alpha */}
