@@ -350,18 +350,17 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const getFormatBgBounds = (fmtKey: 'post' | 'story' | 'banner' | 'a3') => {
     switch (fmtKey) {
       case 'story':
-        // Story (9:16) : hauteur couverte à 100%, translation horizontale panoramique étendue, verticale bornée de sécurité
-        return { limitX: 35, limitY: 12 };
+        // En 9:16, l'image est beaucoup plus large que haute par rapport au cadre :
+        // On libère la course jusqu'à ±70% pour pouvoir afficher les extrémités gauche et droite.
+        return { limitX: 70, limitY: 15 };
       case 'banner':
-        // Bannière (16:9) : largeur couverte à 100%, translation verticale panoramique étendue, horizontale bornée de sécurité
-        return { limitX: 12, limitY: 35 };
+        // En 16:9, c'est la hauteur qui déborde largement :
+        return { limitX: 20, limitY: 55 };
       case 'post':
-        // Post (1:1) : débattements symétriques et équilibrés
-        return { limitX: 20, limitY: 20 };
+        return { limitX: 25, limitY: 25 };
       case 'a3':
       default:
-        // Flyer / A3 (format vertical standard)
-        return { limitX: 25, limitY: 18 };
+        return { limitX: 35, limitY: 25 };
     }
   };
 
@@ -886,7 +885,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       if (setInput) {
         setInput((prev) => {
           const prevFmtTransforms = prev.formatTransforms || {};
-          const currentFmtConfig = prevFmtTransforms[targetFormatKey] || {};
+          const currentFmtConfig = prevFmtTransforms[targetFormatKey] || { scale: 1, offsetY: 0 };
           const existingBg = currentFmtConfig.background;
 
           return {
@@ -2239,7 +2238,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           }`}
         >
           <img
-            src={data.backgroundUrl || backgroundImage}
+            src={(data.backgroundUrl || backgroundImage) || undefined}
             alt="Décor"
             crossOrigin="anonymous"
             draggable={false}
@@ -2410,7 +2409,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
             }}
           >
             <img
-              src={subjectImage}
+              src={subjectImage || undefined}
               crossOrigin="anonymous"
               alt="Sujet Flyer"
               draggable={false}
@@ -2478,7 +2477,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
             }}
           >
             <img
-              src={secondarySubjectImage}
+              src={secondarySubjectImage || undefined}
               crossOrigin="anonymous"
               alt="Second Sujet B2B"
               draggable={false}

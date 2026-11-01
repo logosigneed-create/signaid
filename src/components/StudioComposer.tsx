@@ -3627,7 +3627,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
   const handleResetBackgroundPosition = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setInput((prev) => {
-      const curFmt = prev.formatTransforms?.[activePreviewBgKey] || {};
+      const curFmt = prev.formatTransforms?.[activePreviewBgKey] || { scale: 1, offsetY: 0 };
       return {
         ...prev,
         formatTransforms: {
