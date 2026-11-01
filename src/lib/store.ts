@@ -62,10 +62,12 @@ export type SiteConfig = {
   sector?: string;
   status?: string;
   createdAt?: any;
-  livePhotoUrl?: string;
+  livePhotoUrl?: string | null;
   livePhotoUrls?: string[];
-  coverUrl?: string;
-  coverImage?: string;
+  coverUrl?: string | null;
+  coverImage?: string | null;
+  bannerUrl?: string | null;
+  photos?: string[];
   totalMarginAvailable?: number;
   totalSales?: number;
   revenue?: number;
@@ -197,25 +199,44 @@ export async function getStoredConfig(uid?: string): Promise<SiteConfig> {
       });
     }
 
-    let resolvedLogo = data.logoUrl || data.logoAdaptedUrl || data.auditLogoUrl || data.logo || data.visualLogoUrl || data.logoA?.adaptedRemastered || data.logoA?.adapted || (isElox ? '/elox_logo.png' : (isDokiin ? '/dokiin_logo_white.png' : (isVision ? 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/logos/1787803061043_logo_dtf.png' : '')));
+    let resolvedLogo = data.logoUrl || data.logoAdaptedUrl || data.auditLogoUrl || data.logo || data.visualLogoUrl || data.logoA?.adaptedRemastered || data.logoA?.adapted || (isElox ? '/elox_logo.png' : (isDokiin ? '/dokiin_logo_white.png' : (isVision ? 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/logos/1787803061043_logo_dtf.png' : (isDfazz ? '/logo_dfazz_avatar_clean.png' : ''))));
     if (!isDfazz && (resolvedLogo.toLowerCase().includes('dfazz') || resolvedLogo.includes('audit-8f198p5') || resolvedLogo.includes('guest_ms3ijgnco2xnid'))) {
       resolvedLogo = isElox ? '/elox_logo.png' : (isDokiin ? '/dokiin_logo_white.png' : (isVision ? 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/logos/1787803061043_logo_dtf.png' : ''));
     }
+    if (isDfazz) {
+      if (!resolvedLogo || resolvedLogo.toLowerCase().includes('vision') || resolvedLogo.includes('mt074jnaldxn')) {
+        resolvedLogo = '/logo_dfazz_avatar_clean.png';
+      }
+    }
 
     // Photo d'ambiance / bannière totalement optionnelle
-    let resolvedLivePhoto = data.livePhotoUrl !== undefined 
-      ? data.livePhotoUrl 
-      : (data.coverUrl !== undefined 
-          ? data.coverUrl 
-          : (data.coverImage !== undefined ? data.coverImage : (data.photos && data.photos[0] ? data.photos[0] : (isVision ? 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg' : ''))));
+    const isExplicitlyRemoved = 
+      data.livePhotoUrl === null || data.livePhotoUrl === '' ||
+      data.coverUrl === null || data.coverUrl === '' ||
+      data.bannerUrl === null || data.bannerUrl === '';
+
+    let resolvedLivePhoto = '';
+    if (isVision) {
+      resolvedLivePhoto = 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg';
+    } else if (isDfazz) {
+      resolvedLivePhoto = data.livePhotoUrl || data.coverUrl || '/assets/dfazz_hero.jpg';
+    } else if (!isExplicitlyRemoved) {
+      resolvedLivePhoto = data.livePhotoUrl !== undefined 
+        ? (data.livePhotoUrl || '') 
+        : (data.coverUrl !== undefined 
+            ? (data.coverUrl || '') 
+            : (data.bannerUrl !== undefined
+                ? (data.bannerUrl || '')
+                : (data.coverImage !== undefined ? (data.coverImage || '') : '')));
+    }
 
     if (!isDfazz && typeof resolvedLivePhoto === 'string' && (resolvedLivePhoto.toLowerCase().includes('dfazz') || resolvedLivePhoto.includes('audit-8f198p5') || resolvedLivePhoto.includes('guest_ms3ijgnco2xnid'))) {
       resolvedLivePhoto = isVision ? 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg' : '';
     }
 
-    const resolvedLivePhotoList = (Array.isArray(data.livePhotoUrls) && data.livePhotoUrls.length > 0)
+    const resolvedLivePhotoList = (Array.isArray(data.livePhotoUrls) && data.livePhotoUrls.length > 0 && !isExplicitlyRemoved)
       ? data.livePhotoUrls.filter((u: string) => typeof u === 'string' && u.trim().length > 10 && u !== 'none' && (isDfazz || !u.includes('dfazz_hero')))
-      : (resolvedLivePhoto && resolvedLivePhoto.trim().length > 10 && resolvedLivePhoto !== 'none' ? [resolvedLivePhoto] : (isVision ? ['https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg'] : []));
+      : (resolvedLivePhoto && resolvedLivePhoto.trim().length > 10 && resolvedLivePhoto !== 'none' ? [resolvedLivePhoto] : (isVision ? ['https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg'] : (isDfazz ? ['/assets/dfazz_hero.jpg'] : [])));
 
     let activitySector = data.sector || data.activitySector || data.userData?.activity || (isDfazz ? 'DJ & Producteur Musical' : (isElox ? 'DJ & Événementiel' : (isVision ? 'Musique et Événementiel Électronique' : defaultConfig.activitySector)));
     if (!isDfazz && (activitySector === 'DJ & Producteur Musical' && data.sector)) {
@@ -351,8 +372,10 @@ export async function getStoredConfig(uid?: string): Promise<SiteConfig> {
   // Local storage cache lookup fallback
   if (typeof window !== 'undefined') {
     try {
-      const cached = localStorage.getItem(`fast_artist_cache_v92_${cleanUid}`) || 
+      const cached = localStorage.getItem(`fast_artist_cache_v99_${cleanUid}`) || 
+                     localStorage.getItem(`fast_artist_cache_v92_${cleanUid}`) || 
                      localStorage.getItem(`fast_artist_cache_${cleanUid}`) ||
+                     localStorage.getItem(`fast_artist_cache_v99_${actualUid}`) ||
                      localStorage.getItem(`fast_artist_cache_v92_${actualUid}`) ||
                      localStorage.getItem(`fast_artist_cache_${actualUid}`);
       if (cached) {
@@ -362,6 +385,21 @@ export async function getStoredConfig(uid?: string): Promise<SiteConfig> {
         }
       }
     } catch {}
+  }
+
+  // Explicit fallback for DJ D-FAZZ if Firestore read failed or doc not in Firestore
+  if (isDfazzUser) {
+    return parseDoc({
+      uid: 'djdfazz',
+      slug: 'djdfazz',
+      companyName: 'DJ D-FAZZ',
+      activitySector: 'DJ & Producteur Musical',
+      logoUrl: '/logo_dfazz_avatar_clean.png',
+      avatar: '/logo_dfazz_avatar_clean.png',
+      accentColor: '#3b82f6',
+      contactEmail: 'Fabriziomagistro89@gmail.com',
+      whatsappNumber: '+32492104603'
+    });
   }
 
   // Explicit fallback for Club Vision Room if Firestore read failed or doc not in Firestore
@@ -401,6 +439,25 @@ export async function saveStoredConfig(config: SiteConfig, uid?: string): Promis
     updatedAt: new Date().toISOString()
   };
 
+  const isDfazzDoc = docId === 'guest_ms3ijgnco2xnid' || docId === 'fabrizio' || docId === 'djdfazz' || companySlug.includes('dfazz');
+  const isVisionDoc = docId === 'clubvisionroom' || docId === 'mt074jnaldxn' || docId === 'clubvision' || companySlug.includes('vision');
+  const isPbsDoc = docId === 'pbs' || companySlug.includes('pbs');
+
+  const isBannerRemoved = 
+    config.livePhotoUrl === "" || config.livePhotoUrl === null ||
+    config.coverUrl === "" || config.coverUrl === null ||
+    config.bannerUrl === "" || config.bannerUrl === null ||
+    (!config.livePhotoUrl && (!config.livePhotoUrls || config.livePhotoUrls.length === 0));
+
+  if (isBannerRemoved && !isDfazzDoc && !isVisionDoc && !isPbsDoc) {
+    dataToSave.livePhotoUrl = null;
+    dataToSave.livePhotoUrls = [];
+    dataToSave.coverUrl = null;
+    dataToSave.bannerUrl = null;
+    dataToSave.coverImage = null;
+    dataToSave.photos = [];
+  }
+
   // Strip any temporary local blob: URLs so they are never saved into Firestore
   const tempUrlKeys = ['logoUrl', 'auditLogoUrl', 'logoAdaptedUrl', 'logoA', 'logoB', 'visualLogoUrl', 'avatar', 'logo', 'livePhotoUrl'];
   tempUrlKeys.forEach((k) => {
@@ -438,6 +495,7 @@ export async function saveStoredConfig(config: SiteConfig, uid?: string): Promis
         uniqueTargets.add(docId);
         if (docId.startsWith('audit-') && cleanUid) uniqueTargets.add(cleanUid);
         if (companySlug && companySlug !== 'noname') uniqueTargets.add(companySlug);
+        if (companySlug) uniqueTargets.add(`audit-${companySlug}`);
 
         // Batch unique parallel writes
         const writePromises: Promise<any>[] = [];
@@ -445,6 +503,7 @@ export async function saveStoredConfig(config: SiteConfig, uid?: string): Promis
           writePromises.push(setDoc(doc(db, "SiteConfigs", targetId), payloadToWrite, { merge: true }));
           writePromises.push(setDoc(doc(db, "anonymous_previews", targetId), payloadToWrite, { merge: true }));
           writePromises.push(setDoc(doc(db, "configs", targetId), payloadToWrite, { merge: true }));
+          writePromises.push(setDoc(doc(db, "btp_projects", targetId), payloadToWrite, { merge: true }).catch(() => null));
         }
 
         await Promise.allSettled(writePromises);

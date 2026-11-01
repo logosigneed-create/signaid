@@ -9,10 +9,16 @@ import { sendOrderConfirmationEmail } from './utils/emailService';
 import { sanitizeForFirestore } from './utils/firestoreSanitizer';
 import AdminQuickBar from './components/AdminQuickBar';
 import ProductPortalSkeleton from './components/ProductPortalSkeleton';
-import { VISION_ROOM_MERCH_COLLECTION, VISION_ROOM_BASIC_TANK, VISION_ROOM_HEAVYWEIGHT_TEE } from './components/MerchCarousel';
+import { CLUBVISION_MOCKUP_ASSETS, PBS_MOCKUP_ASSETS, PBS_PRODUCT_ASSETS, PBS_GARMENT_MOCKUPS, PARTY_2000_MOCKUP_ASSETS, PARTY_2000_PRODUCT_ASSETS, PARTY_2000_GARMENT_MOCKUPS, ensureLocalProfileSeeded, withCacheBust } from './lib/localProfiles';
+
+export { CLUBVISION_MOCKUP_ASSETS, PBS_MOCKUP_ASSETS, PBS_PRODUCT_ASSETS, PBS_GARMENT_MOCKUPS, PARTY_2000_MOCKUP_ASSETS, PARTY_2000_PRODUCT_ASSETS, PARTY_2000_GARMENT_MOCKUPS };
 
 const LOCAL_PLACEMENTS = {
     tshirt: {
+        front: { x: 0.64, y: 0.30, scale: 0.20 },
+        back: { x: 0.50, y: 0.38, scale: 0.35 }
+    },
+    tshirt_white: {
         front: { x: 0.64, y: 0.30, scale: 0.20 },
         back: { x: 0.50, y: 0.38, scale: 0.35 }
     },
@@ -24,7 +30,15 @@ const LOCAL_PLACEMENTS = {
         front: { x: 0.64, y: 0.32, scale: 0.18 },
         back: { x: 0.50, y: 0.38, scale: 0.35 }
     },
+    polo_white: {
+        front: { x: 0.64, y: 0.32, scale: 0.18 },
+        back: { x: 0.50, y: 0.38, scale: 0.35 }
+    },
     sweat: {
+        front: { x: 0.64, y: 0.34, scale: 0.20 },
+        back: { x: 0.50, y: 0.46, scale: 0.35 }
+    },
+    sweat_white: {
         front: { x: 0.64, y: 0.34, scale: 0.20 },
         back: { x: 0.50, y: 0.46, scale: 0.35 }
     },
@@ -32,7 +46,15 @@ const LOCAL_PLACEMENTS = {
         front: { x: 0.64, y: 0.34, scale: 0.20 },
         back: { x: 0.50, y: 0.46, scale: 0.35 }
     },
+    hoodie_white: {
+        front: { x: 0.64, y: 0.34, scale: 0.20 },
+        back: { x: 0.50, y: 0.46, scale: 0.35 }
+    },
     tank_top: {
+        front: { x: 0.50, y: 0.35, scale: 0.22 },
+        back: { x: 0.50, y: 0.38, scale: 0.35 }
+    },
+    tank_top_white: {
         front: { x: 0.50, y: 0.35, scale: 0.22 },
         back: { x: 0.50, y: 0.38, scale: 0.35 }
     },
@@ -40,9 +62,21 @@ const LOCAL_PLACEMENTS = {
         front: { x: 0.64, y: 0.30, scale: 0.20 },
         back: { x: 0.50, y: 0.38, scale: 0.35 }
     },
+    tshirt_oversize_white: {
+        front: { x: 0.64, y: 0.30, scale: 0.20 },
+        back: { x: 0.50, y: 0.38, scale: 0.35 }
+    },
     business_card: {
         front: { x: 0.50, y: 0.50, scale: 0.40 },
         back: { x: 0.50, y: 0.50, scale: 0.40 }
+    },
+    sport_tshirt: {
+        front: { x: 0.64, y: 0.30, scale: 0.20 },
+        back: { x: 0.50, y: 0.38, scale: 0.35 }
+    },
+    E3520: {
+        front: { x: 0.64, y: 0.30, scale: 0.20 },
+        back: { x: 0.50, y: 0.38, scale: 0.35 }
     }
 };
 
@@ -274,36 +308,59 @@ const ProductPortal: React.FC = () => {
     const isAdmin = isAuthAdmin || localStorage.getItem('btp_god_mode') === 'true';
     
     const [sessionId, setSessionId] = useState<string | null>(null);
+    const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
     const [userLogo, setUserLogo] = useState<string | null>(null);
     const [logoA, setLogoA] = useState<string | null>(null);
     const [logoB, setLogoB] = useState<string | null>(null);
     const [logoPlacements, setLogoPlacements] = useState<Record<string, 'A' | 'B'>>({
-        tFront: 'B', tBack: 'A', pFront: 'B', pBack: 'A', hFront: 'B', hBack: 'A', cardFront: 'A', cardBack: 'A'
+        tFront: 'B', tBack: 'A',
+        tWhiteFront: 'B', tWhiteBack: 'A',
+        pFront: 'B', pBack: 'A',
+        pWhiteFront: 'B', pWhiteBack: 'A',
+        hFront: 'B', hBack: 'A',
+        hWhiteFront: 'B', hWhiteBack: 'A',
+        tankFront: 'B', tankBack: 'A',
+        tankWhiteFront: 'B', tankWhiteBack: 'A',
+        heavyFront: 'B', heavyBack: 'A',
+        heavyWhiteFront: 'B', heavyWhiteBack: 'A',
+        cardFront: 'A', cardBack: 'A'
     });
     const [selectedTshirtVariant, setSelectedTshirtVariant] = useState<'lourd' | 'leger'>('lourd');
     const [cardViews, setCardViews] = useState<Record<string, 'front' | 'back'>>({
         tshirt: 'front',
+        tshirt_white: 'front',
         tshirt_basic: 'front',
         tshirt_fluo: 'front',
         tshirt_bicolore: 'front',
         polo: 'front',
+        polo_white: 'front',
         sweat: 'front',
         hoodie: 'front',
+        hoodie_white: 'front',
         tank_top: 'front',
+        tank_top_white: 'front',
         tshirt_oversize: 'front',
+        tshirt_oversize_white: 'front',
         business_card: 'front',
-        epi: 'front'
+        epi: 'front',
+        E3520: 'front'
     });
     const [displayModes, setDisplayModes] = useState<Record<string, 'studio' | 'bat'>>({
         tshirt: 'studio',
+        tshirt_white: 'studio',
         tshirt_basic: 'studio',
         polo: 'studio',
+        polo_white: 'studio',
         sweat: 'studio',
         hoodie: 'studio',
+        hoodie_white: 'studio',
         tank_top: 'studio',
+        tank_top_white: 'studio',
         tshirt_oversize: 'studio',
+        tshirt_oversize_white: 'studio',
         business_card: 'studio',
-        epi: 'studio'
+        epi: 'studio',
+        E3520: 'studio'
     });
     const [showCheckoutModal, setShowCheckoutModal] = useState(false);
     const [showEditSessionModal, setShowEditSessionModal] = useState(false);
@@ -328,6 +385,11 @@ const ProductPortal: React.FC = () => {
         tshirt_fluo: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
         tshirt_bicolore: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
         hoodie: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
+        tank_top: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
+        tank_top_white: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
+        tshirt_oversize: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
+        tshirt_oversize_white: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
+        E3520: { S: 0, M: 0, L: 0, XL: 0, XXL: 0 },
         epi: { UNIT: 0 },
         business_card: { '250': 0, '500': 0, '1000': 0, '2500': 0 }
     });
@@ -357,43 +419,47 @@ const ProductPortal: React.FC = () => {
         if (logoA && clean === logoA) return false;
         if (logoB && clean === logoB) return false;
 
+        const cleanLower = clean.toLowerCase();
+
+        // REJET ABSOLU : Tout gabarit mécanique 2D à plat, asset statique local ou template non-studio est strictement exclu
+        if (
+            cleanLower.includes('_mech') || cleanLower.includes('mech_') || cleanLower.includes('mechanical') ||
+            cleanLower.includes('/assets/') || cleanLower.startsWith('assets/') ||
+            cleanLower.includes('/merch/') || cleanLower.startsWith('merch/') ||
+            cleanLower.includes('app_assets/') || cleanLower.includes('catalog_mockups') ||
+            cleanLower.includes('card-base') || cleanLower.endsWith('.svg')
+        ) {
+            return false;
+        }
+
         // Exclure formellement tout logo isolé (qui ne doit JAMAIS servir de fond de vêtement)
-        if (clean.includes('/logos/') || clean.includes('logo_') || clean.includes('_logo') || clean.includes('aaronh_logo') || clean.includes('dokiin_logo') || clean.includes('thementalist_logo') || clean.includes('elox_logo')) {
+        if (cleanLower.includes('/logos/') || cleanLower.includes('logo_') || cleanLower.includes('_logo') || cleanLower.includes('aaronh_logo') || cleanLower.includes('dokiin_logo') || cleanLower.includes('thementalist_logo') || cleanLower.includes('elox_logo')) {
+            return false;
+        }
+
+        // Exclure photos brutes mannequins sans logo
+        if (clean.startsWith('/assets/models/') || cleanLower.includes('male_tshirt') || cleanLower.includes('male_hoodie') || cleanLower.includes('male_polo') || cleanLower.includes('male_tank')) {
             return false;
         }
 
         const effectiveSid = overrideSid !== undefined ? overrideSid : sessionId;
-        const effectiveCompany = overrideCompany !== undefined ? overrideCompany : (sessionData?.userData?.companyName || '');
 
-        const isDfazzSession = effectiveSid === 'guest_ms3ijgnco2xnid' || effectiveSid === 'fabrizio' || effectiveSid === 'djdfazz' || effectiveCompany.toLowerCase().includes('d-fazz');
-        if (!isDfazzSession) {
-            if (clean.toLowerCase().includes('dfazz') || clean.includes('audit-8f198p5') || clean.includes('guest_ms3ijgnco2xnid')) {
-                return false;
+        // Universal anti-leak: If an image belongs to another specific prospect slug in storage, reject it
+        if (cleanLower.includes('btp_mockups/')) {
+            const match = cleanLower.match(/btp_mockups\/([^/]+)\//);
+            if (match && match[1]) {
+                const targetFolder = match[1];
+                const activeSlugLower = (effectiveSid || '').toLowerCase().replace(/^audit-/, '');
+                if (activeSlugLower && targetFolder !== activeSlugLower && !activeSlugLower.includes(targetFolder) && !targetFolder.includes(activeSlugLower)) {
+                    return false;
+                }
             }
-        }
-
-        if (clean.startsWith('/assets/models/') || clean.includes('male_tshirt') || clean.includes('male_hoodie') || clean.includes('card-base')) {
-            if (clean.toLowerCase().includes('dfazz') && isDfazzSession) return true;
-            return false;
-        }
-
-        const cleanLower = clean.toLowerCase();
-        if (cleanLower.includes('btp_mockups') && !cleanLower.includes('/logos/')) {
             return true;
         }
 
-        if (cleanLower.includes('dfazz') && isDfazzSession) {
-            return true;
-        }
-
-        // Mockups nommés ou stockés pour des marques spécifiques
-        if ((clean.includes('thementalist_') || clean.includes('aaronh_')) && (clean.includes('tshirt') || clean.includes('polo') || clean.includes('hoodie') || clean.includes('tank'))) {
-            return true;
-        }
-
-        return (clean.startsWith('data:image') && clean.length > 50 && !clean.includes('/logos/')) || 
-               (clean.includes('firebasestorage') && !clean.includes('/logos/')) || 
-               (clean.includes('storage.googleapis.com') && !clean.includes('/logos/'));
+        return (clean.startsWith('data:image') && clean.length > 50) || 
+               clean.includes('firebasestorage') || 
+               clean.includes('storage.googleapis.com');
     };
 
     useEffect(() => {
@@ -434,7 +500,7 @@ const ProductPortal: React.FC = () => {
 
                 let extractedSlug = rawSlug;
                 if (!extractedSlug) {
-                    const parts = pathname.split('/');
+                    const parts = pathname.split('/').filter(Boolean);
                     if (parts.length > 1 && parts[0] === 'portail-shop') {
                         extractedSlug = parts[1];
                     } else if (parts.length > 0 && parts[0] !== 'portail-shop') {
@@ -454,6 +520,10 @@ const ProductPortal: React.FC = () => {
                     sid = 'guest_ms3ijgnco2xnid';
                 }
                 const cleanSid = sid.replace(/^audit-/, '');
+                if (sid) {
+                    ensureLocalProfileSeeded(cleanSid);
+                    ensureLocalProfileSeeded(sid);
+                }
                 let latestConfig: any = null;
 
                 try {
@@ -565,10 +635,11 @@ const ProductPortal: React.FC = () => {
                         `garmentMockups_${sid}`,
                         `btp_garment_mockups_${cleanSid}`,
                         `btp_garment_mockups_${sid}`,
-                        ...(searchUid ? [`garmentMockups_${searchUid}`, `btp_garment_mockups_${searchUid}`] : []),
-                        'garmentMockups',
-                        'btp_garment_mockups'
+                        ...(searchUid ? [`garmentMockups_${searchUid}`, `btp_garment_mockups_${searchUid}`] : [])
                     ];
+                    if (!cleanSid && !sid && !searchUid) {
+                        gmCandidates.push('garmentMockups', 'btp_garment_mockups');
+                    }
                     for (const key of gmCandidates) {
                         try {
                             const raw = localStorage.getItem(key);
@@ -594,7 +665,7 @@ const ProductPortal: React.FC = () => {
                         if (!mergedGarmentMockups[k]) {
                             const val = localStorage.getItem(`btp_mockup_${k}_${cleanSid}`)
                                 || localStorage.getItem(`btp_mockup_${k}_${sid}`)
-                                || localStorage.getItem(`btp_mockup_${k}`);
+                                || (!cleanSid && !sid ? localStorage.getItem(`btp_mockup_${k}`) : null);
                             if (val && isRealImage(val, sid, localData?.userData?.companyName)) {
                                 mergedGarmentMockups[k] = val;
                             }
@@ -603,10 +674,10 @@ const ProductPortal: React.FC = () => {
                 }
 
                 const isMockupsLocked = typeof localStorage !== 'undefined' && (
-                    localStorage.getItem('btp_mockups_locked') === 'true' ||
                     localStorage.getItem(`btp_mockups_locked_${sid}`) === 'true' ||
                     localStorage.getItem(`btp_mockups_locked_${cleanSid}`) === 'true' ||
-                    (searchUid ? localStorage.getItem(`btp_mockups_locked_${searchUid}`) === 'true' : false)
+                    (searchUid ? localStorage.getItem(`btp_mockups_locked_${searchUid}`) === 'true' : false) ||
+                    (!sid && !cleanSid && localStorage.getItem('btp_mockups_locked') === 'true')
                 );
 
                 const standardCatalogDefs = [
@@ -616,12 +687,16 @@ const ProductPortal: React.FC = () => {
                     { id: 'pBack', title: 'Polo Premium Dos', garment: 'polo', view: 'back', price: 35, selected: true },
                     { id: 'hFront', title: 'Hoodie Premium Face', garment: 'sweat', view: 'front', price: 45, selected: true },
                     { id: 'hBack', title: 'Hoodie Premium Dos', garment: 'sweat', view: 'back', price: 45, selected: true },
+                    { id: 'E3520_front', title: 'T-Shirt Respirant Sport Face', garment: 'sport_tshirt', view: 'front', price: 30, selected: true },
+                    { id: 'E3520_back', title: 'T-Shirt Respirant Sport Dos', garment: 'sport_tshirt', view: 'back', price: 30, selected: true },
                     { id: 'tankFront', title: 'Débardeur Noir Face', garment: 'tank_top', view: 'front', price: 28, selected: true },
                     { id: 'tankBack', title: 'Débardeur Noir Dos', garment: 'tank_top', view: 'back', price: 28, selected: true },
                     { id: 'tankWhiteFront', title: 'Débardeur Blanc Face', garment: 'tank_top', view: 'front', price: 28, selected: true },
                     { id: 'tankWhiteBack', title: 'Débardeur Blanc Dos', garment: 'tank_top', view: 'back', price: 28, selected: true },
                     { id: 'heavyFront', title: 'T-Shirt Heavyweight Face', garment: 'tshirt_oversize', view: 'front', price: 35, selected: true },
                     { id: 'heavyBack', title: 'T-Shirt Heavyweight Dos', garment: 'tshirt_oversize', view: 'back', price: 35, selected: true },
+                    { id: 'heavyWhiteFront', title: 'T-Shirt Oversize Blanc Face', garment: 'tshirt_oversize', view: 'front', price: 35, selected: true },
+                    { id: 'heavyWhiteBack', title: 'T-Shirt Oversize Blanc Dos', garment: 'tshirt_oversize', view: 'back', price: 35, selected: true },
                     { id: 'cardFront', title: 'Carte de Visite Recto', garment: 'business_card', view: 'front', price: 0, selected: true },
                     { id: 'cardBack', title: 'Carte de Visite Verso', garment: 'business_card', view: 'back', price: 0, selected: true }
                 ];
@@ -724,25 +799,40 @@ const ProductPortal: React.FC = () => {
                                     mechanical: rawItems[existingIdx].mechanical || rec.mechanical,
                                     imageUrl: rawItems[existingIdx].imageUrl || rec.imageUrl
                                 };
-                            } else {
-                                rawItems.push(rec);
                             }
                         }
                     }
 
-                    // Supplement rawItems with any missing garments from mergedGarmentMockups
+                    // Supplement rawItems with missing visuals from mergedGarmentMockups
+                    const canAppendNewItems = rawItems.length === 0;
                     for (const def of standardCatalogDefs) {
                         const isFront = def.view === 'front';
                         let gmUrl: string | null = null;
                         if (def.garment === 'tshirt') gmUrl = isFront ? (mergedGMs.tshirt_front || mergedGMs.tshirt || mergedGMs.tFront) : (mergedGMs.tshirt_back || mergedGMs.tBack);
                         else if (def.garment === 'polo') gmUrl = isFront ? (mergedGMs.polo_front || mergedGMs.polo || mergedGMs.pFront) : (mergedGMs.polo_back || mergedGMs.pBack);
                         else if (def.garment === 'sweat') gmUrl = isFront ? (mergedGMs.hoodie_front || mergedGMs.hoodie || mergedGMs.sweat_front || mergedGMs.sweat || mergedGMs.hFront) : (mergedGMs.hoodie_back || mergedGMs.sweat_back || mergedGMs.hBack);
-                        else if (def.garment === 'tank_top') gmUrl = isFront ? (mergedGMs.tank_front || mergedGMs.tank_top || mergedGMs.tankFront) : (mergedGMs.tank_back || mergedGMs.tankBack);
-                        else if (def.garment === 'tshirt_oversize') gmUrl = isFront ? (mergedGMs.heavy_front || mergedGMs.tshirt_oversize || mergedGMs.heavyFront) : (mergedGMs.heavy_back || mergedGMs.heavyBack);
-                        else if (def.garment === 'business_card') gmUrl = isFront ? (mergedGMs.card_front || mergedGMs.business_card || mergedGMs.cardFront) : (mergedGMs.card_back || mergedGMs.cardBack);
+                        else if (def.garment === 'tank_top') {
+                            const isWhite = def.id === 'tankWhiteFront' || def.id === 'tankWhiteBack' || def.id.toLowerCase().includes('white');
+                            gmUrl = isWhite
+                                ? (isFront ? (mergedGMs.tank_white_front || mergedGMs.tankWhiteFront || mergedGMs.tank_top_white_front || mergedGMs.tank_top_white) : (mergedGMs.tank_white_back || mergedGMs.tankWhiteBack || mergedGMs.tank_top_white_back))
+                                : (isFront ? (mergedGMs.tank_front || mergedGMs.tank_top || mergedGMs.tankFront) : (mergedGMs.tank_back || mergedGMs.tankBack));
+                        } else if (def.garment === 'tshirt_oversize') {
+                            const isWhite = def.id === 'heavyWhiteFront' || def.id === 'heavyWhiteBack' || def.id.toLowerCase().includes('white');
+                            gmUrl = isWhite
+                                ? (isFront ? (mergedGMs.heavy_white_front || mergedGMs.heavyWhiteFront || mergedGMs.tshirt_oversize_white_front || mergedGMs.tshirt_oversize_white) : (mergedGMs.heavy_white_back || mergedGMs.heavyWhiteBack || mergedGMs.tshirt_oversize_white_back))
+                                : (isFront ? (mergedGMs.heavy_front || mergedGMs.tshirt_oversize || mergedGMs.heavyFront) : (mergedGMs.heavy_back || mergedGMs.heavyBack));
+                        } else if (def.garment === 'sport_tshirt') {
+                            gmUrl = isFront ? (mergedGMs.sport_tshirt_front || mergedGMs.E3520_front || mergedGMs.E3520) : (mergedGMs.sport_tshirt_back || mergedGMs.E3520_back);
+                        } else if (def.garment === 'business_card') gmUrl = isFront ? (mergedGMs.card_front || mergedGMs.business_card || mergedGMs.cardFront) : (mergedGMs.card_back || mergedGMs.cardBack);
 
                         if (gmUrl && isRealImage(gmUrl, targetSid, companyName)) {
-                            const existingIdx = rawItems.findIndex((r: any) => r.id === def.id || (r.garment === def.garment && r.view === def.view));
+                            const isWhiteDef = def.id.toLowerCase().includes('white');
+                            const existingIdx = rawItems.findIndex((r: any) => r.id === def.id || (
+                                r.garment === def.garment && r.view === def.view && (
+                                    isWhiteDef ? (r.id?.toLowerCase().includes('white') || r.color?.toLowerCase() === 'blanc')
+                                               : (!r.id?.toLowerCase().includes('white') && r.color?.toLowerCase() !== 'blanc')
+                                )
+                            ));
                             if (existingIdx !== -1) {
                                 rawItems[existingIdx] = {
                                     ...rawItems[existingIdx],
@@ -754,7 +844,7 @@ const ProductPortal: React.FC = () => {
                                     imageBack: !isFront ? (rawItems[existingIdx].imageBack || gmUrl) : rawItems[existingIdx].imageBack,
                                     selected: true
                                 };
-                            } else {
+                            } else if (canAppendNewItems) {
                                 rawItems.push({
                                     ...def,
                                     ai: gmUrl,
@@ -774,9 +864,41 @@ const ProductPortal: React.FC = () => {
                         rawItems = rawItems.filter((item: any) => item.selected === true);
                     }
 
-                    const isVisionSession = targetSid === 'clubvisionroom' || targetSid === 'visionroom' || targetSid === '13ansvr' || targetSid.toLowerCase().includes('vision') || (companyName || '').toLowerCase().includes('vision');
-                    if (isVisionSession && rawItems.length === 0) {
-                        rawItems = [...(VISION_ROOM_MERCH_COLLECTION as any[])];
+                    if (rawItems.length === 0) {
+                        for (const def of standardCatalogDefs) {
+                            const isFront = def.view === 'front';
+                            let gmUrl: string | null = null;
+                            if (def.garment === 'tshirt') gmUrl = isFront ? (mergedGMs.tshirt_front || mergedGMs.tshirt || mergedGMs.tFront) : (mergedGMs.tshirt_back || mergedGMs.tBack);
+                            else if (def.garment === 'polo') gmUrl = isFront ? (mergedGMs.polo_front || mergedGMs.polo || mergedGMs.pFront) : (mergedGMs.polo_back || mergedGMs.pBack);
+                            else if (def.garment === 'sweat') gmUrl = isFront ? (mergedGMs.hoodie_front || mergedGMs.hoodie || mergedGMs.sweat_front || mergedGMs.sweat || mergedGMs.hFront) : (mergedGMs.hoodie_back || mergedGMs.sweat_back || mergedGMs.hBack);
+                            else if (def.garment === 'tank_top') {
+                                const isWhite = def.id === 'tankWhiteFront' || def.id === 'tankWhiteBack' || def.id.toLowerCase().includes('white');
+                                gmUrl = isWhite
+                                    ? (isFront ? (mergedGMs.tank_white_front || mergedGMs.tankWhiteFront || mergedGMs.tank_top_white_front || mergedGMs.tank_top_white) : (mergedGMs.tank_white_back || mergedGMs.tankWhiteBack || mergedGMs.tank_top_white_back))
+                                    : (isFront ? (mergedGMs.tank_front || mergedGMs.tank_top || mergedGMs.tankFront) : (mergedGMs.tank_back || mergedGMs.tankBack));
+                            } else if (def.garment === 'tshirt_oversize') {
+                                const isWhite = def.id === 'heavyWhiteFront' || def.id === 'heavyWhiteBack' || def.id.toLowerCase().includes('white');
+                                gmUrl = isWhite
+                                    ? (isFront ? (mergedGMs.heavy_white_front || mergedGMs.heavyWhiteFront || mergedGMs.tshirt_oversize_white_front || mergedGMs.tshirt_oversize_white) : (mergedGMs.heavy_white_back || mergedGMs.heavyWhiteBack || mergedGMs.tshirt_oversize_white_back))
+                                    : (isFront ? (mergedGMs.heavy_front || mergedGMs.tshirt_oversize || mergedGMs.heavyFront) : (mergedGMs.heavy_back || mergedGMs.heavyBack));
+                            } else if (def.garment === 'sport_tshirt') {
+                                gmUrl = isFront ? (mergedGMs.sport_tshirt_front || mergedGMs.E3520_front || mergedGMs.E3520) : (mergedGMs.sport_tshirt_back || mergedGMs.E3520_back);
+                            } else if (def.garment === 'business_card') gmUrl = isFront ? (mergedGMs.card_front || mergedGMs.business_card || mergedGMs.cardFront) : (mergedGMs.card_back || mergedGMs.cardBack);
+
+                            if (gmUrl) {
+                                rawItems.push({
+                                    ...def,
+                                    ai: gmUrl,
+                                    mechanical: gmUrl,
+                                    imageUrl: gmUrl,
+                                    frontImageUrl: isFront ? gmUrl : undefined,
+                                    backImageUrl: !isFront ? gmUrl : undefined,
+                                    imageFront: isFront ? gmUrl : undefined,
+                                    imageBack: !isFront ? gmUrl : undefined,
+                                    selected: true
+                                });
+                            }
+                        }
                     }
 
                     return await Promise.all(rawItems.map(async (m: any) => {
@@ -794,6 +916,7 @@ const ProductPortal: React.FC = () => {
                         let garment = m.garment || m.type;
                         if (!garment) {
                             if (m.id?.includes('basic')) garment = 'tshirt_basic';
+                            else if (m.id?.includes('E3520') || m.id?.includes('sport')) garment = 'sport_tshirt';
                             else if (m.id?.includes('tank')) garment = 'tank_top';
                             else if (m.id?.includes('heavy')) garment = 'tshirt_oversize';
                             else if (m.id?.includes('card')) garment = 'business_card';
@@ -809,27 +932,56 @@ const ProductPortal: React.FC = () => {
                             else view = 'front';
                         }
 
-                        const isTshirt = garment === 'tshirt' || garment === 'tshirt_basic' || m.id === 'tFront' || m.id?.includes('tshirt');
+                        const isSport = garment === 'sport_tshirt' || garment === 'e3520' || m.id?.includes('E3520') || m.id?.includes('sport');
+                        const isTshirt = (garment === 'tshirt' || garment === 'tshirt_basic' || m.id === 'tFront' || m.id?.includes('tshirt')) && !isSport;
                         const isPolo = garment === 'polo' || m.id === 'pFront' || m.id?.includes('polo');
                         const isHoodie = garment === 'sweat' || garment === 'hoodie' || m.id === 'hFront' || m.id?.includes('hoodie') || m.id?.includes('sweat');
                         const isTank = garment === 'tank_top' || m.id?.toLowerCase().includes('tank');
                         const isHeavy = garment === 'tshirt_oversize' || m.id?.toLowerCase().includes('heavy');
                         const isCard = garment === 'business_card' || m.id?.toLowerCase().includes('card');
 
+                        const isWhiteMockup = (
+                            (m as any).color === 'white' || (m as any).color === 'Blanc' || (m as any).color === '#ffffff' ||
+                            m.id?.toLowerCase().includes('white') || m.id?.toLowerCase().includes('blanc') ||
+                            m.id?.toLowerCase().includes('wht') || m.id?.startsWith('tWhite') || m.id?.startsWith('pWhite') ||
+                            m.id?.startsWith('hWhite') || m.id?.includes('White') ||
+                            ((m as any).sku && String((m as any).sku).toLowerCase().includes('wht'))
+                        );
+
                         let gmUrl: string | null = null;
-                        if (isTshirt) {
-                            gmUrl = view === 'front' ? (mergedGMs.tshirt_front || mergedGMs.tshirt || mergedGMs.tFront) : (mergedGMs.tshirt_back || mergedGMs.tBack);
+                        if (isSport) {
+                            gmUrl = view === 'front' ? (mergedGMs.E3520_front || mergedGMs.e3520Front || mergedGMs.tshirt_front) : (mergedGMs.E3520_back || mergedGMs.e3520Back || mergedGMs.tshirt_back);
+                        } else if (isTshirt) {
+                            if (isWhiteMockup) {
+                                gmUrl = view === 'front'
+                                    ? (mergedGMs.tshirt_white_front || mergedGMs.tWhiteFront || mergedGMs['JHK170-WHT_front'] || mergedGMs['JHK170-WHT'])
+                                    : (mergedGMs.tshirt_white_back || mergedGMs.tWhiteBack || mergedGMs['JHK170-WHT_back']);
+                            } else {
+                                gmUrl = view === 'front' ? (mergedGMs.tshirt_front || mergedGMs.tshirt || mergedGMs.tFront) : (mergedGMs.tshirt_back || mergedGMs.tBack);
+                            }
                         } else if (isPolo) {
-                            gmUrl = view === 'front' ? (mergedGMs.polo_front || mergedGMs.polo || mergedGMs.pFront) : (mergedGMs.polo_back || mergedGMs.pBack);
+                            if (isWhiteMockup) {
+                                gmUrl = view === 'front'
+                                    ? (mergedGMs.polo_white_front || mergedGMs.pWhiteFront || mergedGMs['JHK510-WHT_front'] || mergedGMs['JHK510-WHT'])
+                                    : (mergedGMs.polo_white_back || mergedGMs.pWhiteBack || mergedGMs['JHK510-WHT_back']);
+                            } else {
+                                gmUrl = view === 'front' ? (mergedGMs.polo_front || mergedGMs.polo || mergedGMs.pFront) : (mergedGMs.polo_back || mergedGMs.pBack);
+                            }
                         } else if (isHoodie) {
-                            gmUrl = view === 'front' ? (mergedGMs.hoodie_front || mergedGMs.hoodie || mergedGMs.sweat_front || mergedGMs.sweat || mergedGMs.hFront) : (mergedGMs.hoodie_back || mergedGMs.sweat_back || mergedGMs.hBack);
+                            if (isWhiteMockup) {
+                                gmUrl = view === 'front'
+                                    ? (mergedGMs.hoodie_white_front || mergedGMs.hWhiteFront || mergedGMs['JHK421-WHT_front'] || mergedGMs['JHK421-WHT'])
+                                    : (mergedGMs.hoodie_white_back || mergedGMs.hWhiteBack || mergedGMs['JHK421-WHT_back']);
+                            } else {
+                                gmUrl = view === 'front' ? (mergedGMs.hoodie_front || mergedGMs.hoodie || mergedGMs.sweat_front || mergedGMs.sweat || mergedGMs.hFront) : (mergedGMs.hoodie_back || mergedGMs.sweat_back || mergedGMs.hBack);
+                            }
                         } else if (isTank) {
-                            const isWhite = m.id?.toLowerCase().includes('white');
+                            const isWhite = isWhiteMockup || m.id?.toLowerCase().includes('white');
                             gmUrl = isWhite
                                 ? (view === 'front' ? mergedGMs.tank_white_front || mergedGMs.tankWhiteFront : mergedGMs.tank_white_back || mergedGMs.tankWhiteBack)
                                 : (view === 'front' ? mergedGMs.tank_front || mergedGMs.tank_top || mergedGMs.tankFront : mergedGMs.tank_back || mergedGMs.tankBack);
                         } else if (isHeavy) {
-                            const isWhite = m.id?.toLowerCase().includes('white');
+                            const isWhite = isWhiteMockup || m.id?.toLowerCase().includes('white');
                             gmUrl = isWhite
                                 ? (view === 'front' ? mergedGMs.heavy_white_front || mergedGMs.heavyWhiteFront : mergedGMs.heavy_white_back || mergedGMs.heavyWhiteBack)
                                 : (view === 'front' ? mergedGMs.heavy_front || mergedGMs.tshirt_oversize || mergedGMs.heavyFront : mergedGMs.heavy_back || mergedGMs.heavyBack);
@@ -838,6 +990,7 @@ const ProductPortal: React.FC = () => {
                         } else if (m.id && mergedGMs[m.id]) {
                             gmUrl = mergedGMs[m.id];
                         }
+
 
                         if (gmUrl && isRealImage(gmUrl, targetSid, companyName)) {
                             ai = gmUrl;
@@ -852,12 +1005,23 @@ const ProductPortal: React.FC = () => {
                                 if (!isRealImage(ai, targetSid, companyName)) ai = productsSource.polo.aiImageUrl || productsSource.polo.imageUrl;
                             } else if (isHoodie && (productsSource.hoodie?.aiImageUrl || productsSource.hoodie?.imageUrl)) {
                                 if (!isRealImage(ai, targetSid, companyName)) ai = productsSource.hoodie.aiImageUrl || productsSource.hoodie.imageUrl;
-                            } else if (isTank && (productsSource.tank_top?.aiImageUrl || productsSource.tank_top?.imageUrl || productsSource.tankFront?.imageUrl)) {
-                                if (!isRealImage(ai, targetSid, companyName)) ai = productsSource.tank_top?.aiImageUrl || productsSource.tank_top?.imageUrl || productsSource.tankFront?.imageUrl;
-                            } else if (isHeavy && (productsSource.tshirt_oversize?.aiImageUrl || productsSource.tshirt_oversize?.imageUrl || productsSource.heavyFront?.imageUrl)) {
-                                if (!isRealImage(ai, targetSid, companyName)) ai = productsSource.tshirt_oversize?.aiImageUrl || productsSource.tshirt_oversize?.imageUrl || productsSource.heavyFront?.imageUrl;
+                            } else if (isTank) {
+                                const isWhite = m.id?.toLowerCase().includes('white') || m.color?.toLowerCase() === 'blanc';
+                                if (isWhite && (productsSource.tank_top_white?.aiImageUrl || productsSource.tank_top_white?.imageUrl || productsSource.tankWhiteFront?.imageUrl)) {
+                                    if (!isRealImage(ai, targetSid, companyName)) ai = productsSource.tank_top_white?.aiImageUrl || productsSource.tank_top_white?.imageUrl || productsSource.tankWhiteFront?.imageUrl;
+                                } else if (!isWhite && (productsSource.tank_top?.aiImageUrl || productsSource.tank_top?.imageUrl || productsSource.tankFront?.imageUrl)) {
+                                    if (!isRealImage(ai, targetSid, companyName)) ai = productsSource.tank_top?.aiImageUrl || productsSource.tank_top?.imageUrl || productsSource.tankFront?.imageUrl;
+                                }
+                            } else if (isHeavy) {
+                                const isWhite = m.id?.toLowerCase().includes('white') || m.color?.toLowerCase() === 'blanc';
+                                if (isWhite && (productsSource.tshirt_oversize_white?.aiImageUrl || productsSource.tshirt_oversize_white?.imageUrl || productsSource.heavyWhiteFront?.imageUrl)) {
+                                    if (!isRealImage(ai, targetSid, companyName)) ai = productsSource.tshirt_oversize_white?.aiImageUrl || productsSource.tshirt_oversize_white?.imageUrl || productsSource.heavyWhiteFront?.imageUrl;
+                                } else if (!isWhite && (productsSource.tshirt_oversize?.aiImageUrl || productsSource.tshirt_oversize?.imageUrl || productsSource.heavyFront?.imageUrl)) {
+                                    if (!isRealImage(ai, targetSid, companyName)) ai = productsSource.tshirt_oversize?.aiImageUrl || productsSource.tshirt_oversize?.imageUrl || productsSource.heavyFront?.imageUrl;
+                                }
                             }
                         }
+
 
                         if (isRealImage(idbAi, targetSid, companyName)) {
                             ai = idbAi;
@@ -872,19 +1036,20 @@ const ProductPortal: React.FC = () => {
                             mechanical = idbMech;
                         }
 
-                        const primaryUrl = ai || mechanical || directImg;
+                        const realAi = isRealImage(ai, targetSid, companyName) ? ai : (isRealImage(directImg, targetSid, companyName) ? directImg : null);
+                        const isBack = view === 'back';
 
                         return { 
                             ...m,
                             garment,
                             view,
-                            imageUrl: primaryUrl || m.imageUrl,
-                            frontImageUrl: view === 'front' ? primaryUrl : (m.frontImageUrl || undefined),
-                            backImageUrl: view === 'back' ? primaryUrl : (m.backImageUrl || undefined),
-                            imageFront: view === 'front' ? primaryUrl : (m.imageFront || undefined),
-                            imageBack: view === 'back' ? primaryUrl : (m.imageBack || undefined),
-                            ai: isRealImage(ai, targetSid, companyName) ? ai : (isRealImage(directImg, targetSid, companyName) ? directImg : null),
-                            mechanical: isRealImage(mechanical, targetSid, companyName) ? mechanical : (isRealImage(directImg, targetSid, companyName) ? directImg : null)
+                            imageUrl: realAi || null,
+                            frontImageUrl: !isBack ? realAi : (m.frontImageUrl && isRealImage(m.frontImageUrl, targetSid, companyName) ? m.frontImageUrl : undefined),
+                            backImageUrl: isBack ? realAi : (m.backImageUrl && isRealImage(m.backImageUrl, targetSid, companyName) ? m.backImageUrl : undefined),
+                            imageFront: !isBack ? realAi : (m.imageFront && isRealImage(m.imageFront, targetSid, companyName) ? m.imageFront : undefined),
+                            imageBack: isBack ? realAi : (m.imageBack && isRealImage(m.imageBack, targetSid, companyName) ? m.imageBack : undefined),
+                            ai: realAi,
+                            mechanical: mechanical || null
                         };
                     }));
                 };
@@ -933,7 +1098,10 @@ const ProductPortal: React.FC = () => {
                             ...(localData.userData || {})
                         },
                         logoUrl: latestConfig?.logoUrl || localData?.logoUrl || "",
-                        mockups: (localData?.mockups && localData.mockups.length > 0) ? localData.mockups : (latestConfig?.mockups || [])
+                        mockups: (localData?.mockups && localData.mockups.length > 0) ? localData.mockups : (latestConfig?.mockups || []),
+                        products: latestConfig?.products || localData?.products || localData?.items || [],
+                        productsMap: latestConfig?.productsMap || localData?.productsMap || null,
+                        enabledProductIds: latestConfig?.enabledProductIds || localData?.enabledProductIds || []
                     };
 
                     if (!cancelled) {
@@ -1009,48 +1177,115 @@ const ProductPortal: React.FC = () => {
                             const prods = apiData.products;
                             
                             const apiMockups: any[] = [];
+                            const garmentMockupsFromApi: Record<string, any> = {};
+
                             prods.forEach((p: any) => {
                                 const gType = p.garment?.includes('polo') ? 'polo' 
                                     : (p.garment?.includes('hoodie') || p.garment?.includes('sweat') ? 'sweat' 
                                     : (p.garment?.includes('tank') ? 'tank_top'
-                                    : (p.garment?.includes('heavy') || p.garment?.includes('oversize') ? 'tshirt_oversize' : 'tshirt')));
-                                
-                                const frontId = gType === 'polo' ? 'pFront' 
-                                    : (gType === 'sweat' ? 'hFront' 
-                                    : (gType === 'tank_top' ? 'tankFront'
-                                    : (gType === 'tshirt_oversize' ? 'heavyFront' : 'tFront')));
+                                    : (p.garment?.includes('heavy') || p.garment?.includes('oversize') ? 'tshirt_oversize'
+                                    : (p.garment?.includes('sport') || p.garment?.includes('e3520') || p.id?.includes('E3520') ? 'sport_tshirt' : 'tshirt'))));
+
+                                const isWhite = String(p.color || '').toLowerCase() === 'blanc' || 
+                                    String(p.color || '').toLowerCase() === 'white' || 
+                                    String(p.id || '').toLowerCase().includes('white') || 
+                                    String(p.id || '').toLowerCase().includes('wht') || 
+                                    String(p.sku || '').toLowerCase().includes('wht') || 
+                                    String(p.name || '').toLowerCase().includes('blanc');
+
+                                const frontId = gType === 'polo' ? (isWhite ? 'pWhiteFront' : 'pFront') 
+                                    : (gType === 'sweat' ? (isWhite ? 'hWhiteFront' : 'hFront') 
+                                    : (gType === 'tank_top' ? (isWhite ? 'tankWhiteFront' : 'tankFront')
+                                    : (gType === 'tshirt_oversize' ? (isWhite ? 'heavyWhiteFront' : 'heavyFront')
+                                    : (gType === 'sport_tshirt' ? 'E3520_front' : (isWhite ? 'tWhiteFront' : 'tFront')))));
+
+                                const frontUrl = p.frontImageUrl || p.imageUrl;
 
                                 apiMockups.push({
                                     id: frontId,
+                                    sku: p.sku,
+                                    color: isWhite ? 'Blanc' : 'Noir',
                                     garment: gType,
                                     view: 'front',
-                                    imageUrl: p.frontImageUrl || p.imageUrl,
-                                    imageFront: p.frontImageUrl || p.imageUrl,
-                                    ai: p.frontImageUrl || p.imageUrl,
-                                    mechanical: p.frontImageUrl || p.imageUrl
+                                    imageUrl: frontUrl,
+                                    imageFront: frontUrl,
+                                    ai: frontUrl,
+                                    mechanical: frontUrl,
+                                    selected: true
                                 });
 
-                                const defaultBackGabarit = gType === 'polo' ? '/assets/polo-black-JHK510-dos.png' 
-                                    : (gType === 'sweat' ? '/assets/hoodie-black-JHK421-dos.png' 
-                                    : (gType === 'tank_top' ? '/merch/visionroom/tank-back.png'
-                                    : (gType === 'tshirt_oversize' ? '/merch/visionroom/oversize-back.png' : '/assets/tshirt-black-JHK170-dos.png')));
+                                if (frontUrl) {
+                                    garmentMockupsFromApi[frontId] = frontUrl;
+                                    if (isWhite) {
+                                        if (gType === 'tshirt') {
+                                            garmentMockupsFromApi.tshirt_white_front = frontUrl;
+                                            garmentMockupsFromApi.tshirt_white = frontUrl;
+                                        } else if (gType === 'polo') {
+                                            garmentMockupsFromApi.polo_white_front = frontUrl;
+                                            garmentMockupsFromApi.polo_white = frontUrl;
+                                        } else if (gType === 'sweat') {
+                                            garmentMockupsFromApi.hoodie_white_front = frontUrl;
+                                            garmentMockupsFromApi.hoodie_white = frontUrl;
+                                        }
+                                    } else {
+                                        if (gType === 'tshirt') {
+                                            garmentMockupsFromApi.tshirt_front = frontUrl;
+                                            garmentMockupsFromApi.tshirt = frontUrl;
+                                        } else if (gType === 'polo') {
+                                            garmentMockupsFromApi.polo_front = frontUrl;
+                                            garmentMockupsFromApi.polo = frontUrl;
+                                        } else if (gType === 'sweat') {
+                                            garmentMockupsFromApi.hoodie_front = frontUrl;
+                                            garmentMockupsFromApi.hoodie = frontUrl;
+                                        }
+                                    }
+                                }
+
+                                const defaultBackGabarit = gType === 'polo' ? (isWhite ? '/assets/polo-white-JHK510-dos.png' : '/assets/polo-black-JHK510-dos.png') 
+                                    : (gType === 'sweat' ? (isWhite ? '/assets/hoodie-white-JHK421-dos.png' : '/assets/hoodie-black-JHK421-dos.png') 
+                                    : (gType === 'tank_top' ? (isWhite ? '/merch/visionroom/tank-white-back.png' : '/merch/visionroom/tank-back.png')
+                                    : (gType === 'tshirt_oversize' ? (isWhite ? '/assets/tshirt-white-NX7200-dos.png' : '/merch/visionroom/oversize-back.png')
+                                    : (gType === 'sport_tshirt' ? '/assets/sport-blue-E3520-dos.png' : (isWhite ? '/assets/tshirt-white-JHK170-dos.png' : '/assets/tshirt-black-JHK170-dos.png')))));
                                 const backUrl = (p.backImageUrl && p.backImageUrl.trim() !== '') ? p.backImageUrl : defaultBackGabarit;
 
-                                const backId = gType === 'polo' ? 'pBack' 
-                                    : (gType === 'sweat' ? 'hBack' 
-                                    : (gType === 'tank_top' ? 'tankBack'
-                                    : (gType === 'tshirt_oversize' ? 'heavyBack' : 'tBack')));
+                                const backId = gType === 'polo' ? (isWhite ? 'pWhiteBack' : 'pBack') 
+                                    : (gType === 'sweat' ? (isWhite ? 'hWhiteBack' : 'hBack') 
+                                    : (gType === 'tank_top' ? (isWhite ? 'tankWhiteBack' : 'tankBack')
+                                    : (gType === 'tshirt_oversize' ? (isWhite ? 'heavyWhiteBack' : 'heavyBack')
+                                    : (gType === 'sport_tshirt' ? 'E3520_back' : (isWhite ? 'tWhiteBack' : 'tBack')))));
 
                                 apiMockups.push({
                                     id: backId,
+                                    sku: p.sku,
+                                    color: isWhite ? 'Blanc' : 'Noir',
                                     garment: gType,
                                     view: 'back',
                                     imageUrl: backUrl,
                                     imageBack: backUrl,
                                     ai: p.backImageUrl || '',
-                                    mechanical: backUrl
+                                    mechanical: backUrl,
+                                    selected: true
                                 });
+
+                                if (backUrl) {
+                                    garmentMockupsFromApi[backId] = backUrl;
+                                    if (isWhite) {
+                                        if (gType === 'tshirt') garmentMockupsFromApi.tshirt_white_back = backUrl;
+                                        else if (gType === 'polo') garmentMockupsFromApi.polo_white_back = backUrl;
+                                        else if (gType === 'sweat') garmentMockupsFromApi.hoodie_white_back = backUrl;
+                                    } else {
+                                        if (gType === 'tshirt') garmentMockupsFromApi.tshirt_back = backUrl;
+                                        else if (gType === 'polo') garmentMockupsFromApi.polo_back = backUrl;
+                                        else if (gType === 'sweat') garmentMockupsFromApi.hoodie_back = backUrl;
+                                    }
+                                }
                             });
+
+                            const resolvedEnabled = (apiData.enabledProductIds && apiData.enabledProductIds.length > 0)
+                                ? apiData.enabledProductIds
+                                : ((art.enabledProductIds && art.enabledProductIds.length > 0)
+                                    ? art.enabledProductIds
+                                    : Array.from(new Set(prods.flatMap((p: any) => [p.garment, p.id, p.type, p.sku].filter(Boolean)))));
 
                             cloudDoc = {
                                 userData: {
@@ -1060,6 +1295,10 @@ const ProductPortal: React.FC = () => {
                                 },
                                 mockups: apiMockups,
                                 items: apiMockups,
+                                products: prods,
+                                garmentMockups: garmentMockupsFromApi,
+                                dynamicMockups: garmentMockupsFromApi,
+                                enabledProductIds: resolvedEnabled,
                                 logoUrl: art.logoUrl || '',
                                 accentColor: art.accentColor || '#38bdf8'
                             };
@@ -1142,7 +1381,8 @@ const ProductPortal: React.FC = () => {
                                     hoodie_front: pData.hoodie_front || pData.hoodie || null,
                                     hoodie_back: pData.hoodie_back || null,
                                     logoUrl: pData.logoUrl || pData.logoAdaptedUrl || "",
-                                    accentColor: pData.accentColor || "#ea580c"
+                                    accentColor: pData.accentColor || "#ea580c",
+                                    enabledProductIds: pData.enabledProductIds || pData.productsSchema?.enabledProductIds || null
                                 };
                             }
                         } catch (prevErr: any) {
@@ -1179,7 +1419,8 @@ const ProductPortal: React.FC = () => {
                                     hoodie_front: sData.hoodie_front || sData.hoodie || null,
                                     hoodie_back: sData.hoodie_back || null,
                                     logoUrl: sData.logoUrl || sData.auditLogoUrl || "",
-                                    accentColor: sData.accentColor || "#ea580c"
+                                    accentColor: sData.accentColor || "#ea580c",
+                                    enabledProductIds: sData.enabledProductIds || sData.productsSchema?.enabledProductIds || null
                                 };
                             }
                         } catch (siteErr: any) {
@@ -1203,7 +1444,8 @@ const ProductPortal: React.FC = () => {
                             },
                             mockups: (firestoreDoc.mockups && firestoreDoc.mockups.length > 0) ? firestoreDoc.mockups : cloudDoc.mockups,
                             items: (firestoreDoc.items && firestoreDoc.items.length > 0) ? firestoreDoc.items : cloudDoc.items,
-                            products: firestoreDoc.products || cloudDoc.products || null
+                            products: firestoreDoc.products || cloudDoc.products || null,
+                            enabledProductIds: firestoreDoc.enabledProductIds || cloudDoc.enabledProductIds || null
                         };
                     } else {
                         cloudDoc = firestoreDoc;
@@ -1219,15 +1461,15 @@ const ProductPortal: React.FC = () => {
                 // =========================================================================
                 if (cloudDoc) {
                     const remoteCandidateArrays = [
-                        localData?.mockups,
-                        localData?.items,
                         cloudDoc?.mockups,
                         cloudDoc?.items,
+                        cloudDoc?.products ? (Array.isArray(cloudDoc.products) ? cloudDoc.products : Object.values(cloudDoc.products)) : null,
                         latestConfig?.mockups,
                         latestConfig?.items,
-                        localData?.products ? (Array.isArray(localData.products) ? localData.products : Object.values(localData.products)) : null,
                         latestConfig?.products ? (Array.isArray(latestConfig.products) ? latestConfig.products : Object.values(latestConfig.products)) : null,
-                        cloudDoc?.products ? (Array.isArray(cloudDoc.products) ? cloudDoc.products : Object.values(cloudDoc.products)) : null
+                        localData?.mockups,
+                        localData?.items,
+                        localData?.products ? (Array.isArray(localData.products) ? localData.products : Object.values(localData.products)) : null
                     ].filter((arr): arr is any[] => Array.isArray(arr) && arr.length > 0);
 
                     const remoteRestored = await restoreMockupsArray(
@@ -1261,7 +1503,10 @@ const ProductPortal: React.FC = () => {
                         logoUrl: latestConfig?.logoUrl || cloudDoc?.logoUrl || localData?.logoUrl || "",
                         mockups: (isMockupsLocked && localData?.mockups?.length > 0)
                             ? localData.mockups
-                            : (cloudDoc?.mockups || cloudDoc?.items || localData?.mockups || latestConfig?.mockups || latestConfig?.items || [])
+                            : (cloudDoc?.mockups || cloudDoc?.items || localData?.mockups || latestConfig?.mockups || latestConfig?.items || []),
+                        products: cloudDoc?.products || localData?.products || latestConfig?.products || cloudDoc?.items || localData?.items || [],
+                        productsMap: cloudDoc?.productsMap || localData?.productsMap || latestConfig?.productsMap || null,
+                        enabledProductIds: cloudDoc?.enabledProductIds || firestoreDoc?.enabledProductIds || latestConfig?.enabledProductIds || localData?.enabledProductIds || null
                     };
 
                     if (!cancelled) {
@@ -1270,10 +1515,12 @@ const ProductPortal: React.FC = () => {
                         }
                         setSessionData(mergedData);
 
-                        // FALLBACK RÉSILIENT : Ne réinitialise JAMAIS les maquettes existantes si le résultat distant n'en contient pas
+                        // FALLBACK RÉSILIENT : Si le résultat distant contient de vraies maquettes, les appliquer en priorité absolue
                         const hasRealRemoteMockups = remoteRestored.some(item => isRealImage(item.ai, sid, mergedData?.userData?.companyName) || isRealImage(item.mechanical, sid, mergedData?.userData?.companyName) || isRealImage(item.imageUrl, sid, mergedData?.userData?.companyName));
                         const hasLocalRealImages = localRestored.some(item => isRealImage(item.ai, sid, mergedData?.userData?.companyName) || isRealImage(item.mechanical, sid, mergedData?.userData?.companyName) || isRealImage(item.imageUrl, sid, mergedData?.userData?.companyName));
-                        if (!isMockupsLocked && (!hasLocalRealImages && (hasRealRemoteMockups || localRestored.length === 0))) {
+                        if (hasRealRemoteMockups) {
+                            setDynamicMockups(remoteRestored);
+                        } else if (!isMockupsLocked && localRestored.length === 0) {
                             setDynamicMockups(remoteRestored);
                         }
 
@@ -1480,36 +1727,24 @@ const ProductPortal: React.FC = () => {
     const getDefaultStudioImage = (garmentType: string, view: 'front' | 'back', found?: any) => {
         if (found) {
             const candidate = found.imageUrl || (view === 'front' ? (found.frontImageUrl || found.imageFront || found.ai || found.mechanical) : (found.backImageUrl || found.imageBack || found.mechanical || found.ai));
-            if (isRealImage(candidate)) return candidate;
+            if (isRealImage(candidate) && !candidate.includes('catalog_mockups')) return candidate;
         }
-        if (garmentType === 'polo') {
-            return view === 'front' ? '/assets/polo-black-JHK510.png' : '/assets/polo-black-JHK510-dos.png';
-        }
-        if (garmentType === 'sweat' || garmentType === 'hoodie') {
-            return view === 'front' ? '/assets/hoodie-black-JHK421.png' : '/assets/hoodie-black-JHK421-dos.png';
-        }
-        if (garmentType === 'tshirt_basic') {
-            return view === 'front' ? '/assets/tshirt-grey-JHK170.png' : '/assets/tshirt-grey-JHK170-dos.png';
-        }
-        if (garmentType === 'tank_top') {
-            return view === 'front' ? '/merch/visionroom/tank-front.png' : '/merch/visionroom/tank-back.png';
-        }
-        if (garmentType === 'tshirt_oversize') {
-            return view === 'front' ? '/merch/visionroom/oversize-front.png' : '/merch/visionroom/oversize-back.png';
-        }
-        if (garmentType === 'business_card') {
-            return '/assets/card-base.svg';
-        }
-        return view === 'front' ? '/assets/tshirt-black-JHK170.png' : '/assets/tshirt-black-JHK170-dos.png';
+        // STRICT RULE: Never fall back to 2D flat templates without mannequins in studio mode
+        return '';
     };
 
     const getDefaultBatImage = (garmentType: string, view: 'front' | 'back', defaultImg: string) => {
+        if (garmentType === 'tshirt_white') return view === 'front' ? '/assets/tshirt-white-JHK170.png' : '/assets/tshirt-white-JHK170-dos.png';
         if (garmentType === 'tshirt') return view === 'front' ? '/assets/tshirt-black-JHK170.png' : '/assets/tshirt-black-JHK170-dos.png';
         if (garmentType === 'tshirt_basic') return view === 'front' ? '/assets/tshirt-grey-JHK170.png' : '/assets/tshirt-grey-JHK170-dos.png';
+        if (garmentType === 'polo_white') return view === 'front' ? '/assets/polo-white-JHK510.png' : '/assets/polo-white-JHK510-dos.png';
         if (garmentType === 'polo') return view === 'front' ? '/assets/polo-black-JHK510.png' : '/assets/polo-black-JHK510-dos.png';
+        if (garmentType === 'sweat_white' || garmentType === 'hoodie_white') return view === 'front' ? '/assets/hoodie-white-JHK421.png' : '/assets/hoodie-white-JHK421-dos.png';
         if (garmentType === 'sweat' || garmentType === 'hoodie') return view === 'front' ? '/assets/hoodie-black-JHK421.png' : '/assets/hoodie-black-JHK421-dos.png';
         if (garmentType === 'tank_top') return view === 'front' ? '/merch/visionroom/tank-front.png' : '/merch/visionroom/tank-back.png';
+        if (garmentType === 'tank_top_white') return view === 'front' ? '/merch/visionroom/tank-white-front.png' : '/merch/visionroom/tank-white-back.png';
         if (garmentType === 'tshirt_oversize') return view === 'front' ? '/merch/visionroom/oversize-front.png' : '/merch/visionroom/oversize-back.png';
+        if (garmentType === 'tshirt_oversize_white') return view === 'front' ? '/assets/tshirt-white-NX7200.png' : '/assets/tshirt-white-NX7200-dos.png';
         if (garmentType === 'business_card') return '/assets/card-base.svg';
         return defaultImg || (view === 'front' ? '/assets/tshirt-black-JHK170.png' : '/assets/tshirt-black-JHK170-dos.png');
     };
@@ -1528,14 +1763,14 @@ const ProductPortal: React.FC = () => {
             return false;
         }
         
-        // Si l'asset local est une photo mannequin pré-rendue (ex: dfazz_tshirt_front.jpg), pas de superposition
-        if (u.includes('dfazz') || u.includes('preset') || u.includes('isolated')) {
+        // Si l'asset local est une photo mannequin pré-rendue, pas de superposition
+        if (u.includes('preset') || u.includes('isolated')) {
             return false;
         }
         
         // Gabarits textiles neutres vérifiés vierges locaux (dans /assets/)
         if (u.startsWith('/assets/') || u.startsWith('assets/')) {
-            if (u.includes('jhk') || u.includes('card-base') || u.includes('card_mockup') || u.includes('bctw') || u.includes('tshirt-') || u.includes('polo-') || u.includes('hoodie-')) {
+            if (u.includes('jhk') || u.includes('card-base') || u.includes('card_mockup') || u.includes('bctw') || u.includes('tshirt-') || u.includes('polo-') || u.includes('hoodie-') || u.includes('tank-') || u.includes('nx7200') || u.includes('bybb011') || u.includes('sport-blue')) {
                 return true;
             }
         }
@@ -1564,12 +1799,17 @@ const ProductPortal: React.FC = () => {
         if (!found) {
             let altId = '';
             if (garmentType === 'tshirt') altId = isFront ? 'tFront' : 'tBack';
+            else if (garmentType === 'tshirt_white') altId = isFront ? 'tWhiteFront' : 'tWhiteBack';
             else if (garmentType === 'tshirt_basic') altId = isFront ? 'tbFront' : 'tbBack';
             else if (garmentType === 'polo') altId = isFront ? 'pFront' : 'pBack';
+            else if (garmentType === 'polo_white') altId = isFront ? 'pWhiteFront' : 'pWhiteBack';
             else if (garmentType === 'sweat' || garmentType === 'hoodie') altId = isFront ? 'hFront' : 'hBack';
+            else if (garmentType === 'sweat_white' || garmentType === 'hoodie_white') altId = isFront ? 'hWhiteFront' : 'hWhiteBack';
+            else if (garmentType === 'sport_tshirt' || garmentType === 'e3520') altId = isFront ? 'E3520_front' : 'E3520_back';
             else if (garmentType === 'tank_top') altId = isFront ? 'tankFront' : 'tankBack';
             else if (garmentType === 'tank_top_white') altId = isFront ? 'tankWhiteFront' : 'tankWhiteBack';
             else if (garmentType === 'tshirt_oversize') altId = isFront ? 'heavyFront' : 'heavyBack';
+            else if (garmentType === 'tshirt_oversize_white') altId = isFront ? 'heavyWhiteFront' : 'heavyWhiteBack';
             else if (garmentType === 'business_card') altId = isFront ? 'cardFront' : 'cardBack';
             
             if (altId) {
@@ -1604,16 +1844,30 @@ const ProductPortal: React.FC = () => {
         let gmCandidate: string | null = null;
         if (garmentType === 'tshirt' || garmentType === 'tshirt_basic') {
             gmCandidate = isFront ? (gm.tshirt_front || gm.tshirt || gm.tFront) : (gm.tshirt_back || gm.tBack);
+        } else if (garmentType === 'tshirt_white') {
+            gmCandidate = isFront ? (gm.tshirt_white_front || gm.tshirt_white || gm.tWhiteFront) : (gm.tshirt_white_back || gm.tWhiteBack);
         } else if (garmentType === 'polo') {
             gmCandidate = isFront ? (gm.polo_front || gm.polo || gm.pFront) : (gm.polo_back || gm.pBack);
+        } else if (garmentType === 'polo_white') {
+            gmCandidate = isFront ? (gm.polo_white_front || gm.polo_white || gm.pWhiteFront) : (gm.polo_white_back || gm.pWhiteBack);
         } else if (garmentType === 'sweat' || garmentType === 'hoodie') {
             gmCandidate = isFront 
                 ? (gm.hoodie_front || gm.hoodie || gm.sweat_front || gm.sweat || gm.hFront)
                 : (gm.hoodie_back || gm.sweat_back || gm.hBack);
+        } else if (garmentType === 'sweat_white' || garmentType === 'hoodie_white') {
+            gmCandidate = isFront 
+                ? (gm.hoodie_white_front || gm.hoodie_white || gm.sweat_white_front || gm.hWhiteFront)
+                : (gm.hoodie_white_back || gm.sweat_white_back || gm.hWhiteBack);
+        } else if (garmentType === 'sport_tshirt' || garmentType === 'e3520') {
+            gmCandidate = isFront ? (gm.E3520_front || gm.sport_tshirt_front || gm.sport_tshirt) : (gm.E3520_back || gm.sport_tshirt_back);
         } else if (garmentType === 'tank_top') {
             gmCandidate = isFront ? (gm.tank_front || gm.tank_top || gm.tankFront) : (gm.tank_back || gm.tankBack);
+        } else if (garmentType === 'tank_top_white') {
+            gmCandidate = isFront ? (gm.tank_white_front || gm.tankWhiteFront) : (gm.tank_white_back || gm.tankWhiteBack);
         } else if (garmentType === 'tshirt_oversize') {
             gmCandidate = isFront ? (gm.heavy_front || gm.tshirt_oversize || gm.heavyFront) : (gm.heavy_back || gm.heavyBack);
+        } else if (garmentType === 'tshirt_oversize_white') {
+            gmCandidate = isFront ? (gm.heavy_white_front || gm.heavyWhiteFront) : (gm.heavy_white_back || gm.heavyWhiteBack || gm.tshirt_oversize_white_back);
         } else if (garmentType === 'business_card') {
             gmCandidate = isFront ? (gm.card_front || gm.business_card || gm.cardFront) : (gm.card_back || gm.cardBack);
         }
@@ -1626,15 +1880,27 @@ const ProductPortal: React.FC = () => {
         if (prods && typeof prods === 'object') {
             let pObj: any = null;
             if (garmentType === 'tshirt' || garmentType === 'tshirt_basic') {
-                pObj = prods.tshirt || prods.tFront;
+                pObj = prods.tshirt || prods.tFront || prods['JHK170-BLK'];
+            } else if (garmentType === 'tshirt_white') {
+                pObj = prods.tshirt_white || prods.tWhiteFront || prods['JHK170-WHT'];
             } else if (garmentType === 'polo') {
-                pObj = prods.polo || prods.pFront;
+                pObj = prods.polo || prods.pFront || prods['JHK510-BLK'];
+            } else if (garmentType === 'polo_white') {
+                pObj = prods.polo_white || prods.pWhiteFront || prods['JHK510-WHT'];
             } else if (garmentType === 'sweat' || garmentType === 'hoodie') {
-                pObj = prods.hoodie || prods.sweat || prods.hFront;
+                pObj = prods.hoodie || prods.sweat || prods.hFront || prods['JHK421-BLK'];
+            } else if (garmentType === 'sweat_white' || garmentType === 'hoodie_white') {
+                pObj = prods.hoodie_white || prods.sweat_white || prods.hWhiteFront || prods['JHK421-WHT'];
+            } else if (garmentType === 'sport_tshirt' || garmentType === 'e3520') {
+                pObj = prods.E3520 || prods.E3520_front || prods.sport_tshirt;
             } else if (garmentType === 'tank_top') {
-                pObj = prods.tank_top || prods.tankFront;
+                pObj = prods.tank_top || prods.tankFront || prods['BYBB011-BLK'];
+            } else if (garmentType === 'tank_top_white') {
+                pObj = prods.tank_top_white || prods.tankWhiteFront || prods['BYBB011-WHT'];
             } else if (garmentType === 'tshirt_oversize') {
-                pObj = prods.tshirt_oversize || prods.heavyweight_tee || prods.heavyFront;
+                pObj = prods.tshirt_oversize || prods.heavyweight_tee || prods.heavyFront || prods['NX7200-BLK'];
+            } else if (garmentType === 'tshirt_oversize_white') {
+                pObj = prods.heavyweight_tee_white || prods.heavyWhiteFront || prods['NX7200-WHT'];
             } else if (garmentType === 'business_card') {
                 pObj = prods.business_card || prods.cardFront;
             }
@@ -1652,14 +1918,26 @@ const ProductPortal: React.FC = () => {
         let rootCandidate: string | null = null;
         if (garmentType === 'tshirt' || garmentType === 'tshirt_basic') {
             rootCandidate = isFront ? (sessionData?.tshirt_front || sessionData?.tshirt) : sessionData?.tshirt_back;
+        } else if (garmentType === 'tshirt_white') {
+            rootCandidate = isFront ? (sessionData?.tshirt_white_front || sessionData?.tshirt_white || sessionData?.tWhiteFront) : (sessionData?.tshirt_white_back || sessionData?.tWhiteBack);
         } else if (garmentType === 'polo') {
             rootCandidate = isFront ? (sessionData?.polo_front || sessionData?.polo) : sessionData?.polo_back;
+        } else if (garmentType === 'polo_white') {
+            rootCandidate = isFront ? (sessionData?.polo_white_front || sessionData?.polo_white || sessionData?.pWhiteFront) : (sessionData?.polo_white_back || sessionData?.pWhiteBack);
         } else if (garmentType === 'sweat' || garmentType === 'hoodie') {
             rootCandidate = isFront ? (sessionData?.hoodie_front || sessionData?.hoodie || sessionData?.sweat_front) : (sessionData?.hoodie_back || sessionData?.sweat_back);
+        } else if (garmentType === 'sweat_white' || garmentType === 'hoodie_white') {
+            rootCandidate = isFront ? (sessionData?.hoodie_white_front || sessionData?.hoodie_white || sessionData?.hWhiteFront) : (sessionData?.hoodie_white_back || sessionData?.hWhiteBack);
+        } else if (garmentType === 'sport_tshirt' || garmentType === 'e3520') {
+            rootCandidate = isFront ? (sessionData?.E3520_front || sessionData?.sport_tshirt_front) : (sessionData?.E3520_back || sessionData?.sport_tshirt_back);
         } else if (garmentType === 'tank_top') {
             rootCandidate = isFront ? sessionData?.tank_front : sessionData?.tank_back;
+        } else if (garmentType === 'tank_top_white') {
+            rootCandidate = isFront ? (sessionData?.tank_white_front || sessionData?.tankWhiteFront) : (sessionData?.tank_white_back || sessionData?.tankWhiteBack);
         } else if (garmentType === 'tshirt_oversize') {
             rootCandidate = isFront ? sessionData?.heavy_front : sessionData?.heavy_back;
+        } else if (garmentType === 'tshirt_oversize_white') {
+            rootCandidate = isFront ? (sessionData?.heavy_white_front || sessionData?.heavyWhiteFront) : (sessionData?.heavy_white_back || sessionData?.heavyWhiteBack || sessionData?.tshirt_oversize_white_back);
         }
         if (rootCandidate && isRealImage(rootCandidate)) {
             return rootCandidate;
@@ -1670,14 +1948,26 @@ const ProductPortal: React.FC = () => {
             const sidKey = sessionId || '';
             const cleanKey = sidKey.replace(/^audit-/, '');
             let localCandidate: string | null = null;
-            if (garmentType === 'tshirt' || garmentType === 'tshirt_basic') {
+            if (garmentType === 'tshirt_white') {
+                localCandidate = isFront
+                    ? (localStorage.getItem(`btp_mockup_tshirt_white_front_${cleanKey}`) || localStorage.getItem(`btp_mockup_tshirt_white_front_${sidKey}`) || localStorage.getItem('btp_mockup_tshirt_white_front'))
+                    : (localStorage.getItem(`btp_mockup_tshirt_white_back_${cleanKey}`) || localStorage.getItem(`btp_mockup_tshirt_white_back_${sidKey}`) || localStorage.getItem('btp_mockup_tshirt_white_back'));
+            } else if (garmentType === 'tshirt' || garmentType === 'tshirt_basic') {
                 localCandidate = isFront
                     ? (localStorage.getItem(`btp_mockup_tshirt_front_${cleanKey}`) || localStorage.getItem(`btp_mockup_tshirt_front_${sidKey}`) || localStorage.getItem('btp_mockup_tshirt_front') || localStorage.getItem(`btp_mockup_tshirt_${cleanKey}`) || localStorage.getItem('btp_mockup_tshirt'))
                     : (localStorage.getItem(`btp_mockup_tshirt_back_${cleanKey}`) || localStorage.getItem(`btp_mockup_tshirt_back_${sidKey}`) || localStorage.getItem('btp_mockup_tshirt_back'));
+            } else if (garmentType === 'polo_white') {
+                localCandidate = isFront
+                    ? (localStorage.getItem(`btp_mockup_polo_white_front_${cleanKey}`) || localStorage.getItem(`btp_mockup_polo_white_front_${sidKey}`) || localStorage.getItem('btp_mockup_polo_white_front'))
+                    : (localStorage.getItem(`btp_mockup_polo_white_back_${cleanKey}`) || localStorage.getItem(`btp_mockup_polo_white_back_${sidKey}`) || localStorage.getItem('btp_mockup_polo_white_back'));
             } else if (garmentType === 'polo') {
                 localCandidate = isFront
                     ? (localStorage.getItem(`btp_mockup_polo_front_${cleanKey}`) || localStorage.getItem(`btp_mockup_polo_front_${sidKey}`) || localStorage.getItem('btp_mockup_polo_front') || localStorage.getItem(`btp_mockup_polo_${cleanKey}`) || localStorage.getItem('btp_mockup_polo'))
                     : (localStorage.getItem(`btp_mockup_polo_back_${cleanKey}`) || localStorage.getItem(`btp_mockup_polo_back_${sidKey}`) || localStorage.getItem('btp_mockup_polo_back'));
+            } else if (garmentType === 'sweat_white' || garmentType === 'hoodie_white') {
+                localCandidate = isFront
+                    ? (localStorage.getItem(`btp_mockup_hoodie_white_front_${cleanKey}`) || localStorage.getItem(`btp_mockup_hoodie_white_front_${sidKey}`) || localStorage.getItem('btp_mockup_hoodie_white_front'))
+                    : (localStorage.getItem(`btp_mockup_hoodie_white_back_${cleanKey}`) || localStorage.getItem(`btp_mockup_hoodie_white_back_${sidKey}`) || localStorage.getItem('btp_mockup_hoodie_white_back'));
             } else if (garmentType === 'sweat' || garmentType === 'hoodie') {
                 localCandidate = isFront
                     ? (localStorage.getItem(`btp_mockup_hoodie_front_${cleanKey}`) || localStorage.getItem(`btp_mockup_hoodie_front_${sidKey}`) || localStorage.getItem('btp_mockup_hoodie_front') || localStorage.getItem(`btp_mockup_hoodie_${cleanKey}`) || localStorage.getItem(`btp_mockup_hoodie_${sidKey}`) || localStorage.getItem('btp_mockup_hoodie'))
@@ -1688,7 +1978,18 @@ const ProductPortal: React.FC = () => {
             }
         }
 
-        // 6. PRIORITY 6: Fallback for specific predefined demo sessions (e.g. dfazz) ONLY if no generated image was found
+        // 6. PRIORITY 6: Fallback for specific predefined demo sessions (2000theparty, dfazz)
+        const is2000PartySession = (sessionId || '').toLowerCase().includes('2000theparty') || (sessionData?.userData?.companyName || sessionData?.companyName || '').toLowerCase().includes('2000');
+        if (is2000PartySession) {
+            if (garmentType === 'sweat' || garmentType === 'hoodie') {
+                return isFront ? PARTY_2000_MOCKUP_ASSETS.hFront : PARTY_2000_MOCKUP_ASSETS.hBack;
+            }
+            if (garmentType === 'polo') {
+                return isFront ? PARTY_2000_MOCKUP_ASSETS.pFront : PARTY_2000_MOCKUP_ASSETS.pBack;
+            }
+            return isFront ? PARTY_2000_MOCKUP_ASSETS.tFront : PARTY_2000_MOCKUP_ASSETS.tBack;
+        }
+
         const isDfazzSession = sessionId === 'guest_ms3ijgnco2xnid' || sessionId === 'fabrizio' || sessionId === 'djdfazz' || (sessionData?.userData?.companyName || '').toLowerCase().includes('d-fazz');
         if (isDfazzSession && (!sessionData?.logoUrl || sessionData?.logoUrl.includes('logo_dfazz'))) {
             if (garmentType === 'sweat' || garmentType === 'hoodie') {
@@ -1760,177 +2061,279 @@ const ProductPortal: React.FC = () => {
         }
         return pack.pricePublic || 0;
     };
-    const allPacks = isShop ? [
-        {
-            id: 'tshirt',
-            category: 'clothing',
-            type: selectedTshirtVariant === 'leger' ? 'tshirt_basic' : 'tshirt',
-            name: selectedTshirtVariant === 'leger' ? 'T-Shirt Léger (150g/m² Standard)' : 'T-Shirt Noir (190g/m² Premium)',
-            description: selectedTshirtVariant === 'leger' ? 'T-shirt JHK 150 - Coupe Confort' : 'T-shirt JHK 170 Premium - Noir, Maille Épaisse',
-            pricePublic: selectedTshirtVariant === 'leger' ? 25 : 30,
-            priceSub: selectedTshirtVariant === 'leger' ? 25 : 30,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage(selectedTshirtVariant === 'leger' ? 'tshirt_basic' : 'tshirt', view, mode, view === 'front' ? (selectedTshirtVariant === 'leger' ? '/assets/tshirt-grey-JHK170.png' : '/assets/tshirt-black-JHK170.png') : (selectedTshirtVariant === 'leger' ? '/assets/tshirt-grey-JHK170-dos.png' : '/assets/tshirt-black-JHK170-dos.png')),
-            icon: <Sun className="text-zinc-500" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        },
-        {
-            id: 'polo',
-            category: 'clothing',
-            type: 'polo',
-            name: 'Pack Polo Premium',
-            description: 'Polo JHK 510 Premium - Coupe Ajustée Professionnelle',
-            pricePublic: 35,
-            priceSub: 35,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('polo', view, mode, view === 'front' ? '/assets/polo-black-JHK510.png' : '/assets/polo-black-JHK510-dos.png'),
-            icon: <Shirt className="text-emerald-500" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        },
-        {
-            id: 'hoodie',
-            category: 'clothing',
-            type: 'sweat',
-            name: 'Pack Hoodie Protection (Renforcé Thermique)',
-            description: 'Hoodie Premium Renforcé - Doublure Thermique Active',
-            pricePublic: 45,
-            priceSub: 45,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('sweat', view, mode, view === 'front' ? '/assets/hoodie-black-JHK421.png' : '/assets/hoodie-black-JHK421-dos.png'),
-            icon: <Wind className="text-blue-400" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        },
-        ...(dynamicMockups.some(m => (m.garment === 'tank_top' && !m.id?.toLowerCase().includes('white')) || m.id === 'tankFront' || m.id === 'tankBack') ? [{
-            id: 'tank_top',
-            category: 'clothing',
-            type: 'tank_top',
-            name: 'Pack Débardeur Noir Pro',
-            description: 'Débardeur Coupe Athlétique Noir - Maille Respirante',
-            pricePublic: 28,
-            priceSub: 28,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tank_top', view, mode, view === 'front' ? '/merch/visionroom/tank-front.png' : '/merch/visionroom/tank-back.png', 'tankFront', 'tankBack'),
-            icon: <Shirt className="text-orange-500" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        }] : []),
-        ...(dynamicMockups.some(m => m.id?.toLowerCase().includes('tankwhite') || (m.garment === 'tank_top' && m.id?.toLowerCase().includes('white'))) ? [{
-            id: 'tank_top_white',
-            category: 'clothing',
-            type: 'tank_top',
-            name: 'Pack Débardeur Blanc Pro',
-            description: 'Débardeur Coupe Athlétique Blanc - Maille Respirante',
-            pricePublic: 28,
-            priceSub: 28,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tank_top_white', view, mode, view === 'front' ? '/merch/visionroom/tank-front.png' : '/merch/visionroom/tank-back.png', 'tankWhiteFront', 'tankWhiteBack'),
-            icon: <Shirt className="text-gray-300" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        }] : []),
-        ...(dynamicMockups.some(m => (m.garment === 'tshirt_oversize' && !m.id?.toLowerCase().includes('white')) || m.id === 'heavyFront' || m.id === 'heavyBack') ? [{
-            id: 'tshirt_oversize',
-            category: 'clothing',
-            type: 'tshirt_oversize',
-            name: 'Pack T-Shirt Heavyweight Oversize Noir',
-            description: 'T-Shirt Heavyweight 230g/m² Noir - Coupe Streetwear Boxy',
-            pricePublic: 35,
-            priceSub: 35,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tshirt_oversize', view, mode, view === 'front' ? '/merch/visionroom/oversize-front.png' : '/merch/visionroom/oversize-back.png', 'heavyFront', 'heavyBack'),
-            icon: <Sun className="text-amber-500" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        }] : []),
-        ...(dynamicMockups.some(m => m.id?.toLowerCase().includes('heavywhite') || (m.garment === 'tshirt_oversize' && m.id?.toLowerCase().includes('white'))) ? [{
-            id: 'tshirt_oversize_white',
-            category: 'clothing',
-            type: 'tshirt_oversize',
-            name: 'Pack T-Shirt Heavyweight Oversize Blanc',
-            description: 'T-Shirt Heavyweight 230g/m² Blanc - Coupe Streetwear Boxy',
-            pricePublic: 35,
-            priceSub: 35,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tshirt_oversize_white', view, mode, view === 'front' ? '/assets/tshirt-white-NX7200.png' : '/assets/tshirt-white-NX7200-dos.png', 'heavyWhiteFront', 'heavyWhiteBack'),
-            icon: <Sun className="text-gray-300" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        }] : []),
-        {
-            id: 'business_card',
-            category: 'communication',
-            type: 'business_card',
-            name: 'Carte de Visite Gloss',
-            description: 'Pelliculage Brillant Premium - 350g Couché Mat',
-            pricePublic: 0, // Dynamic
-            priceSub: 0,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('business_card', view, mode, '/assets/card-base.svg'),
-            icon: <Package className="text-orange-500" size={20} />,
-            quantities: ['250', '500', '1000', '2500']
+    const activeCleanSlug = (slug || sessionId || (typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('slug') || new URLSearchParams(window.location.search).get('audit')) : '') || '').replace(/^audit-/, '').toLowerCase().trim();
+
+    const rawEnabledProductIds: string[] = (
+        (sessionData as any)?.enabledProductIds ||
+        (sessionData as any)?.productsSchema?.enabledProductIds ||
+        (Array.isArray((sessionData as any)?.products) && (sessionData as any).products.length > 0
+            ? (sessionData as any).products.flatMap((p: any) => {
+                const base = [p.garment, p.id, p.type, p.sku].filter(Boolean);
+                const pColor = String(p.color || '').toLowerCase();
+                const isWhiteProd = pColor === 'blanc' || pColor === 'white' ||
+                    String(p.id || '').toLowerCase().includes('white') ||
+                    String(p.sku || '').toLowerCase().includes('wht');
+                if (isWhiteProd && p.garment) {
+                    const g = String(p.garment).toLowerCase().replace('_white', '');
+                    base.push(`${g}_white`);
+                    if (g === 'tshirt') base.push('tWhiteFront', 'tWhiteBack', 'JHK170-WHT');
+                    else if (g === 'polo') base.push('pWhiteFront', 'pWhiteBack', 'JHK510-WHT');
+                    else if (g === 'sweat' || g === 'hoodie') base.push('hWhiteFront', 'hWhiteBack', 'JHK421-WHT', 'hoodie_white');
+                    else if (g === 'tank_top') base.push('tankWhiteFront', 'tankWhiteBack', 'BYBB011-WHT', 'tank_top_white');
+                    else if (g === 'tshirt_oversize') base.push('heavyWhiteFront', 'heavyWhiteBack', 'NX7200-WHT', 'tshirt_oversize_white');
+                }
+                return base;
+            })
+            : null) ||
+        (typeof localStorage !== 'undefined' ? (() => {
+            try {
+                const stored = localStorage.getItem(`btp_enabled_products_${sessionId}`) || 
+                               localStorage.getItem(`enabled_products_${sessionId}`) ||
+                               (sessionId ? localStorage.getItem(`enabled_products_${sessionId.replace(/^audit-/, '')}`) : null) ||
+                               (activeCleanSlug ? localStorage.getItem(`enabled_products_${activeCleanSlug}`) : null) ||
+                               (activeCleanSlug ? localStorage.getItem(`btp_enabled_products_${activeCleanSlug}`) : null) ||
+                               (!sessionId && !activeCleanSlug ? localStorage.getItem('btp_enabled_product_ids') : null);
+                return stored ? JSON.parse(stored) : null;
+            } catch { return null; }
+        })() : null)
+    ) || [];
+
+    const sessionProductsList: any[] = Array.isArray((sessionData as any)?.products)
+        ? (sessionData as any).products
+        : ((sessionData as any)?.products && typeof (sessionData as any).products === 'object')
+            ? Object.values((sessionData as any).products).filter((p: any) => p && typeof p === 'object' && (p.id || p.sku || p.garment))
+            : [];
+
+    const isProductEligibleByEnabledIds = (p: any, enabledList: string[]): boolean => {
+        if (!enabledList || enabledList.length === 0) return true;
+        if (enabledList.includes('__none__')) return false;
+
+        const pColor = String(p.color || '').toLowerCase();
+        const pId = String(p.id || '').toLowerCase();
+        const pSku = String(p.sku || '').toLowerCase();
+        const pGarment = String(p.garment || '').toLowerCase();
+        const isWhite = pColor === 'blanc' || pColor === 'white' || pId.includes('white') || pSku.includes('wht') || pGarment.includes('white');
+
+        const candidates = [pId, pSku, pGarment].filter(Boolean);
+        const lowerList = enabledList.map(e => String(e).toLowerCase());
+
+        return candidates.some(c => {
+            return lowerList.some(e => {
+                const eIsWhite = e.includes('white') || e.includes('blanc') || e.includes('wht');
+                if (isWhite !== eIsWhite && !e.includes('__all__')) {
+                    return false;
+                }
+                if (e === c) return true;
+                if (c === 'jhk170-blk' && (e === 'jhk170-classic-tshirt' || e === 'tshirt' || e === 'tfront' || e === 'tback')) return true;
+                if (c === 'jhk170-wht' && (e === 'jhk170-classic-tshirt-white' || e === 'tshirt_white' || e === 'twhitefront' || e === 'twhiteback')) return true;
+                if (c === 'jhk510-blk' && (e === 'jhk510-polo-premium' || e === 'polo' || e === 'pfront' || e === 'pback')) return true;
+                if (c === 'jhk510-wht' && (e === 'jhk510-polo-premium-white' || e === 'polo_white' || e === 'pwhitefront' || e === 'pwhiteback')) return true;
+                if (c === 'jhk421-blk' && (e === 'jhk421-hoodie' || e === 'hoodie' || e === 'sweat' || e === 'hfront' || e === 'hback')) return true;
+                if (c === 'jhk421-wht' && (e === 'jhk421-hoodie-white' || e === 'hoodie_white' || e === 'sweat_white' || e === 'hwhitefront' || e === 'hwhiteback')) return true;
+                if (c === 'bybb011-blk' && (e === 'visionroom-basic-tank' || e === 'tank_top' || e === 'tankfront' || e === 'tankback')) return true;
+                if (c === 'bybb011-wht' && (e === 'visionroom-basic-tank-white' || e === 'tank_top_white' || e === 'tankwhitefront' || e === 'tankwhiteback')) return true;
+                if (c === 'nx7200-blk' && (e === 'visionroom-heavyweight-tee' || e === 'tshirt_oversize' || e === 'heavyfront' || e === 'heavyback')) return true;
+                if (c === 'nx7200-wht' && (e === 'visionroom-heavyweight-tee-white' || e === 'tshirt_oversize_white' || e === 'heavywhitefront' || e === 'heavywhiteback')) return true;
+                if (c.includes('e3520') && (e.includes('e3520') || e.includes('sport'))) return true;
+                if (c === 'tfront' || c === 'tback') return !isWhite && (e === 'tshirt' || e === 'tfront' || e === 'tback' || e === 'jhk170-blk');
+                if (c === 'twhitefront' || c === 'twhiteback') return isWhite && (e === 'tshirt_white' || e === 'twhitefront' || e === 'twhiteback' || e === 'jhk170-wht');
+                if (c === 'pfront' || c === 'pback') return !isWhite && (e === 'polo' || e === 'pfront' || e === 'pback' || e === 'jhk510-blk');
+                if (c === 'pwhitefront' || c === 'pwhiteback') return isWhite && (e === 'polo_white' || e === 'pwhitefront' || e === 'pwhiteback' || e === 'jhk510-wht');
+                if (c === 'hfront' || c === 'hback') return !isWhite && (e === 'hoodie' || e === 'sweat' || e === 'hfront' || e === 'hback' || e === 'jhk421-blk');
+                if (c === 'hwhitefront' || c === 'hwhiteback') return isWhite && (e === 'hoodie_white' || e === 'sweat_white' || e === 'hwhitefront' || e === 'hwhiteback' || e === 'jhk421-wht');
+                if (c === 'tankfront' || c === 'tankback') return !isWhite && (e === 'tank_top' || e === 'tankfront' || e === 'tankback' || e === 'bybb011-blk');
+                if (c === 'tankwhitefront' || c === 'tankwhiteback') return isWhite && (e === 'tank_top_white' || e === 'tankwhitefront' || e === 'tankwhiteback' || e === 'bybb011-wht');
+                if (c === 'heavyfront' || c === 'heavyback') return !isWhite && (e === 'tshirt_oversize' || e === 'heavyfront' || e === 'heavyback' || e === 'nx7200-blk');
+                if (c === 'heavywhitefront' || c === 'heavywhiteback') return isWhite && (e === 'tshirt_oversize_white' || e === 'heavywhitefront' || e === 'heavywhiteback' || e === 'nx7200-wht');
+                return e === c;
+            });
+        });
+    };
+
+    // =========================================================================
+    // MAPPING STRICT DES PRODUITS (0 GABARIT PLAT, 0 PRODUIT NON COCHÉ)
+    // 'allPacks' et 'activePacks' sont dérivés EXCLUSIVEMENT des produits de la session
+    // =========================================================================
+    const sourceProductsList: any[] = sessionProductsList.length > 0
+        ? sessionProductsList
+        : dynamicMockups.filter(m => {
+            if (!m || !m.selected) return false;
+            const candidate = m.frontImageUrl || m.imageFront || m.ai || m.aiRemastered || m.imageUrl;
+            return isRealImage(candidate, sessionId, sessionData?.userData?.companyName);
+        });
+
+    const seenPackIds = new Set<string>();
+    const allPacks: any[] = [];
+
+    for (let idx = 0; idx < sourceProductsList.length; idx++) {
+        const p = sourceProductsList[idx];
+        if (!p) continue;
+
+        // 1. Rejet strict des articles non sélectionnés
+        if (p.selected !== undefined && !p.selected && (p as any).isSelected !== true) {
+            continue;
         }
-    ] : [
-        {
-            id: 'tshirt',
-            category: 'clothing',
-            type: selectedTshirtVariant === 'leger' ? 'tshirt_basic' : 'tshirt',
-            name: selectedTshirtVariant === 'leger' ? 'T-Shirt Léger (150g/m² Standard)' : 'T-Shirt Noir (190g/m² Premium)',
-            description: selectedTshirtVariant === 'leger' ? 'T-shirt JHK 150 - Coupe Confort' : 'T-shirt JHK 170 Premium - Noir, Maille Épaisse',
-            pricePublic: selectedTshirtVariant === 'leger' ? 25 : 30,
-            priceSub: selectedTshirtVariant === 'leger' ? 25 : 30,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage(selectedTshirtVariant === 'leger' ? 'tshirt_basic' : 'tshirt', view, mode, view === 'front' ? (selectedTshirtVariant === 'leger' ? '/assets/tshirt-grey-JHK170.png' : '/assets/tshirt-black-JHK170.png') : (selectedTshirtVariant === 'leger' ? '/assets/tshirt-grey-JHK170-dos.png' : '/assets/tshirt-black-JHK170-dos.png')),
-            icon: <Sun className="text-zinc-500" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        },
-        {
-            id: 'polo',
-            category: 'clothing',
-            type: 'polo',
-            name: 'Pack Polo Premium',
-            description: 'Polo JHK 510 Premium - Coupe Ajustée Professionnelle',
-            pricePublic: 35,
-            priceSub: 35,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('polo', view, mode, view === 'front' ? '/assets/polo-black-JHK510.png' : '/assets/polo-black-JHK510-dos.png'),
-            icon: <Shirt className="text-emerald-500" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        },
-        {
-            id: 'hoodie',
-            category: 'clothing',
-            type: 'sweat',
-            name: 'Pack Hoodie Protection (Renforcé Thermique)',
-            description: 'Hoodie Premium Renforcé - Doublure Thermique Active',
-            pricePublic: 45,
-            priceSub: 45,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('sweat', view, mode, view === 'front' ? '/assets/hoodie-black-JHK421.png' : '/assets/hoodie-black-JHK421-dos.png'),
-            icon: <Wind className="text-blue-400" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        },
-        ...(dynamicMockups.some(m => m.garment === 'tank_top' || m.id?.toLowerCase().includes('tank')) ? [{
-            id: 'tank_top',
-            category: 'clothing',
-            type: 'tank_top',
-            name: 'Pack Débardeur Pro',
-            description: 'Débardeur Coupe Athlétique - Maille Respirante',
-            pricePublic: 28,
-            priceSub: 28,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tank_top', view, mode, view === 'front' ? '/merch/visionroom/tank-front.png' : '/merch/visionroom/tank-back.png'),
-            icon: <Shirt className="text-orange-500" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        }] : []),
-        ...(dynamicMockups.some(m => (m.garment === 'tshirt_oversize' && !m.id?.toLowerCase().includes('white')) || m.id === 'heavyFront' || m.id === 'heavyBack') ? [{
-            id: 'tshirt_oversize',
-            category: 'clothing',
-            type: 'tshirt_oversize',
-            name: 'Pack T-Shirt Heavyweight Oversize Noir',
-            description: 'T-Shirt Heavyweight 230g/m² Noir - Coupe Streetwear Boxy',
-            pricePublic: 35,
-            priceSub: 35,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tshirt_oversize', view, mode, view === 'front' ? '/merch/visionroom/oversize-front.png' : '/merch/visionroom/oversize-back.png'),
-            icon: <Sun className="text-amber-500" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        }] : []),
-        ...(dynamicMockups.some(m => m.id?.toLowerCase().includes('heavywhite') || (m.garment === 'tshirt_oversize' && m.id?.toLowerCase().includes('white'))) ? [{
-            id: 'tshirt_oversize_white',
-            category: 'clothing',
-            type: 'tshirt_oversize',
-            name: 'Pack T-Shirt Heavyweight Oversize Blanc',
-            description: 'T-Shirt Heavyweight 230g/m² Blanc - Coupe Streetwear Boxy',
-            pricePublic: 35,
-            priceSub: 35,
-            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => getDynamicImage('tshirt_oversize_white', view, mode, view === 'front' ? '/assets/tshirt-white-NX7200.png' : '/assets/tshirt-white-NX7200-dos.png'),
-            icon: <Sun className="text-gray-300" size={20} />,
-            quantities: ['S', 'M', 'L', 'XL', 'XXL']
-        }] : [])
-    ];
+
+        // 2. Filtrage strict sur enabledProductIds
+        if (rawEnabledProductIds && rawEnabledProductIds.length > 0) {
+            if (!isProductEligibleByEnabledIds(p, rawEnabledProductIds)) {
+                continue;
+            }
+        }
+
+        // 3. Validation formelle d'une image studio IA réelle
+        const frontCandidate = p.frontImageUrl || p.imageFront || p.imageUrl || p.ai || p.aiRemastered;
+        const backCandidate = p.backImageUrl || p.imageBack || p.aiRemasteredBack;
+        const validFront = frontCandidate && isRealImage(frontCandidate, sessionId, sessionData?.userData?.companyName);
+        const validBack = backCandidate && isRealImage(backCandidate, sessionId, sessionData?.userData?.companyName);
+
+        // Si aucun mannequin IA studio confirmé (ou pointe vers /assets/), exclusion immédiate (0 gabarit plat)
+        if (!validFront && !validBack) {
+            continue;
+        }
+
+        const pId = String(p.id || '').toLowerCase();
+        const pSku = String(p.sku || '').toLowerCase();
+        const pGarment = String(p.garment || '').toLowerCase();
+        const pColor = String(p.color || '').toLowerCase();
+        const isWhite = pColor === 'blanc' || pColor === 'white' || pId.includes('white') || pSku.includes('wht') || pGarment.includes('white');
+
+        let packId = '';
+        let packType = '';
+        let category: 'clothing' | 'communication' = 'clothing';
+        let isSport = false;
+        let name = p.name || p.title || '';
+        let description = p.description || '';
+        let pricePublic = typeof p.price === 'number' ? p.price : (typeof p.pricePublic === 'number' ? p.pricePublic : 30);
+        let icon = <Shirt className="text-orange-500" size={20} />;
+
+        if (pGarment === 'sport_tshirt' || pId.includes('e3520') || pSku.includes('e3520') || pGarment === 'e3520') {
+            packId = 'E3520';
+            packType = 'sport_tshirt';
+            isSport = true;
+            name = name || 'T-Shirt Sport Respirant (E3520)';
+            description = description || 'T-shirt Technique Sport Polyester Respirant Interlock 140g/m² - Bleu Roi';
+            pricePublic = pricePublic || 30;
+            icon = <Sun className="text-blue-500" size={20} />;
+        } else if ((pGarment === 'tshirt' || pSku.includes('jhk170') || pId.includes('tshirt') || pId.startsWith('twhite')) && isWhite) {
+            packId = 'tshirt_white';
+            packType = 'tshirt_white';
+            name = name || 'T-Shirt Blanc (190g/m² Premium)';
+            description = description || 'T-shirt JHK 170 Premium - Blanc Pur, Maille Épaisse';
+            pricePublic = pricePublic || 30;
+            icon = <Sun className="text-zinc-300" size={20} />;
+        } else if ((pGarment === 'tshirt' || pSku.includes('jhk170') || pId.includes('tshirt') || pId === 'tfront' || pId === 'tback') && !isWhite) {
+            packId = 'tshirt';
+            packType = selectedTshirtVariant === 'leger' ? 'tshirt_basic' : 'tshirt';
+            name = name || (selectedTshirtVariant === 'leger' ? 'T-Shirt Léger (150g/m² Standard)' : 'T-Shirt Noir (190g/m² Premium)');
+            description = description || (selectedTshirtVariant === 'leger' ? 'T-shirt JHK 150 - Coupe Confort' : 'T-shirt JHK 170 Premium - Noir, Maille Épaisse');
+            pricePublic = selectedTshirtVariant === 'leger' ? 25 : (pricePublic || 30);
+            icon = <Sun className="text-zinc-500" size={20} />;
+        } else if ((pGarment === 'polo' || pSku.includes('jhk510') || pId.includes('polo') || pId.startsWith('pwhite')) && isWhite) {
+            packId = 'polo_white';
+            packType = 'polo_white';
+            name = name || 'Polo Blanc Premium';
+            description = description || 'Polo JHK 510 Premium - Blanc Pur, Coupe Ajustée Professionnelle';
+            pricePublic = pricePublic || 35;
+            icon = <Shirt className="text-emerald-300" size={20} />;
+        } else if ((pGarment === 'polo' || pSku.includes('jhk510') || pId.includes('polo') || pId === 'pfront' || pId === 'pback') && !isWhite) {
+            packId = 'polo';
+            packType = 'polo';
+            name = name || 'Polo Noir Premium';
+            description = description || 'Polo JHK 510 Premium - Noir, Coupe Ajustée Professionnelle';
+            pricePublic = pricePublic || 35;
+            icon = <Shirt className="text-emerald-500" size={20} />;
+        } else if ((pGarment === 'sweat' || pGarment === 'hoodie' || pSku.includes('jhk421') || pId.includes('hoodie') || pId.startsWith('hwhite')) && isWhite) {
+            packId = 'hoodie_white';
+            packType = 'sweat_white';
+            name = name || 'Hoodie Blanc Protection (Renforcé Thermique)';
+            description = description || 'Hoodie Blanc Premium Renforcé - Doublure Thermique Active';
+            pricePublic = pricePublic || 45;
+            icon = <Wind className="text-blue-200" size={20} />;
+        } else if ((pGarment === 'sweat' || pGarment === 'hoodie' || pSku.includes('jhk421') || pId.includes('hoodie') || pId === 'hfront' || pId === 'hback') && !isWhite) {
+            packId = 'hoodie';
+            packType = 'sweat';
+            name = name || 'Hoodie Noir Protection (Renforcé Thermique)';
+            description = description || 'Hoodie Premium Renforcé - Doublure Thermique Active';
+            pricePublic = pricePublic || 45;
+            icon = <Wind className="text-blue-400" size={20} />;
+        } else if ((pGarment === 'tank_top' || pSku.includes('bybb011') || pId.includes('tank')) && isWhite) {
+            packId = 'tank_top_white';
+            packType = 'tank_top';
+            name = name || 'Débardeur Blanc Pro';
+            description = description || 'Débardeur Coupe Athlétique Blanc - Maille Respirante';
+            pricePublic = pricePublic || 28;
+            icon = <Shirt className="text-gray-300" size={20} />;
+        } else if ((pGarment === 'tank_top' || pSku.includes('bybb011') || pId.includes('tank')) && !isWhite) {
+            packId = 'tank_top';
+            packType = 'tank_top';
+            name = name || 'Débardeur Noir Pro';
+            description = description || 'Débardeur Coupe Athlétique Noir - Maille Respirante';
+            pricePublic = pricePublic || 28;
+            icon = <Shirt className="text-orange-500" size={20} />;
+        } else if ((pGarment === 'tshirt_oversize' || pSku.includes('nx7200') || pId.includes('heavy') || pId.includes('oversize')) && isWhite) {
+            packId = 'tshirt_oversize_white';
+            packType = 'tshirt_oversize';
+            name = name || 'T-Shirt Heavyweight Oversize Blanc';
+            description = description || 'T-Shirt Heavyweight 230g/m² Blanc - Coupe Streetwear Boxy';
+            pricePublic = pricePublic || 35;
+            icon = <Sun className="text-gray-300" size={20} />;
+        } else if ((pGarment === 'tshirt_oversize' || pSku.includes('nx7200') || pId.includes('heavy') || pId.includes('oversize')) && !isWhite) {
+            packId = 'tshirt_oversize';
+            packType = 'tshirt_oversize';
+            name = name || 'T-Shirt Heavyweight Oversize Noir';
+            description = description || 'T-Shirt Heavyweight 230g/m² Noir - Coupe Streetwear Boxy';
+            pricePublic = pricePublic || 35;
+            icon = <Sun className="text-amber-500" size={20} />;
+        } else if (pGarment === 'business_card' || pId.includes('card')) {
+            packId = 'business_card';
+            packType = 'business_card';
+            category = 'communication';
+            name = name || 'Carte de Visite Gloss';
+            description = description || 'Pelliculage Brillant Premium - 350g Couché Mat';
+            pricePublic = 0;
+            icon = <Package className="text-orange-500" size={20} />;
+        } else {
+            packId = p.id || `custom_prod_${idx}`;
+            packType = p.garment || 'custom';
+            name = name || 'Produit Personnalisé';
+            description = description || 'Gabarit personnalisé studio';
+            pricePublic = pricePublic || 30;
+            icon = <Package className="text-orange-500" size={20} />;
+        }
+
+        if (seenPackIds.has(packId)) {
+            continue;
+        }
+        seenPackIds.add(packId);
+
+        const currentFront = validFront ? frontCandidate : null;
+        const currentBack = validBack ? backCandidate : null;
+
+        allPacks.push({
+            id: packId,
+            category,
+            type: packType,
+            isSport,
+            name,
+            description,
+            pricePublic,
+            priceSub: pricePublic,
+            getImages: (view: 'front' | 'back', mode: 'studio' | 'bat') => {
+                if (mode === 'studio') {
+                    const isBack = view === 'back';
+                    if (isBack) {
+                        return currentBack || currentFront || '';
+                    }
+                    return currentFront || currentBack || '';
+                } else {
+                    return p.mechanical || p.mechanicalBack || getDefaultBatImage(packType, view, '');
+                }
+            },
+            icon,
+            quantities: packType === 'business_card' ? ['250', '500', '1000', '2500'] : (p.sizes || ['S', 'M', 'L', 'XL', 'XXL'])
+        });
+    }
 
     const activePacks = isShop ? allPacks.filter(p => p.category === activeCategoryTab) : allPacks;
 
@@ -2328,7 +2731,7 @@ const ProductPortal: React.FC = () => {
                 {/* INTRO */}
                 <div className="space-y-2">
                     <h2 className="text-5xl font-black italic tracking-tighter uppercase text-white leading-none">
-                        {isShop ? "Sélectionner" : "Commande Rapide"} <span className="text-orange-600">{isShop ? "Vos Produits" : "Par Packs"}</span>
+                        {isShop ? "Sélectionner" : "Commande Rapide"} <span className="text-orange-600">{isShop ? "Vos Produits" : "Vos Articles"}</span>
                     </h2>
                     <p className="text-sm font-bold text-zinc-500 uppercase flex items-center gap-2 tracking-wide">
                         <Info size={16} /> {isShop ? "Sélectionnez vos articles personnalisés et finalisez votre commande." : "Sélectionnez vos dotations et validez en un clic."}
@@ -2421,26 +2824,83 @@ const ProductPortal: React.FC = () => {
 
                 {/* PACKS GRID */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {activePacks.map((pack) => (
-                        <div key={pack.id} className={`${isLightMode ? 'bg-white border-gray-200 shadow-xl hover:shadow-[0_0_20px_rgba(234,88,12,0.15)] text-gray-900' : 'bg-zinc-900/40 backdrop-blur-md border-zinc-800/80 shadow-2xl hover:shadow-[0_0_30px_rgba(234,88,12,0.15)] text-zinc-100'} border-2 rounded-2xl overflow-hidden hover:border-orange-600/80 transition-all flex flex-col group text-left duration-300`}>
+                    {activePacks.length === 0 ? (
+                        <div className={`col-span-full p-12 text-center rounded-2xl border ${isLightMode ? 'bg-white border-gray-200 text-gray-500' : 'bg-zinc-900/40 border-zinc-800 text-zinc-400'}`}>
+                            <Shirt className="mx-auto mb-4 opacity-40 text-orange-500" size={48} />
+                            <h3 className="text-lg font-bold mb-2">Aucun article sélectionné</h3>
+                            <p className="text-sm">Les articles de votre vestiaire apparaîtront ici dès leur sélection et génération IA studio dans l'audit.</p>
+                        </div>
+                    ) : (
+                        activePacks.map((pack) => (
+                        <div key={pack.id} className={`${isLightMode ? 'bg-white border-gray-200 shadow-xl hover:shadow-[0_0_20px_rgba(234,88,12,0.15)] text-gray-900' : 'bg-zinc-900/40 backdrop-blur-md border-zinc-800/80 shadow-2xl hover:shadow-[0_0_30px_rgba(234,88,12,0.15)] text-zinc-100'} border-2 rounded-2xl overflow-hidden hover:border-orange-600/80 transition-all flex flex-col group text-left duration-300 touch-manipulation`} style={{ touchAction: 'pan-x pan-y' }}>
                             {/* Top Image */}
-                            <div className={`relative aspect-square overflow-hidden ${isLightMode ? 'bg-gray-50 border-gray-200' : 'bg-zinc-950 border-zinc-800/60'} border-b flex items-center justify-center`}>
+                            <div 
+                                onMouseEnter={() => setHoveredCardId(pack.id)}
+                                onMouseLeave={() => setHoveredCardId(null)}
+                                className={`relative aspect-square overflow-hidden cursor-pointer ${isLightMode ? 'bg-gray-50 border-gray-200' : 'bg-zinc-950 border-zinc-800/60'} border-b flex items-center justify-center touch-manipulation`} 
+                                style={{ touchAction: 'pan-x pan-y' }}
+                            >
                                 {(() => {
-                                    const view = (cardViews[pack.id] || 'front') as 'front' | 'back';
+                                    const isHovered = hoveredCardId === pack.id;
+                                    const baseView = (cardViews[pack.id] || 'front') as 'front' | 'back';
+                                    const view = isHovered ? (baseView === 'front' ? 'back' : 'front') : baseView;
                                     const mode = displayModes[pack.id] as 'studio' | 'bat';
-                                    const mockupId = pack.id === 'tshirt' ? (view === 'front' ? 'tFront' : 'tBack') 
+                                    const mockupId = pack.id === 'E3520' ? (view === 'front' ? 'E3520_front' : 'E3520_back')
+                                                   : pack.id === 'tshirt' ? (view === 'front' ? 'tFront' : 'tBack') 
+                                                   : pack.id === 'tshirt_white' ? (view === 'front' ? 'tWhiteFront' : 'tWhiteBack') 
                                                    : pack.id === 'polo' ? (view === 'front' ? 'pFront' : 'pBack') 
+                                                   : pack.id === 'polo_white' ? (view === 'front' ? 'pWhiteFront' : 'pWhiteBack') 
                                                    : pack.id === 'hoodie' ? (view === 'front' ? 'hFront' : 'hBack') 
+                                                   : pack.id === 'hoodie_white' ? (view === 'front' ? 'hWhiteFront' : 'hWhiteBack') 
                                                    : pack.id === 'tank_top' ? (view === 'front' ? 'tankFront' : 'tankBack')
                                                    : pack.id === 'tank_top_white' ? (view === 'front' ? 'tankWhiteFront' : 'tankWhiteBack')
                                                    : pack.id === 'tshirt_oversize' ? (view === 'front' ? 'heavyFront' : 'heavyBack')
                                                    : pack.id === 'tshirt_oversize_white' ? (view === 'front' ? 'heavyWhiteFront' : 'heavyWhiteBack')
                                                    : pack.id === 'business_card' ? (view === 'front' ? 'cardFront' : 'cardBack') : '';
-                                    const mockup = dynamicMockups.find(m => (m.garment === pack.type || (pack.type === 'tshirt_basic' && m.garment === 'tshirt')) && m.view === view)
-                                        || dynamicMockups.find(m => m.id === mockupId);
+                                    const mockup = (mockupId ? dynamicMockups.find(m => m.id === mockupId) : null)
+                                        || dynamicMockups.find(m => {
+                                            const mId = (m.id || '').toLowerCase();
+                                            const mSku = (m.sku || '').toLowerCase();
+                                            const mColor = (m.color || '').toLowerCase();
+                                            const isWhite = mColor === 'blanc' || mColor === 'white' || mId.includes('white') || mSku.includes('wht');
+
+                                            if (pack.id === 'E3520' || pack.isSport) {
+                                                return (m.id === mockupId || m.garment === 'sport_tshirt' || m.garment === 'e3520') && m.view === view;
+                                            }
+                                            if (pack.id === 'tshirt_white' || pack.type === 'tshirt_white') {
+                                                return (m.garment === 'tshirt' || m.garment === 'tshirt_basic' || m.garment === 'tshirt_white') && m.view === view && isWhite;
+                                            }
+                                            if (pack.id === 'tshirt' || pack.type === 'tshirt' || pack.type === 'tshirt_basic') {
+                                                return (m.garment === 'tshirt' || m.garment === 'tshirt_basic') && m.view === view && !isWhite && !mId.includes('e3520') && !mId.includes('sport');
+                                            }
+                                            if (pack.id === 'polo_white' || pack.type === 'polo_white') {
+                                                return (m.garment === 'polo' || m.garment === 'polo_white') && m.view === view && isWhite;
+                                            }
+                                            if (pack.id === 'polo' || pack.type === 'polo') {
+                                                return m.garment === 'polo' && m.view === view && !isWhite;
+                                            }
+                                            if (pack.id === 'hoodie_white' || pack.type === 'sweat_white' || pack.type === 'hoodie_white') {
+                                                return (m.garment === 'sweat' || m.garment === 'hoodie' || m.garment === 'sweat_white' || m.garment === 'hoodie_white') && m.view === view && isWhite;
+                                            }
+                                            if (pack.id === 'hoodie' || pack.type === 'sweat' || pack.type === 'hoodie') {
+                                                return (m.garment === 'sweat' || m.garment === 'hoodie') && m.view === view && !isWhite;
+                                            }
+                                            if (pack.id === 'tank_top_white') {
+                                                return (m.garment === 'tank_top' || m.garment === pack.id) && m.view === view && isWhite;
+                                            }
+                                            if (pack.id === 'tank_top') {
+                                                return m.garment === 'tank_top' && m.view === view && !isWhite;
+                                            }
+                                            if (pack.id === 'tshirt_oversize_white') {
+                                                return (m.garment === 'tshirt_oversize' || m.garment === pack.id) && m.view === view && isWhite;
+                                            }
+                                            if (pack.id === 'tshirt_oversize') {
+                                                return m.garment === 'tshirt_oversize' && m.view === view && !isWhite;
+                                            }
+                                            return (m.garment === pack.type || (pack.type === 'tshirt_basic' && m.garment === 'tshirt')) && m.view === view;
+                                        });
                                     const isGenerating = mockup ? mockup.isGenerating : false;
                                     const imgUrl = pack.getImages(view, mode);
-                                    
                                     const isTemplateAsset = isBlankTemplate(imgUrl);
                                     const placementType = pack.type as keyof typeof LOCAL_PLACEMENTS;
                                     const posGroup = mode === 'studio' 
@@ -2448,18 +2908,21 @@ const ProductPortal: React.FC = () => {
                                         : (LOCAL_PLACEMENTS[placementType] || LOCAL_PLACEMENTS.tshirt);
                                     const pos = posGroup ? (posGroup[view] || posGroup.front) : null;
 
-                                    const slot = (logoPlacements && logoPlacements[mockupId]) || (view === 'front' ? 'B' : 'A');
+                                    const slot = (logoPlacements && (logoPlacements[mockupId] || (mockupId.includes('White') && logoPlacements[mockupId.replace('White', '')]))) || (view === 'front' ? 'B' : 'A');
                                     const activeOverlayLogo = (slot === 'B' && logoB) ? logoB : (slot === 'A' && logoA ? logoA : (logoA || logoB || userLogo));
-                                    const showOverlay = isTemplateAsset && !!pos && !!activeOverlayLogo;
+                                    const showOverlay = isTemplateAsset && !!pos && !!activeOverlayLogo && !isShop;
                                     
                                     if (showOverlay && pos && activeOverlayLogo) {
                                         return (
-                                            <div className="relative w-full h-full flex items-center justify-center overflow-hidden p-4 md:p-6">
+                                            <div className="relative w-full h-full flex items-center justify-center overflow-hidden p-4 md:p-6 touch-manipulation" style={{ touchAction: 'pan-x pan-y' }}>
                                                 <img
-                                                    src={imgUrl}
+                                                    src={withCacheBust(imgUrl)}
                                                     alt={pack.name}
-                                                    className={`max-w-full max-h-full object-contain ${mode === 'bat' ? 'animate-reveal' : ''}`}
-                                                    style={pack.type === 'tshirt_basic' && mode === 'bat' && isTemplateAsset ? { filter: 'brightness(0.35) contrast(1.2)' } : undefined}
+                                                    className={`max-w-full max-h-full object-contain touch-manipulation ${mode === 'bat' ? 'animate-reveal' : ''}`}
+                                                    style={{
+                                                        touchAction: 'pan-x pan-y',
+                                                        ...(pack.type === 'tshirt_basic' && mode === 'bat' && isTemplateAsset ? { filter: 'brightness(0.35) contrast(1.2)' } : {})
+                                                    }}
                                                 />
                                                 <img
                                                     src={activeOverlayLogo}
@@ -2471,6 +2934,7 @@ const ProductPortal: React.FC = () => {
                                                         transform: 'translate(-50%, -50%)',
                                                         pointerEvents: 'none',
                                                         objectFit: 'contain',
+                                                        touchAction: 'pan-x pan-y',
                                                         filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.5))'
                                                     }}
                                                     alt="Logo overlay"
@@ -2486,11 +2950,12 @@ const ProductPortal: React.FC = () => {
                                     }
                                     
                                     return (
-                                        <div className="relative w-full h-full flex items-center justify-center overflow-hidden p-4 md:p-6">
+                                        <div className="relative w-full h-full flex items-center justify-center overflow-hidden p-4 md:p-6 touch-manipulation" style={{ touchAction: 'pan-x pan-y' }}>
                                             <img
-                                                src={imgUrl}
+                                                src={withCacheBust(imgUrl)}
                                                 alt={pack.name}
-                                                className={`max-w-full max-h-full object-contain transition-all duration-500 ${mode === 'bat' ? 'animate-reveal' : ''} ${isGenerating ? 'blur-[3px] opacity-60' : ''}`}
+                                                className={`max-w-full max-h-full object-contain transition-all duration-500 touch-manipulation ${mode === 'bat' ? 'animate-reveal' : ''} ${isGenerating ? 'blur-[3px] opacity-60' : ''}`}
+                                                style={{ touchAction: 'pan-x pan-y' }}
                                             />
                                             {isGenerating && (
                                                 <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] flex flex-col items-center justify-center gap-2 z-10">
@@ -2503,30 +2968,21 @@ const ProductPortal: React.FC = () => {
                                 })()}
                                 <div className={`absolute top-4 left-4 ${isLightMode ? 'bg-white/90 border-gray-200 text-gray-900' : 'bg-zinc-900/90 border-zinc-800 text-zinc-100'} backdrop-blur-md px-3 py-1.5 rounded-lg shadow-lg flex items-center gap-2 border z-10`}>
                                     {pack.icon}
-                                    <span className="text-[10px] font-black uppercase italic">{pack.name}</span>
+                                    <span className="text-[10px] font-black uppercase italic">{pack.name.replace(/^pack\s+/i, '')}</span>
                                 </div>
 
                                 <div className="absolute top-4 right-4 bg-orange-600 text-black px-2.5 py-1 rounded-md font-black text-[9px] uppercase tracking-widest shadow-md z-10">
-                                    {cardViews[pack.id] === 'back' ? 'VUE DOS' : 'VUE FACE'}
+                                    {((hoveredCardId === pack.id ? ((cardViews[pack.id] || 'front') === 'front' ? 'back' : 'front') : (cardViews[pack.id] || 'front')) === 'back') ? 'VUE DOS' : 'VUE FACE'}
                                 </div>
 
-                                <div className="absolute bottom-4 left-4 right-4 flex justify-between gap-2 z-10">
+                                <div className="absolute bottom-4 left-4 right-4 flex justify-between items-center gap-2 z-10">
                                     {/* VIEW TOGGLE */}
                                     <button
                                         onClick={() => toggleView(pack.id)}
                                         className={`${isLightMode ? 'bg-white/95 text-gray-900 border-gray-300' : 'bg-zinc-950/95 text-white border-zinc-800'} px-4 py-2 rounded-full font-black text-[9px] uppercase italic tracking-widest flex items-center gap-2 hover:bg-orange-600 hover:text-black transition-all backdrop-blur-sm border hover:border-orange-500`}
                                     >
-                                        <RefreshCw size={12} className={cardViews[pack.id] === 'back' ? 'rotate-180 transition-transform animate-reveal' : 'transition-transform'} />
-                                        {cardViews[pack.id] === 'front' ? 'Voir Dos' : 'Voir Face'}
-                                    </button>
-
-                                    {/* MODE TOGGLE (BAT) */}
-                                    <button
-                                        onClick={() => toggleMode(pack.id)}
-                                        className={`px-4 py-2 rounded-full font-black text-[9px] uppercase italic tracking-widest flex items-center gap-2 transition-all backdrop-blur-sm border ${displayModes[pack.id] === 'bat' ? 'bg-orange-600 text-black border-orange-500 shadow-[0_0_15px_rgba(234,88,12,0.45)]' : (isLightMode ? 'bg-white/95 text-gray-700 hover:bg-gray-100 border-gray-300 hover:border-orange-500' : 'bg-zinc-950/95 text-zinc-300 hover:bg-zinc-900 hover:text-white border-zinc-800 hover:border-orange-500')}`}
-                                    >
-                                        <Shield size={12} />
-                                        {displayModes[pack.id] === 'studio' ? 'Voir BAT' : 'Mode Studio'}
+                                        <RefreshCw size={12} className={(cardViews[pack.id] || 'front') === 'back' ? 'rotate-180 transition-transform animate-reveal' : 'transition-transform'} />
+                                        {(cardViews[pack.id] || 'front') === 'front' ? 'Voir Dos' : 'Voir Face'}
                                     </button>
                                 </div>
                             </div>
@@ -2537,7 +2993,7 @@ const ProductPortal: React.FC = () => {
                                     <h3 className={`text-2xl font-black italic tracking-tight uppercase leading-none group-hover:text-orange-500 transition-colors duration-300 ${isLightMode ? 'text-gray-900' : 'text-white'}`}>{pack.name}</h3>
                                     <p className="text-xs font-bold text-zinc-400 uppercase italic tracking-tight">{pack.description}</p>
                                     
-                                    {pack.id === 'tshirt' && (
+                                    {pack.id === 'tshirt' && !pack.isSport && (
                                         <div className="space-y-2 pt-1">
                                             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest text-left block">Grammage & Modèle T-shirt</span>
                                             <div className={`grid grid-cols-2 p-1 rounded-xl border ${isLightMode ? 'bg-gray-100 border-gray-200' : 'bg-zinc-950 border-zinc-800'}`}>
@@ -2660,7 +3116,7 @@ const ProductPortal: React.FC = () => {
                                 </div>
                             </div>
                         </div>
-                    ))}
+                    )))}
                 </div>
 
                 {/* FINAL ACTION AREA */}
@@ -2745,8 +3201,8 @@ const ProductPortal: React.FC = () => {
                             <div className="bg-orange-600/10 border-l-4 border-orange-500 p-4 rounded-r-xl flex gap-3 text-orange-400">
                                 <Info className="text-orange-500 shrink-0" size={20} />
                                 <p className="text-[11px] md:text-xs text-orange-400 font-bold leading-relaxed">
-                                    IMPORTANT : Suite à votre achat, vous recevrez un **BAT final (Bon à Tirer)** par email sous 24h.
-                                    La production ne sera lancée qu'après votre validation technique par retour d'email.
+                                    IMPORTANT : Suite à votre achat, vous recevrez une confirmation détaillée de votre commande par email sous 24h.
+                                    La production sera lancée après validation de votre commande.
                                 </p>
                             </div>
 
@@ -2763,7 +3219,7 @@ const ProductPortal: React.FC = () => {
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div className="space-y-1.5 text-left">
-                                        <label className="text-[10px] font-black uppercase text-zinc-500 ml-1">Email de réception BAT</label>
+                                        <label className="text-[10px] font-black uppercase text-zinc-500 ml-1">Email de confirmation</label>
                                         <input
                                             type="email"
                                             value={contactInfo.email}

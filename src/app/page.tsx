@@ -1331,13 +1331,17 @@ export default function Home() {
 
   useEffect(() => {
     const loadData = async () => {
-      let uid = urlParams.get('uid');
+      let uid = urlParams.get('uid') || urlParams.get('slug') || urlParams.get('id') || urlParams.get('audit');
       if (uid === 'audit-8f198p5' || uid === 'guest_ms3ijgnco2xnid' || uid === 'fabrizio' || uid === 'djdfazz') {
         window.location.replace('/guest_ms3ijgnco2xnid');
         return;
       }
       if (uid) {
-        window.location.replace(`/${uid}`);
+        if (uid.startsWith('audit-')) {
+          window.location.replace(`/profil?slug=${uid}&showcase=true`);
+        } else {
+          window.location.replace(`/${uid}`);
+        }
         return;
       }
       const data = await getStoredConfig(uid || undefined);

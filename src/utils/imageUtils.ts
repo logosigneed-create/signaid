@@ -144,3 +144,52 @@ export const compressDataUrl = (
 export const getOptimizedImageUrl = (url: string, _width: number): string => {
   return url;
 };
+
+/**
+ * Normalise systématiquement un logo (Base64 ou URL) dans un canvas carré 1:1 avec fond transparent.
+ * Préserve le ratio d'aspect natif sans distorsion et centre le logo avec marges équilibrées.
+ */
+export const padBase64ToSquare = async (base64OrUrl: string): Promise<string> => {
+  if (!base64OrUrl || typeof window === 'undefined' || typeof document === 'undefined') {
+    return base64OrUrl;
+  }
+  let src = base64OrUrl;
+  if (src.startsWith('http://') || src.startsWith('https://')) {
+    try {
+      const resp = await fetch(src);
+      const blob = await resp.blob();
+      src = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.warn('[imageUtils] Failed to fetch remote image for padding:', e);
+      return base64OrUrl;
+    }
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      if (!w || !h) {
+        return resolve(src);
+      }
+      const maxDim = Math.max(w, h);
+      const canvas = document.createElement('canvas');
+      canvas.width = maxDim;
+      canvas.height = maxDim;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return resolve(src);
+      ctx.clearRect(0, 0, maxDim, maxDim);
+      const ox = Math.round((maxDim - w) / 2);
+      const oy = Math.round((maxDim - h) / 2);
+      ctx.drawImage(img, ox, oy, w, h);
+      resolve(canvas.toDataURL('image/png', 1.0));
+    };
+    img.onerror = () => resolve(src);
+    img.src = src;
+  });
+};

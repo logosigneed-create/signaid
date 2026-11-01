@@ -903,3 +903,110 @@ export async function intelligentUpscale(imageSrc: string): Promise<string> {
         return imageSrc;
     }
 }
+
+/**
+ * Safely sanitizes HTML content to allow safe presentation tags (<b>, <i>, <p>, <br>, <a>, etc.)
+ * while stripping dangerous executable tags, inline scripts, and event handlers.
+ */
+export function sanitizeHtml(html: string | undefined | null): string {
+    if (!html || typeof html !== 'string') return '';
+    const trimmed = html.trim();
+    if (!trimmed) return '';
+
+    // Fast path: if no HTML tags detected, return raw text
+    if (!/<[a-z][\s\S]*>/i.test(trimmed)) {
+        return trimmed;
+    }
+
+    // DOMParser-based sanitization in browser environments
+    if (typeof window !== 'undefined' && typeof window.DOMParser !== 'undefined') {
+        try {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(trimmed, 'text/html');
+
+            const allowedTags = new Set([
+                'B', 'STRONG', 'I', 'EM', 'U', 'S', 'P', 'BR', 'SPAN', 'A',
+                'UL', 'OL', 'LI', 'DIV', 'SMALL', 'SUB', 'SUP', 'BLOCKQUOTE'
+            ]);
+
+            const sanitizeNode = (node: Node) => {
+                const children = Array.from(node.childNodes);
+                for (const child of children) {
+                    if (child.nodeType === Node.ELEMENT_NODE) {
+                        const el = child as HTMLElement;
+                        const tag = el.tagName.toUpperCase();
+
+                        if (!allowedTags.has(tag)) {
+                            if (['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'FRAME', 'FORM', 'INPUT', 'BUTTON'].includes(tag)) {
+                                el.remove();
+                                continue;
+                            } else {
+                                // Unwrap element contents
+                                const fragment = document.createDocumentFragment();
+                                while (el.firstChild) {
+                                    fragment.appendChild(el.firstChild);
+                                }
+                                el.parentNode?.replaceChild(fragment, el);
+                                sanitizeNode(fragment);
+                                continue;
+                            }
+                        }
+
+                        // Strip unapproved attributes
+                        const attrs = Array.from(el.attributes);
+                        for (const attr of attrs) {
+                            const attrName = attr.name.toLowerCase();
+                            if (attrName.startsWith('on')) {
+                                el.removeAttribute(attr.name);
+                            } else if (tag === 'A' && attrName === 'href') {
+                                const val = attr.value.trim().toLowerCase();
+                                if (val.startsWith('javascript:') || val.startsWith('data:') || val.startsWith('vbscript:')) {
+                                    el.removeAttribute(attr.name);
+                                }
+                            } else if (attrName === 'style') {
+                                if (/expression|javascript|url\(/i.test(attr.value)) {
+                                    el.removeAttribute(attr.name);
+                                }
+                            } else if (tag === 'A' && (attrName === 'target' || attrName === 'rel')) {
+                                // Allowed
+                            } else if (attrName === 'class') {
+                                // Allowed
+                            } else {
+                                el.removeAttribute(attr.name);
+                            }
+                        }
+
+                        if (tag === 'A') {
+                            el.setAttribute('target', '_blank');
+                            el.setAttribute('rel', 'noopener noreferrer');
+                        }
+
+                        sanitizeNode(el);
+                    }
+                }
+            };
+
+            sanitizeNode(doc.body);
+            return doc.body.innerHTML;
+        } catch (e) {
+            // Fall through to regex
+        }
+    }
+
+    // Regex fallback
+    return trimmed
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+        .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+        .replace(/\son\w+\s*=\s*('[^']*'|"[^"]*"|[^\s>]+)/gi, '')
+        .replace(/href\s*=\s*(['"])\s*(javascript|data|vbscript):.*?\1/gi, 'href="#"');
+}
+
+/**
+ * Strips all HTML tags to produce pure text.
+ */
+export function stripHtmlTags(text: string | undefined | null): string {
+    if (!text || typeof text !== 'string') return '';
+    return text.replace(/<[^>]*>?/gm, '').replace(/\s+/g, ' ').trim();
+}
+

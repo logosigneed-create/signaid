@@ -28,7 +28,7 @@ const verifyAdminAccess = async (req) => {
     if (adminSecretToken && typeof adminSecretToken.value === 'function') {
       secret = adminSecretToken.value() || '';
     }
-  } catch (e) {}
+  } catch (e) { }
   if (!secret && process.env.ADMIN_SECRET_TOKEN) {
     secret = process.env.ADMIN_SECRET_TOKEN;
   }
@@ -80,7 +80,7 @@ const verifyOnCallAuth = (request) => {
     if (adminSecretToken && typeof adminSecretToken.value === 'function') {
       secret = adminSecretToken.value() || '';
     }
-  } catch (e) {}
+  } catch (e) { }
   if (!secret && process.env.ADMIN_SECRET_TOKEN) {
     secret = process.env.ADMIN_SECRET_TOKEN;
   }
@@ -496,7 +496,7 @@ async function persistProspectProfileBackend(adminInstance, profileData = {}) {
         existingData = altSnap.data() || {};
       }
     }
-  } catch (e) {}
+  } catch (e) { }
 
   const companyName = profileData.companyName || existingData.companyName || profileData.userData?.companyName || prospectSlug.toUpperCase();
 
@@ -522,7 +522,7 @@ async function persistProspectProfileBackend(adminInstance, profileData = {}) {
   const isAiUrl = (u) => {
     if (!u || typeof u !== 'string') return false;
     if (u.startsWith('data:image')) return true;
-    if (u.includes('ai_') || u.includes('_snapshot_') || u.includes('/ai/') || u.includes('btp_mockups') || u.includes('clubvision') || u.includes('dfazz') || u.includes('aaronh')) return true;
+    if (u.includes('ai_') || u.includes('_snapshot_') || u.includes('/ai/') || u.includes('btp_mockups')) return true;
     if (!u.includes('JHK') && !u.includes('template') && !u.includes('gabarit') && (u.startsWith('http://') || u.startsWith('https://'))) return true;
     return false;
   };
@@ -602,8 +602,8 @@ async function persistProspectProfileBackend(adminInstance, profileData = {}) {
     db.collection('prospects').doc(prospectSlug).set(payload, { merge: true }),
     db.collection('audits').doc(prospectSlug).set(payload, { merge: true }),
     db.collection('vault').doc(prospectSlug).set(payload, { merge: true }),
-    db.collection('SiteConfigs').doc(prospectSlug).set(payload, { merge: true }).catch(() => {}),
-    db.collection('anonymous_previews').doc(prospectSlug).set(payload, { merge: true }).catch(() => {})
+    db.collection('SiteConfigs').doc(prospectSlug).set(payload, { merge: true }).catch(() => { }),
+    db.collection('anonymous_previews').doc(prospectSlug).set(payload, { merge: true }).catch(() => { })
   ]);
 
   // Contrôle de sortie
@@ -617,23 +617,288 @@ async function persistProspectProfileBackend(adminInstance, profileData = {}) {
   };
 }
 
-// --- IMAGEN 3 (Moteur Photoréaliste) & GEMINI 2.0 (Fallback) ---
-exports.generateTryOnImageV2 = onCall({ cors: true, invoker: 'public', timeoutSeconds: 120, memory: '1GiB', secrets: [geminiApiKey] }, async (request) => {
-  if (!verifyOnCallAuth(request)) {
-    throw new HttpsError('unauthenticated', 'Authentification requise pour générer des images IA.');
+// --- UTILITAIRE DE RÉSOLUTION D'IMAGE EN BASE64 ---
+const resolveImageToBase64 = async (input) => {
+  if (!input || typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.length === 0) return null;
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const fetch = require('node-fetch');
+      const res = await fetch(trimmed);
+      if (!res.ok) {
+        console.warn(`[Image Fetch] Failed to download URL: ${trimmed} (${res.status})`);
+        return null;
+      }
+      const arrayBuf = await res.arrayBuffer();
+      const b64 = Buffer.from(arrayBuf).toString('base64');
+      return (b64 && b64.length > 0) ? b64 : null;
+    } catch (err) {
+      console.warn(`[Image Fetch Error] URL ${trimmed}:`, err.message);
+      return null;
+    }
   }
 
-  const data = request.data || {};
-  let apiKey = process.env.GEMINI_API_KEY || '';
-  try {
-    if (geminiApiKey && typeof geminiApiKey.value === 'function' && geminiApiKey.value()) {
-      apiKey = geminiApiKey.value() || apiKey;
-    }
-  } catch (e) {}
-  if (!apiKey) throw new HttpsError('failed-precondition', 'API Key Gemini non configurée dans l\'environnement.');
+  let clean = trimmed;
+  if (clean.includes(',')) {
+    clean = clean.split(',')[1];
+  }
+  clean = clean.replace(/\s/g, '');
+  return (clean && clean.length > 0) ? clean : null;
+};
 
-  const maskedKey = apiKey ? `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}` : 'NON_TROUVÉE';
-  console.log(`[AI Key Diagnostic] generateTryOnImageV2 active key: ${maskedKey}`);
+/**
+ * Pipeline Spécifique IA : REFONTE / RESTAURATION DE LOGO POUR TEXTILE (DTF)
+ * - Traite UNIQUEMENT le logo isolé (Flat 2D Vector).
+ * - INTERDIT FORMELLEMENT l'affichage de mannequins, corps, vêtements, t-shirts, hoodies ou mockups.
+ * - Restaure les couleurs authentiques ou le blanc pur avec détourage net sans fond (DTF textile).
+ */
+const processLogoRemasterAi = async (data, apiKey, maskedKey) => {
+  const fetch = require('node-fetch');
+  const sharp = require('sharp');
+
+  const rawLogo = data.logoBase64 || data.userPhotoBase64 || data.garmentPreviewBase64 || data.uploadedGarmentBase64 || data.designCompositeBase64;
+  const cleanLogo = await resolveImageToBase64(rawLogo);
+
+  if (!cleanLogo) {
+    console.warn('[Logo Remaster AI] Aucune source de logo fournie.');
+    return {
+      imageBase64: null,
+      fallback: true,
+      notice: "Aucune source de logo fournie pour la refonte."
+    };
+  }
+
+  const targetColor = String(data.targetColor || data.logoColor || 'color').toLowerCase();
+  const isWhite = targetColor === 'white';
+  const isBlack = targetColor === 'black';
+
+  let systemPromptText = "";
+  if (isWhite) {
+    systemPromptText = `STRICT TEXTILE GRAPHIC LOGO REMASTER (SOLID PURE WHITE):
+You are an expert prepress vectorizer for textile apparel printing (DTF / silkscreen).
+Your sole task is to convert the provided input logo graphic into a solid pure white (#FFFFFF) flat vector graphic on a solid pure black (#000000) background.
+
+ABSOLUTELY FORBIDDEN:
+- NEVER GENERATE ANY CLOTHING, T-SHIRT, HOODIE, SWEATSHIRT, POLO, JACKET, FABRIC, OR TEXTILE APPAREL.
+- NEVER GENERATE ANY MANNEQUIN, HUMAN BODY, PERSON, MODEL, HANGER, OR PRODUCT MOCKUP.
+- OUTPUT EXCLUSIVELY THE STANDALONE 2D LOGO GRAPHIC ITSELF.
+
+SPECIFICATIONS:
+1. Every typographic letter, character, outline, emblem, and graphic element must be filled solidly in pure white (#FFFFFF).
+2. Faithfully retain 100% exact typography, font geometry, letter contours, word shapes, and graphic details.
+3. Background must be solid pure flat black (#000000) with zero noise, zero gradients, zero shadows.
+4. Output must be razor-sharp 300 DPI vector print quality ready for textile DTF transfer.`;
+  } else if (isBlack) {
+    systemPromptText = `STRICT TEXTILE GRAPHIC LOGO REMASTER (SOLID PURE BLACK):
+You are an expert prepress vectorizer for textile apparel printing (DTF / silkscreen).
+Your sole task is to convert the provided input logo graphic into a solid pure black (#000000) flat vector graphic on a solid pure white (#FFFFFF) background.
+
+ABSOLUTELY FORBIDDEN:
+- NEVER GENERATE ANY CLOTHING, T-SHIRT, HOODIE, SWEATSHIRT, POLO, JACKET, FABRIC, OR TEXTILE APPAREL.
+- NEVER GENERATE ANY MANNEQUIN, HUMAN BODY, PERSON, MODEL, HANGER, OR PRODUCT MOCKUP.
+- OUTPUT EXCLUSIVELY THE STANDALONE 2D LOGO GRAPHIC ITSELF.
+
+SPECIFICATIONS:
+1. Every typographic letter, character, outline, emblem, and graphic element must be filled solidly in pure black (#000000).
+2. Faithfully retain 100% exact typography, font geometry, letter contours, word shapes, and graphic details.
+3. Background must be solid pure flat white (#FFFFFF) with zero noise, zero gradients, zero shadows.
+4. Output must be razor-sharp 300 DPI vector print quality ready for textile DTF transfer.`;
+  } else {
+    systemPromptText = `STRICT TEXTILE GRAPHIC LOGO REMASTER & VECTOR RESTORATION (AUTHENTIC ORIGINAL COLORS):
+You are an expert prepress vector designer and textile DTF printing specialist.
+Your sole task is to isolate, upscale, and remaster the graphic logo provided in the reference image into a clean, flat 2D vector graphic adapted for textile printing.
+
+ABSOLUTELY FORBIDDEN:
+- NEVER GENERATE ANY CLOTHING, T-SHIRT, HOODIE, SWEATSHIRT, POLO, JACKET, FABRIC, OR TEXTILE APPAREL.
+- NEVER GENERATE ANY MANNEQUIN, HUMAN BODY, PERSON, MODEL, HANGER, OR PRODUCT MOCKUP.
+- DO NOT DISPLAY THE LOGO ON ANY GARMENT, TEXTILE SURFACE, OR 3D OBJECT.
+- OUTPUT EXCLUSIVELY THE STANDALONE 2D LOGO GRAPHIC ITSELF.
+
+SPECIFICATIONS FOR TEXTILE PRODUCTION:
+1. STANDALONE FLAT 2D LOGO: Output ONLY the graphic logo centered on a solid pure flat uniform background (#FFFFFF or #000000) with extreme contrast, zero shadows, zero gradients on the background, and zero noise.
+2. 100% BRAND & TYPOGRAPHY FIDELITY:
+   - Faithfully preserve all brand typography, wordmark letters, font contours, slogans, numbers, and graphic emblem shapes exactly as in the original reference.
+   - Retain all authentic original brand colors, gradients, and hues with high vibrancy and crisp solid fills.
+3. TEXTILE ADAPTATION:
+   - Eliminate all compression artifacts, pixelation, blur, and dirty outlines.
+   - Produce razor-sharp, crisp vector contours ("net et vectoriel") perfectly adapted for prepress DTF printing and transparent background cutout.`;
+  }
+
+  if (data.prompt && data.prompt.trim() && !data.prompt.includes("Showcase the branded garment") && !data.prompt.includes("mannequin")) {
+    systemPromptText += `\nAdditional specific instructions: ${data.prompt.trim()}`;
+  }
+
+  const mime = cleanLogo.startsWith('/9j/') ? 'image/jpeg' : (cleanLogo.startsWith('UklG') ? 'image/webp' : 'image/png');
+  const promptParts = [
+    { text: systemPromptText },
+    { inlineData: { mimeType: mime, data: cleanLogo } }
+  ];
+
+  const GEMINI_MODELS = [
+    'gemini-2.5-flash-image',
+    'gemini-3.1-flash-image',
+    'gemini-3.1-flash-image-preview',
+    'gemini-3-pro-image',
+    'nano-banana-pro-preview'
+  ];
+
+  let rawAiBuffer = null;
+
+  for (const rawModel of GEMINI_MODELS) {
+    const cleanModel = String(rawModel || 'gemini-2.5-flash-image').replace(/^models\//, '').trim();
+    try {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${apiKey}`;
+      console.log(`[Logo Remaster AI] Calling model: ${cleanModel} (Key: ${maskedKey || 'HIDDEN'})`);
+
+      const bodyIA = {
+        contents: [{
+          parts: promptParts
+        }]
+      };
+
+      const responseIA = await fetch(geminiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyIA),
+        signal: AbortSignal.timeout(25000)
+      });
+
+      const resJSON = await responseIA.json();
+      if (responseIA.ok && resJSON.candidates && resJSON.candidates[0]?.content?.parts) {
+        const part = resJSON.candidates[0].content.parts.find(p => p.inlineData);
+        if (part && part.inlineData?.data) {
+          console.log(`[Logo Remaster AI] Succès génération logo IA avec ${cleanModel}`);
+          rawAiBuffer = Buffer.from(part.inlineData.data, 'base64');
+          break;
+        }
+      } else {
+        console.warn(`[Logo Remaster AI] Erreur modèle ${cleanModel}:`, resJSON.error?.message || responseIA.status);
+      }
+    } catch (err) {
+      console.warn(`[Logo Remaster AI] Exception modèle ${cleanModel}:`, err.message);
+    }
+  }
+
+  // Si l'IA n'a pas pu générer une image nouvelle, repli gracieux sur le logo d'origine pour traitement prépresse textile direct
+  const bufferToProcess = rawAiBuffer || Buffer.from(cleanLogo, 'base64');
+
+  try {
+    // Pipeline Prépresse Sharp : Nettoyage d'arrière-plan, anti-aliasing & transparence DTF 300 DPI
+    const initialPipeline = sharp(bufferToProcess, { failOnError: false }).ensureAlpha();
+    const { data: rawData, info } = await initialPipeline.raw().toBuffer({ resolveWithObject: true });
+    const rawBytes = Buffer.from(rawData);
+    const w = info.width;
+    const h = info.height;
+
+    // Analyse des 4 coins
+    let cornerWhiteCount = 0;
+    let cornerDarkCount = 0;
+    const corners = [0, (w - 1) * 4, (h - 1) * w * 4, ((h - 1) * w + (w - 1)) * 4];
+    corners.forEach(idx => {
+      const r = rawBytes[idx], g = rawBytes[idx + 1], b = rawBytes[idx + 2], a = rawBytes[idx + 3];
+      if (a < 40) return;
+      if (r > 190 && g > 190 && b > 190) cornerWhiteCount++;
+      if (r < 50 && g < 50 && b < 50) cornerDarkCount++;
+    });
+
+    const isWhiteBg = cornerWhiteCount >= 2;
+    const isDarkBg = cornerDarkCount >= 2 && !isWhiteBg;
+
+    if (isWhiteBg || isDarkBg) {
+      for (let i = 0; i < rawBytes.length; i += 4) {
+        const r = rawBytes[i], g = rawBytes[i + 1], b = rawBytes[i + 2];
+        const a = rawBytes[i + 3];
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const maxDiff = Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b));
+
+        let isBg = false;
+        let edgeAlpha = 255;
+
+        if (isWhiteBg) {
+          if (lum > 225 && maxDiff < 30) {
+            isBg = true;
+          } else if (lum > 195 && maxDiff < 40) {
+            edgeAlpha = Math.round(((225 - lum) / 30) * 255);
+          }
+        } else if (isDarkBg) {
+          if (lum < 35 && r < 45 && g < 45 && b < 45) {
+            isBg = true;
+          } else if (lum < 60 && r < 70 && g < 70 && b < 70) {
+            edgeAlpha = Math.round(((lum - 35) / 25) * 255);
+          }
+        }
+
+        if (isBg || a < 30) {
+          rawBytes[i] = 0;
+          rawBytes[i + 1] = 0;
+          rawBytes[i + 2] = 0;
+          rawBytes[i + 3] = 0;
+        } else {
+          rawBytes[i + 3] = Math.min(a, edgeAlpha);
+          if (isWhite) {
+            rawBytes[i] = 255;
+            rawBytes[i + 1] = 255;
+            rawBytes[i + 2] = 255;
+          } else if (isBlack) {
+            rawBytes[i] = 0;
+            rawBytes[i + 1] = 0;
+            rawBytes[i + 2] = 0;
+          }
+        }
+      }
+    }
+
+    const transparentPngBuffer = await sharp(rawBytes, {
+      raw: { width: w, height: h, channels: 4 }
+    }).trim().png().toBuffer();
+
+    console.log(`[Logo Remaster AI] Logo remastérisé finalisé (${w}x${h} -> ${transparentPngBuffer.length} octets).`);
+
+    let publicUrl = null;
+    const prospectSlug = (data.prospectSlug || data.slug || '').toLowerCase().trim();
+    if (prospectSlug) {
+      try {
+        const bucket = admin.storage().bucket('signaid-prod-assets');
+        const storagePath = `print_masters/${prospectSlug}/logo_remaster_${targetColor}_${Date.now()}.png`;
+        const file = bucket.file(storagePath);
+        await file.save(transparentPngBuffer, {
+          metadata: { contentType: 'image/png', cacheControl: 'public, max-age=86400' },
+          resumable: false
+        });
+        await file.makePublic().catch(() => { });
+        publicUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
+      } catch (saveErr) {
+        console.warn('[Logo Remaster AI] Sauvegarde storage non-bloquante:', saveErr.message);
+      }
+    }
+
+    return {
+      imageBase64: `data:image/png;base64,${transparentPngBuffer.toString('base64')}`,
+      imageUrl: publicUrl,
+      isRemasteredLogo: true,
+      targetColor
+    };
+  } catch (prepErr) {
+    console.warn('[Logo Remaster AI] Repli direct sans post-traitement Sharp:', prepErr.message);
+    const fallbackBase64 = bufferToProcess.toString('base64');
+    return {
+      imageBase64: `data:image/png;base64,${fallbackBase64}`,
+      isRemasteredLogo: true,
+      targetColor
+    };
+  }
+};
+
+// --- IMAGEN 3 (Moteur Photoréaliste) & GEMINI 2.0 (Fallback) ---
+const processGenerateTryOn = async (data, authUser, apiKey, maskedKey) => {
+
+  // ROUTAGE PRIORITAIRE : REFONTE / DÉTOURAGE DE LOGO TEXTILE (PAS DE MANNEQUIN / VÊTEMENT)
+  const isLogoRemaster = data.styleCategory === 'LogoRemaster' || data.isLogoRemaster === true || data.action === 'remasterLogo' || data.targetSlot === 'remaster';
+  if (isLogoRemaster) {
+    return await processLogoRemasterAi(data, apiKey, maskedKey);
+  }
 
   const fetch = require('node-fetch');
   const { prompt, aspectRatio, pose, companyName, garment, garmentType } = data;
@@ -660,17 +925,29 @@ exports.generateTryOnImageV2 = onCall({ cors: true, invoker: 'public', timeoutSe
       const escAct = String(data.activity || data.activitySector).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       sanitizedPrompt = sanitizedPrompt.replace(new RegExp(`\\b${escAct}\\b`, 'gi'), '');
     }
-    sanitizedPrompt = sanitizedPrompt.replace(/\s{2,}/g, ' ').trim();
+    // Action 1: Supprimer toute consigne négative ambiguë ("no text", "clean background without text")
+    sanitizedPrompt = sanitizedPrompt
+      .replace(/clean background without text/gi, 'clean neutral studio background')
+      .replace(/without text/gi, '')
+      .replace(/CRITICAL GRAPHIC INSTRUCTION:\s*DO NOT ADD ANY TEXT[^\n.]*\.?/gi, '')
+      .replace(/NO TEXT ALLOWED ANYWHERE ON THE GARMENT OR BACKGROUND\.?/gi, '')
+      .replace(/STRICT NEGATIVE CONSTRAINT:[^\n.]*\.?/gi, '')
+      .replace(/ZERO TEXT,?/gi, '')
+      .replace(/NO TEXT,?/gi, '')
+      .replace(/do not add (any )?text,?/gi, '')
+      .replace(/remove typography,?/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
   }
 
   // 1. MOTEUR PRINCIPAL : GOOGLE IMAGEN 3 (Haute Définition & Rendu Textile 8K) - Uniquement si aucun vêtement/logo n'est fourni
   if (!hasGarmentOrLogo) try {
     const imagenUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
     const targetAspect = aspectRatio === '9:16' ? '9:16' : (aspectRatio === '4:3' ? '4:3' : (aspectRatio === '3:4' ? '3:4' : '1:1'));
-    
+
     let enhancedPrompt = sanitizedPrompt || "High-end commercial photo of a professional fashion model wearing premium workwear.";
     enhancedPrompt += " Ultra-photorealistic, 8k resolution, cinematic studio lighting, sharp fabric textures, natural folds, professional photography.";
-    enhancedPrompt += " NO TEXT, NO LETTERS, NO TYPOGRAPHY, NO WORDS, NO SLOGANS, NO BRAND NAME WRITING. Strictly clean solid fabric.";
+    enhancedPrompt += " Solid fabric with natural cloth weave texture.";
 
     // Le paramètre companyName ne doit être injecté QUE si le produit est explicitement une carte de visite (garment === 'business_card')
     if (isBusinessCard && companyName && !enhancedPrompt.includes(companyName)) {
@@ -708,7 +985,7 @@ exports.generateTryOnImageV2 = onCall({ cors: true, invoker: 'public', timeoutSe
             metadata: { contentType: 'image/png', cacheControl: 'public, max-age=86400' },
             resumable: false
           });
-          await file.makePublic().catch(() => {});
+          await file.makePublic().catch(() => { });
           publicUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
 
           await persistProspectProfileBackend(admin, {
@@ -767,30 +1044,43 @@ exports.generateTryOnImageV2 = onCall({ cors: true, invoker: 'public', timeoutSe
       return (clean && clean.length > 0) ? clean : null;
     };
 
-    const [cleanUserPhoto, cleanGarmentPreview, cleanDesignComposite, cleanUploadedGarment] = await Promise.all([
+    let [cleanUserPhoto, cleanGarmentPreview, cleanDesignComposite, cleanUploadedGarment] = await Promise.all([
       resolveImageToBase64(userPhotoBase64),
       resolveImageToBase64(garmentPreviewBase64),
       resolveImageToBase64(designCompositeBase64),
       resolveImageToBase64(uploadedGarmentBase64)
     ]);
 
-    const isHeavyWhiteBack = (garment === 'heavyWhiteBack' || data.id === 'heavyWhiteBack' || ((garment === 'tshirt_oversize' || garmentType === 'tshirt_oversize') && pose === 'back' && (sanitizedPrompt.toLowerCase().includes('white') || sanitizedPrompt.toLowerCase().includes('blanc') || sanitizedPrompt.toLowerCase().includes('heavywhiteback'))));
+    const isSlotB = data.targetSlot === 'B' || data.slot === 'B' || (typeof uploadedGarmentBase64 === 'string' && uploadedGarmentBase64.includes('logo_B_active'));
+    const isSlotA = !isSlotB && !isBusinessCard;
 
-    // Directive stricte : aucun texte parasite pour les textiles, mais préservation intégrale du logo pour heavyWhiteBack
+    const slugLower = (data.prospectSlug || data.slug || '').toLowerCase().trim();
+    const brandEntity = companyName || slugLower.toUpperCase() || 'official brand';
+
+    const slotAInstruction = `EXPLICIT BRANDING REQUIREMENT (SLOT A):
+The provided logo graphic contains the official branding elements and typography for '${brandEntity}'.
+You MUST faithfully reproduce the provided logo on the garment as a clean, transparent DTF transfer.
+Do NOT omit, blur, or erase any typography. All brand letters and text present in the reference logo graphic must be clearly visible and legible, placed exactly as positioned in the reference logo image.`;
+    const logoGraphicRefText = `REFERENCE_LOGO_GRAPHIC: Master high-resolution brand logo graphic containing the official branding${companyName ? ` for '${companyName}'` : ''}. This is the true color reference graphic to faithfully reproduce onto the garment (NOT a mask, NOT a silhouette, NOT a stencil).`;
+
     const graphicDirective = isBusinessCard
-      ? `Accurately integrate the visual graphic provided in Input 3 onto the business card.${companyName ? ` Branded with official crisp logo for ${companyName}.` : ''}`
-      : (isHeavyWhiteBack
-          ? "Preserve the FULL complete logo including ALL typography, text, and subtext ('CLUB VISION ROOM') positioned under the central emblem. Do not crop, truncate, or omit the text."
-          : "Accurately reproduce ONLY the visual logo graphic provided in Input 3 onto the garment. ZERO additional text, ZERO slogans, ZERO synthetic typography.");
+      ? `Accurately integrate the visual graphic provided in REFERENCE_LOGO_GRAPHIC onto the business card.${companyName ? ` Branded with official crisp logo for ${companyName}.` : ''}`
+      : (isSlotA
+        ? slotAInstruction
+        : "Accurately reproduce the cropped graphic icon provided in REFERENCE_LOGO_GRAPHIC onto the garment as a transparent DTF transfer without adding unprompted extra text.");
 
     // Modèles Google Gen AI Image & Try-On dédiés
-    const GEMINI_MODELS = [
+    const requestedModel = (data.model || '').replace(/^models\//, '').trim();
+    const candidateModels = [
       'gemini-2.5-flash-image',
       'gemini-3.1-flash-image',
       'gemini-3.1-flash-image-preview',
       'gemini-3-pro-image',
       'nano-banana-pro-preview'
     ];
+    const GEMINI_MODELS = (requestedModel && candidateModels.includes(requestedModel))
+      ? [requestedModel, ...candidateModels.filter(m => m !== requestedModel)]
+      : candidateModels;
     let lastError = null;
     let lastRawError = null;
 
@@ -799,60 +1089,118 @@ exports.generateTryOnImageV2 = onCall({ cors: true, invoker: 'public', timeoutSe
       try {
         const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${apiKey}`;
         console.log(`[Gemini Image Request] Calling: ${geminiUrl.replace(apiKey, maskedKey || 'HIDDEN_KEY')}`);
-        const bodyIA = {
-          contents: [{
-            parts: [
-              { 
-                text: `Task: Dress the professional fashion model from Input 1 in the branded garment from Input 2. Fidelity: 100%. Identity: ${pose === 'back' ? 'The model is standing completely facing AWAY from the camera (180-degree rear view). We see the back of the head and the back of the neck, with ZERO facial profile visible. CRITICAL: Maintain a medium shot so the full back of the garment is completely visible from neck to waist.' : 'Preserve Input 1 model facial features, skin tone, hair, pose, and exact camera distance.'}
+
+        const referenceLogoGraphic = cleanUploadedGarment || cleanDesignComposite;
+        const secondaryComposite = (cleanUploadedGarment && cleanDesignComposite && cleanUploadedGarment !== cleanDesignComposite) ? cleanDesignComposite : null;
+
+        const isBackView = pose === 'back';
+        const isHoodieOrSweat = (
+          garment === 'sweat' || garment === 'hoodie' || garment === 'sweatshirt' ||
+          garmentType === 'sweat' || garmentType === 'hoodie' || garmentType === 'sweatshirt' ||
+          (data.id && (data.id.toLowerCase().includes('hoodie') || data.id.toLowerCase().includes('sweat') || data.id === 'hBack' || data.id === 'hFront')) ||
+          (data.slot && (data.slot.toLowerCase().includes('hoodie') || data.slot.toLowerCase().includes('sweat') || data.slot === 'hBack' || data.slot === 'hFront')) ||
+          (sanitizedPrompt && (sanitizedPrompt.toLowerCase().includes('hoodie') || sanitizedPrompt.toLowerCase().includes('sweat') || sanitizedPrompt.toLowerCase().includes('jhk421')))
+        );
+
+        const hoodieBackGarmentStructureClause =
+          "GARMENT STRUCTURE: Thick heavyweight cotton hoodie with long sleeves extending all the way down to the wrists. " +
+          "STRICT PROHIBITION: The model MUST wear long sleeves. NO short sleeves, NO t-shirt cut, NO exposed forearms or bare arms. " +
+          "The hoodie must fully cover the arms down to the cuffs.";
+
+        // RÈGLE STRICTE INPUT 1 : S'assurer que pour un hoodie/sweat dos, l'image mannequin est un modèle en sweat manches longues
+        if (isHoodieOrSweat && isBackView && (!cleanUserPhoto || cleanUserPhoto.length < 500)) {
+          try {
+            console.log('[functions/index.js] Fetching male_hoodie_back.png from cloud storage');
+            const bucket = admin.storage().bucket('signaid-prod-assets');
+            const file = bucket.file('app_assets/public/assets/models/male_hoodie_back.png');
+            const [exists] = await file.exists();
+            if (exists) {
+              const [buf] = await file.download();
+              cleanUserPhoto = buf.toString('base64');
+            } else {
+              const modelRes = await fetch('https://storage.googleapis.com/signaid-prod-assets/app_assets/public/assets/models/male_hoodie_back.png');
+              if (modelRes.ok) {
+                const modelBuf = await modelRes.arrayBuffer();
+                cleanUserPhoto = Buffer.from(modelBuf).toString('base64');
+              }
+            }
+          } catch (modelFetchErr) {
+            console.warn('[functions/index.js] Failed to fetch fallback hoodie back model from storage:', modelFetchErr.message);
+          }
+        }
+
+        // Modèle studio neutre (homme brun, coiffure soignée, barbe courte, visage naturel découvert, AUCUNE lunette parasite)
+        const studioModelPrompt = isBackView
+          ? (isHoodieOrSweat
+            ? `High-end commercial fashion studio photography of an attractive dark-haired male model with a neat groomed beard, seen strictly from behind (180-degree rear view, facing directly away from camera), clean centered posture with natural head seen from behind, wearing the HEAVYWEIGHT LONG-SLEEVE HOODIE SWEATSHIRT with thick fabric, long sleeves covering the full arms down to the wrists, and the hood resting naturally folded down over the upper back/nape. ${hoodieBackGarmentStructureClause} Strictly NO sunglasses visible, NO glasses temples or arms extending around the ears or neck, NO parasite accessories. Plain neutral light-gray textured studio background. Medium-full framing showing the head with comfortable breathing room/headroom above, down to mid-thigh, wearing clean black trousers. Authentic fabric folds, realistic studio lighting, razor-sharp focus, 8k.`
+            : "High-end commercial fashion studio photography of an attractive dark-haired male model with a neat groomed beard, seen strictly from behind (180-degree rear view, facing directly away from camera), clean centered posture with exposed natural neck. Strictly NO sunglasses visible, NO glasses temples or arms extending around the ears or neck, NO parasite accessories. Plain neutral light-gray textured studio background. Medium-full framing showing the head with comfortable breathing room/headroom above, down to mid-thigh, wearing clean black trousers. Authentic fabric folds, realistic studio lighting, razor-sharp focus, 8k.")
+          : (isHoodieOrSweat
+            ? "High-end commercial fashion studio photography of an attractive dark-haired male model with a neat groomed beard, natural uncovered face and neutral studio gaze, strictly NO sunglasses, NO glasses, facing forward directly at the camera, wearing the HEAVYWEIGHT LONG-SLEEVE HOODIE SWEATSHIRT with thick fabric, long sleeves covering the full arms down to the wrists, and a folded hood around the neck. STRICT PROHIBITION: Do NOT generate a short-sleeve t-shirt. The arms MUST be fully covered by the long sleeves of the hoodie. Bare arms or short sleeves are strictly forbidden. Plain neutral light-gray textured studio background. Medium-full framing showing the head with comfortable breathing room/headroom above, down to mid-thigh, wearing clean black trousers. Authentic fabric wrinkles, realistic studio lighting, razor-sharp focus, 8k."
+            : "High-end commercial fashion studio photography of an attractive dark-haired male model with a neat groomed beard, natural uncovered face and neutral studio gaze, strictly NO sunglasses, NO glasses, facing forward directly at the camera. Plain neutral light-gray textured studio background. Medium-full framing showing the head with comfortable breathing room/headroom above, down to mid-thigh, wearing clean black trousers. Authentic fabric wrinkles, realistic studio lighting, razor-sharp focus, 8k.");
+
+        const taskIntro = `Task: Dress the professional fashion model from Input 1 in the branded garment from Input 2. Fidelity: 100%. Identity: ${isBackView ? (isHoodieOrSweat ? `The model is standing completely facing AWAY from the camera (180-degree rear view). We see the back of the head, with ZERO facial profile visible, and absolutely NO sunglasses or glasses arms visible. The model wears a HEAVYWEIGHT LONG-SLEEVE HOODIE SWEATSHIRT with thick fabric and long sleeves covering the full arms down to the wrists. ${hoodieBackGarmentStructureClause} The hood of the garment rests naturally folded down over the upper back/nape. CRITICAL: Maintain a medium-full shot so the full back of the garment is completely visible from shoulders to waist with comfortable headroom above the head.` : 'The model is standing completely facing AWAY from the camera (180-degree rear view). We see the back of the head and the back of the neck, with ZERO facial profile visible, and absolutely NO sunglasses or glasses arms visible. CRITICAL: Maintain a medium-full shot so the full back of the garment is completely visible from neck to waist with comfortable headroom above the head.') : (isHoodieOrSweat ? 'Preserve Input 1 model facial features, skin tone, dark hair, natural uncovered face, neutral studio gaze (strictly NO sunglasses, NO glasses), pose, and exact camera distance with comfortable headroom above the head. The model MUST wear a HEAVYWEIGHT LONG-SLEEVE HOODIE SWEATSHIRT with thick fabric, long sleeves covering the full arms down to the wrists, and a folded hood around the neck. STRICT PROHIBITION: Do NOT generate a short-sleeve t-shirt. The arms MUST be fully covered by the long sleeves of the hoodie.' : 'Preserve Input 1 model facial features, skin tone, dark hair, natural uncovered face, neutral studio gaze (strictly NO sunglasses, NO glasses), pose, and exact camera distance with comfortable headroom above the head.')}`;
+
+        const promptParts = [
+          {
+            text: `${taskIntro}
+
+STUDIO MODEL & FRAMING:
+${studioModelPrompt}
 
 GEOMETRIC CENTERING & CAMERA LOCK:
-- The model's body spine and sternum MUST remain strictly centered on the central vertical axis (X: 50%) of the square canvas.
-- DO NOT shift, pan, or offset the camera toward the left chest badge. The background studio margins on the left and right sides of the model must be identical and balanced.
-
-FRAMING & E-COMMERCE VIEW:
-- Full garment e-commerce studio shot. View from head down past the waist to the upper thighs.
-- The ENTIRE garment (full neckline, full shoulders, both complete arms/elbows, torso, and bottom hem) must be fully visible with comfortable margins. DO NOT crop the bottom hem, elbows, or sides of the garment under any circumstance.
-
+- Dead-center vertical and horizontal framing. The model's spine and sternum MUST remain strictly centered on the central vertical axis (X: 50%) of the square canvas.
+- Medium-full shot: the full head (with headroom), shoulders, complete arms, garment hem, and upper legs/black trousers down to mid-thigh MUST be naturally visible.
+- Symmetrical studio margins on left and right sides. DO NOT pan or offset the camera toward chest badges.
+- Ratio: 1:1 square canvas. Clean neutral light-gray studio backdrop.
+${isHoodieOrSweat ? (isBackView ? `- GARMENT CONSTRAINTS: ${hoodieBackGarmentStructureClause}\n` : "- GARMENT CONSTRAINTS: The garment MUST BE A HEAVYWEIGHT LONG-SLEEVE HOODIE SWEATSHIRT with thick fabric, long sleeves covering the full arms down to the wrists, and a folded hood around the neck. STRICT PROHIBITION: Do NOT generate a short-sleeve t-shirt. The arms MUST be fully covered by the long sleeves of the hoodie. Bare arms or short sleeves are strictly forbidden.\n") : ""}
 GRAPHIC REPRODUCTION:
+- Faithfully reproduce the master visual asset provided in REFERENCE_LOGO_GRAPHIC onto the garment.
+- The REFERENCE_LOGO_GRAPHIC is the official reference artwork to print, NOT a silhouette, NOT a cut-out stencil, NOT an opaque rectangle or white box, and NOT a mask.
+- Must be rendered as a clean transparent DTF transfer directly on the garment fabric.
 - ${graphicDirective}
-${cleanDesignComposite ? "Input 3 is the raw high-resolution graphic to reproduce." : ""}
 
-${!isBusinessCard ? (isHeavyWhiteBack ? `STRICT LOGO PRESERVATION:
-- Preserve the FULL complete logo including ALL typography, text, and subtext ('CLUB VISION ROOM') positioned under the central emblem. Do not crop, truncate, or omit the text.
-- Both the central emblem and the subtext text below it must appear clearly and sharply on the back of the garment.` : `STRICT NEGATIVE CONSTRAINT:
-- CRITICAL GRAPHIC INSTRUCTION: DO NOT ADD ANY TEXT, BRAND NAME, LETTERS, SLOGAN, OR TYPOGRAPHY. ONLY replicate the standalone visual graphic / symbol / emblem / icon exactly as provided. NO TEXT ALLOWED ANYWHERE ON THE GARMENT OR BACKGROUND.
-- DO NOT generate, add, or invent any letters, typography, slogans, brand names, or words on the garment.
-- The graphic on the garment MUST strictly contain ONLY the visual graphic from Input 2 / Input 3.
-- If the graphic is an emblem or standalone icon, DO NOT add any text, typography, or company name below, above, or around it. ZERO EXTRA TEXT.`) : ''}
+${isSlotA ? slotAInstruction : (!isBusinessCard ? "Faithfully reproduce the graphic from REFERENCE_LOGO_GRAPHIC onto the garment as a transparent DTF transfer." : "")}
 
-Setting: ${sanitizedPrompt || 'Clean Minimalist E-Commerce Product Studio'}. Glasses: ${glassesPrompt}. Pose: ${pose === 'back' ? 'STRICT 180-DEGREE REAR VIEW (facing away from camera)' : pose}. Ratio: 1:1. Symmetrical commercial fashion catalogue shot, neutral clean studio grey backdrop, 8k.` 
-              }
-            ]
-          }]
-        };
+Setting: ${sanitizedPrompt || 'Clean Minimalist E-Commerce Product Studio'}. Glasses: ${glassesPrompt || 'none'}. Pose: ${isBackView ? 'STRICT 180-DEGREE REAR VIEW (facing away from camera)' : 'FRONT VIEW (model facing camera)'}. Ratio: 1:1. Symmetrical commercial fashion catalogue shot, neutral clean studio grey backdrop, 8k.`
+          }
+        ];
 
         if (cleanUserPhoto) {
-          const mime = cleanUserPhoto.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-          bodyIA.contents[0].parts.push({ inlineData: { mimeType: mime, data: cleanUserPhoto } });
+          const mime = cleanUserPhoto.startsWith('/9j/') ? 'image/jpeg' : (cleanUserPhoto.startsWith('UklG') ? 'image/webp' : 'image/png');
+          promptParts.push({ text: "INPUT 1: Professional fashion model reference photo." });
+          promptParts.push({ inlineData: { mimeType: mime, data: cleanUserPhoto } });
         }
         if (cleanGarmentPreview) {
-          const mime = cleanGarmentPreview.startsWith('UklG') ? 'image/webp' : 'image/png';
-          bodyIA.contents[0].parts.push({ inlineData: { mimeType: mime, data: cleanGarmentPreview } });
+          const mime = cleanGarmentPreview.startsWith('UklG') ? 'image/webp' : (cleanGarmentPreview.startsWith('/9j/') ? 'image/jpeg' : 'image/png');
+          promptParts.push({ text: "INPUT 2: Garment preview and placement mockup reference." });
+          promptParts.push({ inlineData: { mimeType: mime, data: cleanGarmentPreview } });
         }
-        if (cleanDesignComposite) {
-          const mime = cleanDesignComposite.startsWith('UklG') ? 'image/webp' : 'image/png';
-          bodyIA.contents[0].parts.push({ inlineData: { mimeType: mime, data: cleanDesignComposite } });
+        if (referenceLogoGraphic) {
+          const mime = referenceLogoGraphic.startsWith('/9j/') ? 'image/jpeg' : (referenceLogoGraphic.startsWith('UklG') ? 'image/webp' : 'image/png');
+          promptParts.push({
+            text: logoGraphicRefText
+          });
+          promptParts.push({ inlineData: { mimeType: mime, data: referenceLogoGraphic } });
         }
-        if (cleanUploadedGarment) {
-          const mime = cleanUploadedGarment.startsWith('/9j/') ? 'image/jpeg' : 'image/png';
-          bodyIA.contents[0].parts.push({ inlineData: { mimeType: mime, data: cleanUploadedGarment } });
+        if (secondaryComposite) {
+          const mime = secondaryComposite.startsWith('UklG') ? 'image/webp' : (secondaryComposite.startsWith('/9j/') ? 'image/jpeg' : 'image/png');
+          promptParts.push({
+            text: "SECONDARY_COMPOSITE_GRAPHIC: Secondary design layout composite."
+          });
+          promptParts.push({ inlineData: { mimeType: mime, data: secondaryComposite } });
         }
+
+        const bodyIA = {
+          contents: [{
+            parts: promptParts
+          }]
+        };
 
         const responseIA = await fetch(geminiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(bodyIA),
-          signal: AbortSignal.timeout(20000)
+          signal: AbortSignal.timeout(45000)
         });
 
         const resJSON = await responseIA.json();
@@ -871,7 +1219,7 @@ Setting: ${sanitizedPrompt || 'Clean Minimalist E-Commerce Product Studio'}. Gla
                   metadata: { contentType: 'image/png', cacheControl: 'public, max-age=86400' },
                   resumable: false
                 });
-                await file.makePublic().catch(() => {});
+                await file.makePublic().catch(() => { });
                 publicUrl = `https://storage.googleapis.com/${bucket.name}/${storagePath}`;
 
                 await persistProspectProfileBackend(admin, {
@@ -892,18 +1240,18 @@ Setting: ${sanitizedPrompt || 'Clean Minimalist E-Commerce Product Studio'}. Gla
               imageUrl: publicUrl,
               prospectSlug: prospectSlug || undefined
             };
+          } else {
+            console.warn(`[Gemini No Image Part] Model: ${cleanModel} - Candidates:`, JSON.stringify(resJSON.candidates?.[0] || resJSON, null, 2));
           }
         } else if (!responseIA.ok) {
           lastRawError = resJSON;
           lastError = resJSON.error ? resJSON.error.message : `Status ${responseIA.status}`;
           console.error(`[Gemini RAW ERROR] Model: ${cleanModel} - Status: ${responseIA.status} - URL: ${geminiUrl.replace(apiKey, maskedKey)}`, JSON.stringify(resJSON, null, 2));
-          
-          // Interrompre la boucle immédiatement si restriction géographique, précondition ou quota
+
+          // Interrompre la boucle uniquement si dépassement strict de quota global ou permissions bloquantes
           if (
-            responseIA.status === 429 || 
-            responseIA.status === 400 ||
+            responseIA.status === 429 ||
             (resJSON.error && (
-              resJSON.error.status === 'FAILED_PRECONDITION' ||
               resJSON.error.status === 'RESOURCE_EXHAUSTED' ||
               resJSON.error.status === 'PERMISSION_DENIED' ||
               (resJSON.error.message && (
@@ -934,6 +1282,121 @@ Setting: ${sanitizedPrompt || 'Clean Minimalist E-Commerce Product Studio'}. Gla
       fallback: true,
       notice: "Gabarit technique HD validé (conforme DTF)."
     };
+  }
+};
+
+// --- IMAGEN 3 (Moteur Photoréaliste) & GEMINI 2.0 (Fallback) ---
+// Fonction Callable principale (protocole onCall / Firebase Functions SDK)
+exports.generateTryOnImageV2 = onCall({ cors: true, invoker: 'public', timeoutSeconds: 300, memory: '1GiB', secrets: [geminiApiKey] }, async (request) => {
+  // Mode invité / audit 100% tolérant : Ne jamais bloquer avec une erreur 401 unauthenticated
+  if (!verifyOnCallAuth(request)) {
+    console.log('[generateTryOnImageV2] Session invité / audit autorisée (non-bloquant)');
+  }
+
+  const payload = request.data?.data || request.data || request.rawRequest?.body?.data || request.rawRequest?.body || {};
+  let apiKey = process.env.GEMINI_API_KEY || '';
+  try {
+    if (geminiApiKey && typeof geminiApiKey.value === 'function' && geminiApiKey.value()) {
+      apiKey = geminiApiKey.value() || apiKey;
+    }
+  } catch (e) { }
+  if (!apiKey) throw new HttpsError('failed-precondition', 'API Key Gemini non configurée dans l\'environnement.');
+
+  const maskedKey = apiKey ? `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}` : 'NON_TROUVÉE';
+  console.log(`[AI Key Diagnostic] generateTryOnImageV2 active key: ${maskedKey}`);
+
+  // Extraction d'authentification non-bloquante si présente
+  let authUser = request.auth || null;
+  if (!authUser) {
+    let token = request.data?.authToken || request.data?.token || payload?.authToken || payload?.token;
+    if (!token && request.rawRequest?.headers?.authorization) {
+      const authHeader = request.rawRequest.headers.authorization;
+      if (authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7).trim();
+      }
+    }
+    if (token) {
+      try {
+        authUser = await admin.auth().verifyIdToken(token);
+        console.log(`[generateTryOnImageV2] Requête authentifiée UID: ${authUser.uid}`);
+      } catch (e) {
+        console.warn(`[generateTryOnImageV2] Token non-bloquant: ${e.message}`);
+      }
+    }
+  }
+
+  try {
+    return await processGenerateTryOn(payload, authUser, apiKey, maskedKey);
+  } catch (err) {
+    console.warn('[generateTryOnImageV2] Exception gérée avec repli mécanique:', err.message);
+    return {
+      imageBase64: null,
+      fallback: true,
+      notice: "Gabarit technique HD validé (conforme DTF)."
+    };
+  }
+});
+
+// Route HTTP directe universelle (pour fetch direct avec header Authorization Bearer)
+exports.generateTryOnImageV2Http = onRequest({ cors: true, invoker: 'public', timeoutSeconds: 300, memory: '1GiB', secrets: [geminiApiKey] }, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  if (req.method === 'OPTIONS') return res.status(204).send('');
+
+  const rawBody = req.body || {};
+  const payload = rawBody.data?.data || rawBody.data || rawBody.body?.data || rawBody || {};
+
+  let apiKey = process.env.GEMINI_API_KEY || '';
+  try {
+    if (geminiApiKey && typeof geminiApiKey.value === 'function' && geminiApiKey.value()) {
+      apiKey = geminiApiKey.value() || apiKey;
+    }
+  } catch (e) { }
+  if (!apiKey) {
+    return res.status(500).json({ error: { message: "API Key Gemini non configurée dans l'environnement." } });
+  }
+
+  const maskedKey = apiKey ? `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}` : 'NON_TROUVÉE';
+
+  // Extraction d'authentification non-bloquante
+  let token = null;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7).trim();
+  }
+  if (!token && payload.authToken) token = payload.authToken;
+  if (!token && payload.token) token = payload.token;
+
+  let authUser = null;
+  if (token) {
+    try {
+      authUser = await admin.auth().verifyIdToken(token);
+      console.log(`[generateTryOnImageV2Http] Requête authentifiée UID: ${authUser.uid}`);
+    } catch (e) {
+      console.warn(`[generateTryOnImageV2Http] Token non-bloquant: ${e.message}`);
+    }
+  }
+
+  try {
+    const result = await processGenerateTryOn(payload, authUser, apiKey, maskedKey);
+    return res.status(200).json({
+      result: result,
+      data: result,
+      ...result
+    });
+  } catch (err) {
+    console.warn('[generateTryOnImageV2Http] Fallback to mechanical mockup on error:', err.message);
+    const fallbackResult = {
+      imageBase64: null,
+      fallback: true,
+      notice: "Gabarit technique HD validé (conforme DTF)."
+    };
+    return res.status(200).json({
+      result: fallbackResult,
+      data: fallbackResult,
+      ...fallbackResult
+    });
   }
 });
 
@@ -967,7 +1430,7 @@ exports.removeBgProxy = onCall({ cors: true, invoker: 'public', secrets: [remove
     if (removeBgApiKey && typeof removeBgApiKey.value === 'function' && removeBgApiKey.value()) {
       apiKey = removeBgApiKey.value();
     }
-  } catch (e) {}
+  } catch (e) { }
   const { imageBase64 } = request.data;
   const axios = require('axios');
   try {
@@ -997,7 +1460,7 @@ exports.processDtfMaster = onCall({ cors: true, invoker: 'public', memory: '1GiB
     if (geminiApiKey && typeof geminiApiKey.value === 'function' && geminiApiKey.value()) {
       apiKey = geminiApiKey.value() || apiKey;
     }
-  } catch (e) {}
+  } catch (e) { }
 
   const axios = require('axios');
   try {
@@ -1135,9 +1598,15 @@ seoApp.use(async (req, res) => {
     return res.status(404).send('Asset not found');
   }
 
-  const indexPath = path.resolve(__dirname, "./index.html");
+  let indexPath = path.resolve(__dirname, "./index.html");
+  if (!fs.existsSync(indexPath)) {
+    const distPath = path.resolve(__dirname, "../dist/index.html");
+    if (fs.existsSync(distPath)) {
+      indexPath = distPath;
+    }
+  }
   let html = "";
-  
+
   try {
     html = fs.readFileSync(indexPath, "utf8");
   } catch (err) {
@@ -1370,7 +1839,7 @@ seoApp.use(async (req, res) => {
     if (artistData) {
       const artistName = artistData.companyName || artistData.name || targetId.toUpperCase();
       let mainVisual = artistData.ogImageUrl || artistData.livePhotoUrls?.[0] || artistData.livePhotoUrl || artistData.logoUrl || artistData.coverUrl || "";
-      
+
       // If image is a base64 string, upload it to Cloud Storage to produce an absolute public HTTPS URL for Facebook/Meta
       if (mainVisual && mainVisual.startsWith('data:')) {
         try {
@@ -1384,14 +1853,14 @@ seoApp.use(async (req, res) => {
           await file.save(buffer, {
             metadata: { contentType: mimeType, cacheControl: 'public, max-age=86400' }
           });
-          await file.makePublic().catch(() => {});
+          await file.makePublic().catch(() => { });
           mainVisual = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
-          
+
           // Save back to Firestore for instant future response
           try {
             await admin.firestore().collection("SiteConfigs").doc(targetId).set({ ogImageUrl: mainVisual }, { merge: true });
-          } catch(e) {}
-        } catch(storageErr) {
+          } catch (e) { }
+        } catch (storageErr) {
           console.warn('[OG Image Cloud Storage Upload Error]:', storageErr);
           mainVisual = "https://signaid.eu/logo.png";
         }
@@ -1409,11 +1878,11 @@ seoApp.use(async (req, res) => {
         mainVisual = `https://signaid.eu${mainVisual}`;
       }
 
-      const description = artistData.presentation || 
-                          artistData.activitySector || 
-                          artistData.rawPitch?.what || 
-                          `Découvrez le portail officiel, les liens directs et la collection merchandising de ${artistName}.`;
-      
+      const description = artistData.presentation ||
+        artistData.activitySector ||
+        artistData.rawPitch?.what ||
+        `Découvrez le portail officiel, les liens directs et la collection merchandising de ${artistName}.`;
+
       const title = `${artistName} — Portail & Merchandising`;
 
       html = html.replace(/<title>.*?<\/title>/i, `<title>${title}</title>`);
@@ -1444,14 +1913,30 @@ seoApp.use(async (req, res) => {
 
     res.set("Cache-Control", "public, max-age=300, s-maxage=3600");
     return res.status(200).send(html);
-    
+
   } catch (error) {
     console.error("Erreur lors de la récupération Firestore pour OG tags", error);
     return res.status(200).send(html);
   }
 });
 
-exports.renderSEO = onRequest({ cors: true }, seoApp);
+// Helper pour valider strictement les images IA réelles de mannequins (rejette tout gabarit 2D à plat)
+function isRealAiImage(url) {
+  if (!url || typeof url !== 'string') return false;
+  const clean = url.trim();
+  if (!clean || clean === '""' || clean.length < 10) return false;
+  const cleanLower = clean.toLowerCase();
+  if (cleanLower.startsWith('/assets/') || cleanLower.startsWith('/merch/') || cleanLower.includes('app_assets/public/assets/')) return false;
+  if (cleanLower.includes('card-base') || cleanLower.includes('card_mockup') || cleanLower.includes('male_tshirt') || cleanLower.includes('male_hoodie') || cleanLower.includes('male_polo') || cleanLower.includes('male_tank')) return false;
+  if (cleanLower.includes('/logos/') || cleanLower.includes('logo_')) return false;
+  if ((cleanLower.includes('jhk170') || cleanLower.includes('jhk421') || cleanLower.includes('jhk510') || cleanLower.includes('bybb011') || cleanLower.includes('nx7200')) && !cleanLower.includes('btp_mockups') && !cleanLower.includes('_ai_')) {
+    return false;
+  }
+  return cleanLower.startsWith('data:image/') ||
+    cleanLower.startsWith('blob:') ||
+    cleanLower.includes('firebasestorage.googleapis.com') ||
+    cleanLower.includes('storage.googleapis.com');
+}
 
 // Helper pour extraire la meilleure URL d'image vêtement (privilégie les visuels mannequins personnalisés)
 function extractBestImageUrl(item, preferredView) {
@@ -1472,7 +1957,7 @@ function extractBestImageUrl(item, preferredView) {
 
   const itemView = String(item.view || '').toLowerCase();
   const itemId = String(item.id || '').toLowerCase();
-  
+
   // Rejeter formellement si l'item est exclusivement dédié à la vue opposée SANS avoir de champ explicite pour la vue demandée
   if (preferredView === 'front') {
     if ((itemView === 'back' || itemView === 'verso') && !item.frontImageUrl && !item.imageFront && !item.aiFront) return '';
@@ -1554,19 +2039,14 @@ function extractBestImageUrl(item, preferredView) {
     });
   }
 
-  // 1. Privilégier les visuels sur-mesure (clubvision, dfazz, btp_mockups, storage, data URIs ou assets locaux)
-  const customCandidate = validCandidates.find(c => 
-    c.includes('clubvision') ||
-    c.includes('dfazz') || 
-    c.includes('btp_mockups') || 
-    c.includes('thementalist') || 
-    c.includes('aaronh') || 
-    c.includes('dokiin') || 
+  // 1. Privilégier les visuels sur-mesure (btp_mockups, storage, data URIs ou assets personnalisés)
+  const customCandidate = validCandidates.find(c =>
+    c.includes('btp_mockups') ||
     c.includes('storage.googleapis.com') ||
     c.includes('firebasestorage') ||
-    c.startsWith('data:') || 
-    (c.startsWith('/assets/') && !c.includes('JHK170') && !c.includes('JHK421') && !c.includes('JHK510') && !c.includes('bctw02t') && !c.includes('RH80')) ||
-    (!c.includes('JHK170') && !c.includes('JHK421') && !c.includes('JHK510') && !c.includes('bctw02t') && !c.includes('RH80'))
+    c.startsWith('data:') ||
+    (c.startsWith('/assets/') && !c.includes('JHK170') && !c.includes('JHK421') && !c.includes('JHK510') && !c.includes('bctw02t') && !c.includes('RH80') && !c.includes('NX7200')) ||
+    (!c.includes('JHK170') && !c.includes('JHK421') && !c.includes('JHK510') && !c.includes('bctw02t') && !c.includes('RH80') && !c.includes('NX7200'))
   );
 
   if (customCandidate) return customCandidate.trim();
@@ -1604,1076 +2084,767 @@ exports.getUserBySlug = onRequest({ cors: true, minInstances: 1 }, async (req, r
 
     const db = admin.firestore();
 
-      // ── In-memory cache (60s TTL) ──────────────────────────────────────────
-      const SLUG_CACHE_TTL_MS = 60_000;
-      if (!exports._slugCache) exports._slugCache = new Map();
-      const _slugCache = exports._slugCache;
-      const isBypass = req.query._t || req.query.nocache;
-      const _cacheEntry = isBypass ? null : _slugCache.get(slug);
-      if (_cacheEntry && Date.now() - _cacheEntry.ts < SLUG_CACHE_TTL_MS) {
-        res.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
-        return res.status(200).json(_cacheEntry.data);
-      }
-      // ─────────────────────────────────────────────────────────────────────
+    // ── In-memory cache (60s TTL) ──────────────────────────────────────────
+    const SLUG_CACHE_TTL_MS = 60_000;
+    if (!exports._slugCache) exports._slugCache = new Map();
+    const _slugCache = exports._slugCache;
+    const isBypass = req.query._t || req.query.nocache;
+    const _cacheEntry = isBypass ? null : _slugCache.get(slug);
+    if (_cacheEntry && Date.now() - _cacheEntry.ts < SLUG_CACHE_TTL_MS) {
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      return res.status(200).json(_cacheEntry.data);
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
-      // 1. Chercher dans SiteConfigs : par slug, customDomain, domain et doc ID — en parallèle
-      let snapshot;
-      {
-        const [bySlug, byCustomDomain, byDomain, byCustomDomains, byDocId] = await Promise.all([
-          db.collection('SiteConfigs').where('slug', '==', slug).limit(1).get(),
-          db.collection('SiteConfigs').where('customDomain', '==', slug).limit(1).get(),
-          db.collection('SiteConfigs').where('domain', '==', slug).limit(1).get(),
-          db.collection('SiteConfigs').where('customDomains', 'array-contains', slug).limit(1).get(),
-          db.collection('SiteConfigs').doc(slug).get(),
-        ]);
-        if (!bySlug.empty)        snapshot = bySlug;
-        else if (!byCustomDomain.empty) snapshot = byCustomDomain;
-        else if (!byDomain.empty) snapshot = byDomain;
-        else if (!byCustomDomains.empty) snapshot = byCustomDomains;
-        else if (byDocId.exists)  snapshot = { empty: false, docs: [byDocId] };
-        else                      snapshot = { empty: true };
+    // 1. Chercher dans SiteConfigs : par slug, customDomain, domain et doc ID — en parallèle
+    let snapshot;
+    {
+      const [bySlug, byCustomDomain, byDomain, byCustomDomains, byDocId] = await Promise.all([
+        db.collection('SiteConfigs').where('slug', '==', slug).limit(1).get(),
+        db.collection('SiteConfigs').where('customDomain', '==', slug).limit(1).get(),
+        db.collection('SiteConfigs').where('domain', '==', slug).limit(1).get(),
+        db.collection('SiteConfigs').where('customDomains', 'array-contains', slug).limit(1).get(),
+        db.collection('SiteConfigs').doc(slug).get(),
+      ]);
+      if (!bySlug.empty) snapshot = bySlug;
+      else if (!byCustomDomain.empty) snapshot = byCustomDomain;
+      else if (!byDomain.empty) snapshot = byDomain;
+      else if (!byCustomDomains.empty) snapshot = byCustomDomains;
+      else if (byDocId.exists) snapshot = { empty: false, docs: [byDocId] };
+      else snapshot = { empty: true };
+    }
+    if (snapshot.empty && !slug.startsWith('audit-')) {
+      const docByAudit = await db.collection('SiteConfigs').doc(`audit-${slug}`).get();
+      if (docByAudit.exists) {
+        snapshot = { empty: false, docs: [docByAudit] };
       }
-      if (snapshot.empty && !slug.startsWith('audit-')) {
-        const docByAudit = await db.collection('SiteConfigs').doc(`audit-${slug}`).get();
-        if (docByAudit.exists) {
-          snapshot = { empty: false, docs: [docByAudit] };
-        }
-      }
+    }
 
-      // 3. Fallback dans anonymous_previews
-      if (snapshot.empty) {
-        const prevDoc = await db.collection('anonymous_previews').doc(slug).get();
-        if (prevDoc.exists) {
-          snapshot = { empty: false, docs: [prevDoc] };
-        }
+    // 3. Fallback dans anonymous_previews
+    if (snapshot.empty) {
+      const prevDoc = await db.collection('anonymous_previews').doc(slug).get();
+      if (prevDoc.exists) {
+        snapshot = { empty: false, docs: [prevDoc] };
       }
-      if (snapshot.empty && !slug.startsWith('audit-')) {
-        const prevByAudit = await db.collection('anonymous_previews').doc(`audit-${slug}`).get();
-        if (prevByAudit.exists) {
-          snapshot = { empty: false, docs: [prevByAudit] };
-        }
+    }
+    if (snapshot.empty && !slug.startsWith('audit-')) {
+      const prevByAudit = await db.collection('anonymous_previews').doc(`audit-${slug}`).get();
+      if (prevByAudit.exists) {
+        snapshot = { empty: false, docs: [prevByAudit] };
       }
-      if (snapshot.empty) {
-        const prevBySlug = await db.collection('anonymous_previews').where('companySlug', '==', slug).limit(1).get();
-        if (!prevBySlug.empty) {
-          snapshot = prevBySlug;
-        }
+    }
+    if (snapshot.empty) {
+      const prevBySlug = await db.collection('anonymous_previews').where('companySlug', '==', slug).limit(1).get();
+      if (!prevBySlug.empty) {
+        snapshot = prevBySlug;
       }
-      if (snapshot.empty) {
-        const prevByClean = await db.collection('anonymous_previews').where('cleanUid', '==', slug).limit(1).get();
-        if (!prevByClean.empty) {
-          snapshot = prevByClean;
-        }
+    }
+    if (snapshot.empty) {
+      const prevByClean = await db.collection('anonymous_previews').where('cleanUid', '==', slug).limit(1).get();
+      if (!prevByClean.empty) {
+        snapshot = prevByClean;
       }
+    }
 
-      // 4. Fallback dans btp_projects
-      if (snapshot.empty) {
-        const btpDoc = await db.collection('btp_projects').doc(slug).get();
-        if (btpDoc.exists) {
-          snapshot = { empty: false, docs: [btpDoc] };
+    // 4. Fallback dans btp_projects
+    if (snapshot.empty) {
+      const btpDoc = await db.collection('btp_projects').doc(slug).get();
+      if (btpDoc.exists) {
+        snapshot = { empty: false, docs: [btpDoc] };
+      }
+    }
+    if (snapshot.empty && !slug.startsWith('audit-')) {
+      const btpByAudit = await db.collection('btp_projects').doc(`audit-${slug}`).get();
+      if (btpByAudit.exists) {
+        snapshot = { empty: false, docs: [btpByAudit] };
+      }
+    }
+    if (snapshot.empty) {
+      const btpByProj = await db.collection('btp_projects').where('projectId', '==', slug).limit(1).get();
+      if (!btpByProj.empty) {
+        snapshot = btpByProj;
+      }
+    }
+
+    // 5. Fallback dans users par slug
+    if (snapshot.empty) {
+      snapshot = await db.collection('users').where('slug', '==', slug).limit(1).get();
+    }
+
+    // 6. Fallback spécifique pour fabrizio / djdfazz.be -> guest_ms3ijgnco2xnid
+    if (snapshot.empty && (slug === 'fabrizio' || slug === 'guest_ms3ijgnco2xnid' || slug.includes('djdfazz'))) {
+      const fabrizioDoc = await db.collection('SiteConfigs').doc('guest_ms3ijgnco2xnid').get();
+      if (fabrizioDoc.exists) {
+        snapshot = { empty: false, docs: [fabrizioDoc] };
+      }
+    }
+
+    // 7. Fallback spécifique pour elox / djelox
+    if (snapshot.empty && (slug === 'elox' || slug === 'djelox' || slug === 'dj-elox')) {
+      snapshot = {
+        empty: false,
+        docs: [{
+          id: 'elox',
+          data: () => ({
+            companyName: 'DJ ELOX',
+            slug: 'elox',
+            logoUrl: '/elox_logo.png',
+            livePhotoUrl: '/elox_hero.jpg',
+            theme: 'dark',
+            accentColor: '#00ff88',
+            logoOverlayColor: 'original'
+          })
+        }]
+      };
+    }
+
+    // 7b. Fallback spécifique pour 2000theparty
+    if (snapshot.empty && (slug === '2000theparty' || slug === 'audit-2000theparty-eyem')) {
+      const partyDoc = await db.collection('SiteConfigs').doc('2000theparty').get();
+      if (partyDoc.exists) {
+        snapshot = { empty: false, docs: [partyDoc] };
+      } else {
+        const auditDoc = await db.collection('SiteConfigs').doc('audit-2000theparty-eyem').get();
+        if (auditDoc.exists) {
+          snapshot = { empty: false, docs: [auditDoc] };
         }
       }
-      if (snapshot.empty && !slug.startsWith('audit-')) {
-        const btpByAudit = await db.collection('btp_projects').doc(`audit-${slug}`).get();
-        if (btpByAudit.exists) {
-          snapshot = { empty: false, docs: [btpByAudit] };
+    }
+
+    // 8. Fallback universel dans prospects, audits et vault
+    if (snapshot.empty) {
+      const pDoc = await db.collection('prospects').doc(slug).get();
+      if (pDoc.exists) snapshot = { empty: false, docs: [pDoc] };
+    }
+    if (snapshot.empty) {
+      const aDoc = await db.collection('audits').doc(slug).get();
+      if (aDoc.exists) snapshot = { empty: false, docs: [aDoc] };
+    }
+    if (snapshot.empty && !slug.startsWith('audit-')) {
+      const aDoc2 = await db.collection('audits').doc(`audit-${slug}`).get();
+      if (aDoc2.exists) snapshot = { empty: false, docs: [aDoc2] };
+    }
+    if (snapshot.empty) {
+      const vDoc = await db.collection('vault').doc(slug).get();
+      if (vDoc.exists) snapshot = { empty: false, docs: [vDoc] };
+    }
+
+    if (snapshot.empty) {
+      return res.status(404).json({ error: 'Utilisateur / DJ non trouvé pour ce slug', slug });
+    }
+
+    let userDoc = snapshot.docs[0];
+    for (const d of snapshot.docs) {
+      const dData = d.data();
+      if (dData && dData.logoUrl && !dData.logoUrl.includes('logo_A_active_1787803093010') && (dData.logoUrl.includes('logo_dtf') || dData.companyName)) {
+        userDoc = d;
+        break;
+      }
+    }
+
+    const userData = userDoc.data() || {};
+    userData.id = userDoc.id;
+
+    // Chercher en parallèle le document audit / preview lié pour fusionner les mockups et logos
+    let previewDocData = null;
+    try {
+      const candidateDocIds = [userDoc.id, slug, `audit-${slug}`, userData.cleanUid, userData.previewId, userData.auditId].filter(Boolean);
+      for (const cId of candidateDocIds) {
+        const pSnap = await db.collection('anonymous_previews').doc(cId).get();
+        if (pSnap.exists) {
+          previewDocData = pSnap.data();
+          break;
         }
-      }
-      if (snapshot.empty) {
-        const btpByProj = await db.collection('btp_projects').where('projectId', '==', slug).limit(1).get();
-        if (!btpByProj.empty) {
-          snapshot = btpByProj;
-        }
-      }
-
-      // 5. Fallback dans users par slug
-      if (snapshot.empty) {
-        snapshot = await db.collection('users').where('slug', '==', slug).limit(1).get();
-      }
-
-      // 6. Fallback spécifique pour fabrizio / djdfazz.be -> guest_ms3ijgnco2xnid
-      if (snapshot.empty && (slug === 'fabrizio' || slug === 'guest_ms3ijgnco2xnid' || slug.includes('djdfazz'))) {
-        const fabrizioDoc = await db.collection('SiteConfigs').doc('guest_ms3ijgnco2xnid').get();
-        if (fabrizioDoc.exists) {
-          snapshot = { empty: false, docs: [fabrizioDoc] };
-        }
-      }
-
-      // 7. Fallback spécifique pour elox / djelox
-      if (snapshot.empty && (slug === 'elox' || slug === 'djelox' || slug === 'dj-elox')) {
-        snapshot = {
-          empty: false,
-          docs: [{
-            id: 'elox',
-            data: () => ({
-              companyName: 'DJ ELOX',
-              slug: 'elox',
-              logoUrl: '/elox_logo.png',
-              livePhotoUrl: '/elox_hero.jpg',
-              theme: 'dark',
-              accentColor: '#00ff88',
-              logoOverlayColor: 'original'
-            })
-          }]
-        };
-      }
-
-      // 8. Fallback spécifique pour clubvision / clubvisionroom / 13ansvr
-      if (snapshot.empty && (slug === 'clubvision' || slug === 'clubvisionroom' || slug === 'visionroom' || slug === '13ansvr' || slug === '13ans-vr')) {
-        const visionDoc = await db.collection('SiteConfigs').doc('clubvisionroom').get();
-        if (visionDoc.exists) {
-          snapshot = { empty: false, docs: [visionDoc] };
-        } else {
-          const mtDoc = await db.collection('SiteConfigs').doc('mt074jnaldxn').get();
-          if (mtDoc.exists) {
-            snapshot = { empty: false, docs: [mtDoc] };
-          }
-        }
-      }
-
-      if (snapshot.empty) {
-        return res.status(404).json({ error: 'Utilisateur / DJ non trouvé pour ce slug', slug });
-      }
-
-      let userDoc = snapshot.docs[0];
-      for (const d of snapshot.docs) {
-        const dData = d.data();
-        if (dData && dData.logoUrl && !dData.logoUrl.includes('logo_A_active_1787803093010') && (dData.logoUrl.includes('logo_dtf') || dData.companyName)) {
-          userDoc = d;
+        const bSnap = await db.collection('btp_projects').doc(cId).get();
+        if (bSnap.exists) {
+          previewDocData = bSnap.data();
           break;
         }
       }
-
-      const userData = userDoc.data() || {};
-      userData.id = userDoc.id;
-
-      const isDfazzUser = slug === 'fabrizio' || slug.includes('djdfazz') || userDoc.id === 'guest_ms3ijgnco2xnid';
-
-      // Chercher en parallèle le document audit / preview lié pour fusionner les mockups et logos
-      let previewDocData = null;
-      try {
-        const candidateDocIds = [userDoc.id, slug, `audit-${slug}`, userData.cleanUid, userData.previewId, userData.auditId].filter(Boolean);
-        for (const cId of candidateDocIds) {
-          const pSnap = await db.collection('anonymous_previews').doc(cId).get();
-          if (pSnap.exists) {
-            previewDocData = pSnap.data();
-            break;
-          }
-          const bSnap = await db.collection('btp_projects').doc(cId).get();
-          if (bSnap.exists) {
-            previewDocData = bSnap.data();
-            break;
-          }
-        }
-      } catch (e) {}
-
-      // Logo en direct
-      let directLogo = userData.logoUrl || userData.logoAdaptedUrl || userData.auditLogoUrl || previewDocData?.logoUrl || previewDocData?.logoAdaptedUrl || '';
-      
-      // Récupérer en priorité absolue les produits / mockups réels de la session
-      let productsList = [];
-
-      // Nettoyage / normalisation spécifique pour Club Vision Room
-      if (slug === 'clubvision' || slug === 'clubvisionroom' || slug === 'visionroom' || slug === '13ansvr' || slug === '13ans-vr' || userDoc.id === 'clubvisionroom' || userDoc.id === 'clubvision' || userDoc.id === 'mt074jnaldxn' || userDoc.id === '13ansvr') {
-        userData.companyName = 'Club Vision Room';
-        userData.logoA = userData.logoA || 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/logos/1787803061043_logo_dtf.png';
-        userData.logoB = userData.logoB || 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/logos/1787803061043_logo_bee_dtf.png';
-        userData.logoUrl = userData.logoA;
-        userData.logoAdaptedUrl = userData.logoB;
-        userData.auditLogoUrl = userData.logoA;
-        userData.accentColor = userData.accentColor || '#ff3366';
-        if (!userData.logoPlacements) {
-          userData.logoPlacements = {
-            tFront: 'B', tBack: 'A',
-            pFront: 'B', pBack: 'A',
-            hFront: 'B', hBack: 'A',
-            tankFront: 'B', tankBack: 'A',
-            tankWhiteFront: 'B', tankWhiteBack: 'A',
-            heavyFront: 'B', heavyBack: 'A',
-            cardFront: 'A', cardBack: 'A'
-          };
-        }
-        if (!userData.livePhotoUrl) {
-          userData.livePhotoUrl = 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg';
-        }
-        directLogo = userData.logoA;
-
-        // Récupérer en priorité absolue les mockups existants de l'utilisateur ou de la session
-        const existingMockups = (Array.isArray(userData.mockups) && userData.mockups.length > 0) ? userData.mockups
-          : ((Array.isArray(userData.items) && userData.items.length > 0) ? userData.items
-          : ((previewDocData && Array.isArray(previewDocData.items) && previewDocData.items.length > 0) ? previewDocData.items
-          : ((previewDocData && Array.isArray(previewDocData.mockups) && previewDocData.mockups.length > 0) ? previewDocData.mockups : null)));
-
-        if (existingMockups && existingMockups.length > 0) {
-          productsList = [...existingMockups];
-        } else {
-          productsList = [
-            {
-              id: 'tFront',
-              title: 'T-shirt Noir',
-              name: 'T-shirt Noir',
-              price: 29.90,
-              garment: 'tshirt',
-              view: 'front',
-              frontImageUrl: '/clubvision_tshirt_front.png',
-              imageFront: '/clubvision_tshirt_front.png',
-              backImageUrl: '/clubvision_tshirt_back.png',
-              imageBack: '/clubvision_tshirt_back.png',
-              imageUrl: '/clubvision_tshirt_front.png',
-              sizes: ['S', 'M', 'L', 'XL'],
-              colors: ['Noir', 'Blanc']
-            },
-            {
-              id: 'pFront',
-              title: 'Polo Premium',
-              name: 'Polo Premium',
-              price: 39.90,
-              garment: 'polo',
-              view: 'front',
-              frontImageUrl: '/clubvision_polo_front.png',
-              imageFront: '/clubvision_polo_front.png',
-              backImageUrl: '/clubvision_polo_back.png',
-              imageBack: '/clubvision_polo_back.png',
-              imageUrl: '/clubvision_polo_front.png',
-              sizes: ['S', 'M', 'L', 'XL'],
-              colors: ['Noir', 'Blanc']
-            },
-            {
-              id: 'hFront',
-              title: 'Hoodie',
-              name: 'Hoodie',
-              price: 49.90,
-              garment: 'hoodie',
-              view: 'front',
-              frontImageUrl: '/clubvision_hoodie_front.png',
-              imageFront: '/clubvision_hoodie_front.png',
-              backImageUrl: '/clubvision_hoodie_back.png',
-              imageBack: '/clubvision_hoodie_back.png',
-              imageUrl: '/clubvision_hoodie_front.png',
-              sizes: ['S', 'M', 'L', 'XL'],
-              colors: ['Noir', 'Blanc']
-            }
-          ];
-
-          // Mettre à jour Firestore UNIQUEMENT si aucune maquette n'existait au préalable
-          try {
-            const cvPayload = {
-              companyName: userData.companyName,
-              logoUrl: userData.logoA,
-              logoA: userData.logoA,
-              logoB: userData.logoB,
-              logoAdaptedUrl: userData.logoB,
-              auditLogoUrl: userData.logoA,
-              logoPlacements: userData.logoPlacements,
-              livePhotoUrl: userData.livePhotoUrl,
-              accentColor: userData.accentColor,
-              products: {
-                tshirt: { name: 'T-shirt Noir', price: 29.90, imageFront: '/clubvision_tshirt_front.png', imageBack: '/clubvision_tshirt_back.png', frontImageUrl: '/clubvision_tshirt_front.png', backImageUrl: '/clubvision_tshirt_back.png' },
-                polo: { name: 'Polo Premium', price: 39.90, imageFront: '/clubvision_polo_front.png', imageBack: '/clubvision_polo_back.png', frontImageUrl: '/clubvision_polo_front.png', backImageUrl: '/clubvision_polo_back.png' },
-                hoodie: { name: 'Hoodie', price: 49.90, imageFront: '/clubvision_hoodie_front.png', imageBack: '/clubvision_hoodie_back.png', frontImageUrl: '/clubvision_hoodie_front.png', backImageUrl: '/clubvision_hoodie_back.png' }
-              },
-              items: productsList,
-              mockups: productsList
-            };
-            db.collection('SiteConfigs').doc('clubvisionroom').set(cvPayload, { merge: true }).catch(() => {});
-          } catch (e) {}
-        }
-      }
-
-      if (slug === 'aaronh' || userDoc.id === 'aaronh' || (userData.companyName && userData.companyName.toLowerCase().replace(/[^a-z0-9]/g, '') === 'aaronh')) {
-        if (!userData.companyName || userData.companyName === 'aaronh' || userData.companyName === 'AARONH') {
-          userData.companyName = 'Aaron H';
-        }
-        if (!userData.livePhotoUrl || userData.livePhotoUrl === '' || userData.livePhotoUrl === 'none') {
-          userData.livePhotoUrl = 'https://storage.googleapis.com/signaid-prod-assets/users/aaronh/gallery/1787509987223_cover.jpg';
-        }
-      }
-
-      if (!userData.logoUrl && directLogo) {
-        userData.logoUrl = directLogo;
-      }
-      if (!userData.auditLogoUrl && directLogo) {
-        userData.auditLogoUrl = directLogo;
-      }
-
-      // Live photo en direct
-      if (!userData.livePhotoUrl && previewDocData?.livePhotoUrl) {
-        userData.livePhotoUrl = previewDocData.livePhotoUrl;
-      }
-
-      // Company name en direct
-      if (!userData.companyName && previewDocData?.companyName) {
-        userData.companyName = previewDocData.companyName;
-      }
-
-      // Accent color en direct
-      if (!userData.accentColor && previewDocData?.accentColor) {
-        userData.accentColor = previewDocData.accentColor;
-      }
-
-      // Récupérer en priorité absolue les produits / mockups réels de la session si non encore fixés
-      if (productsList.length === 0) {
-        const prodsSource = (userData.products && typeof userData.products === 'object') 
-          ? userData.products 
-          : (previewDocData?.products && typeof previewDocData.products === 'object' ? previewDocData.products : null);
-
-        if (prodsSource && !Array.isArray(prodsSource)) {
-          Object.keys(prodsSource).forEach(k => {
-            const prod = prodsSource[k];
-            if (prod && typeof prod === 'object') {
-              const fImg = prod.imageFront || prod.frontImageUrl || prod.imageUrl || prod.aiImageUrl;
-              const bImg = prod.imageBack || prod.backImageUrl || '';
-              let finalPrice = prod.price || (k === 'hoodie' ? 49.00 : (k === 'polo' ? 39.90 : 29.90));
-              if ((k === 'hoodie' || prod.garment === 'sweat' || prod.garment === 'hoodie' || (prod.title && prod.title.toLowerCase().includes('hoodie'))) && finalPrice > 50) {
-                finalPrice = 49.00;
-              }
-              if (fImg || bImg) {
-                productsList.push({
-                  id: prod.id || `${slug}-${k}`,
-                  title: prod.name || prod.title || `Produit ${k.toUpperCase()}`,
-                  price: finalPrice,
-                  garment: prod.garment || k,
-                  frontImageUrl: fImg,
-                  backImageUrl: bImg,
-                  imageUrl: fImg,
-                  sizes: prod.sizes || ['S', 'M', 'L', 'XL'],
-                  colors: prod.colors || ['Noir']
-                });
-              }
-            }
-          });
-        }
-
-        if (productsList.length === 0) {
-          if (Array.isArray(userData.mockups) && userData.mockups.length > 0) {
-            productsList = [...userData.mockups];
-          } else if (Array.isArray(userData.items) && userData.items.length > 0) {
-            productsList = [...userData.items];
-          } else if (previewDocData && Array.isArray(previewDocData.items) && previewDocData.items.length > 0) {
-            productsList = [...previewDocData.items];
-          } else if (previewDocData && Array.isArray(previewDocData.mockups) && previewDocData.mockups.length > 0) {
-            productsList = [...previewDocData.mockups];
-          }
-        }
-      }
-
-      // Cas particuliers pour profils célèbres (uniquement si AUCUN mockup réel n'a été configuré dans l'audit)
-      if (isDfazzUser && productsList.length === 0) {
-        userData.companyName = userData.companyName || 'DJ D-FAZZ';
-        userData.logoUrl = userData.logoUrl || '/logo_dfazz_avatar_clean.png';
-        userData.auditLogoUrl = userData.auditLogoUrl || '/logo_dfazz_avatar_clean.png';
-        userData.livePhotoUrl = userData.livePhotoUrl || '/assets/dfazz_hero.jpg';
-        userData.contactEmail = userData.contactEmail || 'Fabriziomagistro89@gmail.com';
-        userData.whatsapp = userData.whatsapp || '+32492104603';
-        productsList = [
-          {
-            id: 'dfazz-tshirt',
-            title: 'T-Shirt Premium DJ D-FAZZ',
-            price: 29.90,
-            garment: 'tshirt',
-            frontImageUrl: '/dfazz_tshirt_front.jpg',
-            backImageUrl: '/dfazz_tshirt_back.jpg',
-            imageUrl: '/dfazz_tshirt_front.jpg',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          },
-          {
-            id: 'dfazz-polo',
-            title: 'Polo Premium DJ D-FAZZ',
-            price: 39.90,
-            garment: 'polo',
-            frontImageUrl: '/dfazz_polo_front.jpg',
-            backImageUrl: '/dfazz_polo_back.jpg',
-            imageUrl: '/dfazz_polo_front.jpg',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          },
-          {
-            id: 'dfazz-hoodie',
-            title: 'Hoodie Premium DJ D-FAZZ',
-            price: 49.90,
-            garment: 'hoodie',
-            frontImageUrl: '/dfazz_hoodie_front.jpg',
-            backImageUrl: '/dfazz_hoodie_back.jpg',
-            imageUrl: '/dfazz_hoodie_front.jpg',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          }
-        ];
-      } else if ((slug === 'aaronh' || userDoc.id === 'aaronh') && productsList.length === 0) {
-        userData.companyName = userData.companyName || 'Aaron H';
-        userData.logoUrl = userData.logoUrl || '/aaronh_logo_transparent.png';
-        userData.auditLogoUrl = userData.auditLogoUrl || '/aaronh_logo_transparent.png';
-        userData.contactEmail = userData.contactEmail || 'contact.djaaronh@gmail.com';
-        productsList = [
-          {
-            id: 'aaronh-tshirt',
-            title: 'T-Shirt Premium Aaron H',
-            price: 29.90,
-            garment: 'tshirt',
-            frontImageUrl: '/assets/tshirt-black-JHK170.png',
-            backImageUrl: '/assets/tshirt-black-JHK170-dos.png',
-            imageUrl: '/assets/tshirt-black-JHK170.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          },
-          {
-            id: 'aaronh-polo',
-            title: 'Polo Premium Aaron H',
-            price: 39.90,
-            garment: 'polo',
-            frontImageUrl: '/assets/polo-black-JHK510.png',
-            backImageUrl: '/assets/polo-black-JHK510-dos.png',
-            imageUrl: '/assets/polo-black-JHK510.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          },
-          {
-            id: 'aaronh-hoodie',
-            title: 'Hoodie Premium Aaron H',
-            price: 49.90,
-            garment: 'hoodie',
-            frontImageUrl: '/assets/hoodie-black-JHK421.png',
-            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
-            imageUrl: '/assets/hoodie-black-JHK421.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          }
-        ];
-      } else if ((slug === 'dokiin' || userDoc.id === 'dokiin' || userDoc.id === 'audit-mt4cimp4luio') && productsList.length === 0) {
-        userData.companyName = userData.companyName || 'D OKIIN';
-        userData.logoUrl = userData.logoUrl || '/dokiin_logo_white.png';
-        userData.auditLogoUrl = userData.auditLogoUrl || userData.logoUrl || '/dokiin_logo_white.png';
-        userData.livePhotoUrl = userData.livePhotoUrl || '/assets/previews/dokiin_mockup.webp';
-        userData.theme = userData.theme || 'dark';
-        userData.logoOverlayColor = userData.logoOverlayColor || 'white';
-        userData.accentColor = userData.accentColor || '#38bdf8';
-        productsList = [
-          {
-            id: 'dokiin-tshirt',
-            title: 'T-Shirt Premium D OKIIN',
-            price: 29.90,
-            garment: 'tshirt',
-            frontImageUrl: '/assets/tshirt-black-JHK170.png',
-            backImageUrl: '/assets/tshirt-black-JHK170-dos.png',
-            imageUrl: '/assets/tshirt-black-JHK170.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          },
-          {
-            id: 'dokiin-polo',
-            title: 'Polo Premium D OKIIN',
-            price: 39.90,
-            garment: 'polo',
-            frontImageUrl: '/assets/polo-black-JHK510.png',
-            backImageUrl: '/assets/polo-black-JHK510-dos.png',
-            imageUrl: '/assets/polo-black-JHK510.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          },
-          {
-            id: 'dokiin-hoodie',
-            title: 'Hoodie Premium D OKIIN',
-            price: 49.90,
-            garment: 'hoodie',
-            frontImageUrl: '/assets/hoodie-black-JHK421.png',
-            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
-            imageUrl: '/assets/hoodie-black-JHK421.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          }
-        ];
-      } else if ((slug === 'mentalist' || slug === 'thementalist' || userDoc.id === 'mentalist' || userDoc.id === 'thementalist') && productsList.length === 0) {
-        if (!userData.companyName || userData.companyName.toLowerCase().includes('dfazz')) {
-          userData.companyName = 'Mentalist';
-        }
-        userData.logoUrl = userData.logoUrl || 'https://storage.googleapis.com/signaid-prod-assets/users/audit-msx4a4h6crjy/logos/1787516508472_logo.png';
-        userData.auditLogoUrl = userData.auditLogoUrl || 'https://storage.googleapis.com/signaid-prod-assets/users/audit-msx4a4h6crjy/logos/1787516508472_logo.png';
-        const cName = userData.companyName || 'Mentalist';
-        productsList = [
-          {
-            id: 'mentalist-tshirt',
-            title: `T-Shirt ${cName}`,
-            price: 29.90,
-            garment: 'tshirt',
-            frontImageUrl: '/assets/tshirt-black-JHK170.png',
-            backImageUrl: '/assets/tshirt-black-JHK170-dos.png',
-            imageUrl: '/assets/tshirt-black-JHK170.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          },
-          {
-            id: 'mentalist-polo',
-            title: `Polo ${cName}`,
-            price: 39.90,
-            garment: 'polo',
-            frontImageUrl: '/assets/polo-black-JHK510.png',
-            backImageUrl: '/assets/polo-black-JHK510-dos.png',
-            imageUrl: '/assets/polo-black-JHK510.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          },
-          {
-            id: 'mentalist-hoodie',
-            title: `Hoodie ${cName}`,
-            price: 49.90,
-            garment: 'hoodie',
-            frontImageUrl: '/assets/hoodie-black-JHK421.png',
-            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
-            imageUrl: '/assets/hoodie-black-JHK421.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          }
-        ];
-      } else if ((slug === 'elox' || slug === 'djelox' || userDoc.id === 'elox' || userDoc.id === 'djelox') && productsList.length === 0) {
-        userData.companyName = userData.companyName || 'DJ ELOX';
-        userData.logoUrl = userData.logoUrl || '/elox_logo.png';
-        userData.auditLogoUrl = userData.auditLogoUrl || userData.logoUrl || '/elox_logo.png';
-        userData.livePhotoUrl = userData.livePhotoUrl || '/elox_hero.jpg';
-        userData.theme = userData.theme || 'dark';
-        userData.logoOverlayColor = userData.logoOverlayColor || 'original';
-        userData.accentColor = userData.accentColor || '#00ff88';
-        userData.presentation = userData.presentation || 'DJ officiel, sets électroniques en clubs et festivals (Liège, Bruxelles, Dinant). Merchandising officiel et textile exclusif imprimé à la demande.';
-        userData.enableLiveWidget = userData.enableLiveWidget !== undefined ? userData.enableLiveWidget : true;
-        userData.liveWidgetStatus = userData.liveWidgetStatus || '🟢 En Tournée / Liège • Bruxelles • Dinant';
-        productsList = [
-          {
-            id: 'elox-tshirt',
-            title: 'T-Shirt Premium DJ ELOX',
-            price: 29.90,
-            garment: 'tshirt',
-            frontImageUrl: '/assets/tshirt-black-JHK170.png',
-            backImageUrl: '/assets/tshirt-black-JHK170-dos.png',
-            imageUrl: '/assets/tshirt-black-JHK170.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          },
-          {
-            id: 'elox-polo',
-            title: 'Polo Premium DJ ELOX',
-            price: 39.90,
-            garment: 'polo',
-            frontImageUrl: '/assets/polo-black-JHK510.png',
-            backImageUrl: '/assets/polo-black-JHK510-dos.png',
-            imageUrl: '/assets/polo-black-JHK510.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          },
-          {
-            id: 'elox-hoodie',
-            title: 'Hoodie Premium DJ ELOX',
-            price: 49.90,
-            garment: 'hoodie',
-            frontImageUrl: '/assets/hoodie-black-JHK421.png',
-            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
-            imageUrl: '/assets/hoodie-black-JHK421.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          }
-        ];
-      }
-
-      if (productsList.length === 0) {
-        // 1. Mockups directs dans le document SiteConfigs (userData.mockups, userData.items ou userData.products)
-        if (userData.mockups && Array.isArray(userData.mockups) && userData.mockups.length > 0) {
-          productsList.push(...userData.mockups);
-        }
-        if (userData.items && Array.isArray(userData.items) && userData.items.length > 0) {
-          productsList.push(...userData.items);
-        }
-        if (userData.products && typeof userData.products === 'object') {
-          if (Array.isArray(userData.products)) {
-            productsList.push(...userData.products);
-          } else {
-            Object.keys(userData.products).forEach(k => {
-              const prod = userData.products[k];
-              if (prod && typeof prod === 'object') {
-                productsList.push({
-                  id: prod.id || `${slug}-${k}`,
-                  title: prod.name || prod.title || `Produit ${k.toUpperCase()}`,
-                  price: prod.price || 29.90,
-                  garment: prod.garment || k,
-                  frontImageUrl: prod.imageFront || prod.frontImageUrl || prod.imageUrl || prod.aiImageUrl,
-                  backImageUrl: prod.imageBack || prod.backImageUrl || '',
-                  imageUrl: prod.imageFront || prod.frontImageUrl || prod.imageUrl,
-                  sizes: prod.sizes || ['S', 'M', 'L', 'XL'],
-                  colors: prod.colors || ['Noir']
-                });
-              }
-            });
-          }
-        }
-      }
-
-      if (productsList.length === 0 || productsList.every(p => !p.backImageUrl)) {
-        // 2. Chercher également dans btp_projects et anonymous_previews
-        const isDfazzUser = slug === 'fabrizio' || slug.includes('djdfazz') || userDoc.id === 'guest_ms3ijgnco2xnid';
-        const keysToTry = [...new Set([userDoc.id, userData.actuationKey, userData.generatedKey, slug, isDfazzUser ? 'audit-8f198p5' : null])].filter(Boolean);
-        for (const k of keysToTry) {
-          let projSnap = await db.collection('btp_projects').where('projectId', '==', k).get();
-          if (projSnap.empty) {
-            projSnap = await db.collection('btp_projects').where('previewId', '==', k).get();
-          }
-          if (projSnap.empty) {
-            const directProj = await db.collection('btp_projects').doc(k).get();
-            if (directProj.exists) projSnap = { empty: false, docs: [directProj] };
-          }
-          if (projSnap && !projSnap.empty) {
-            const pData = projSnap.docs[0].data();
-            if (pData.logoUrl || pData.logoAdaptedUrl) {
-              userData.auditLogoUrl = pData.logoUrl || pData.logoAdaptedUrl;
-            }
-            const foundItems = pData.mockups || pData.items || [];
-            if (foundItems.length > 0) {
-              productsList.unshift(...foundItems);
-            }
-          }
-          const prevDoc = await db.collection('anonymous_previews').doc(k).get();
-          if (prevDoc.exists) {
-            const pData = prevDoc.data();
-            if (pData.logoUrl || pData.logoAdaptedUrl) {
-              userData.auditLogoUrl = pData.logoUrl || pData.logoAdaptedUrl;
-            }
-            const pItems = pData.items || pData.mockups || [];
-            if (pItems.length > 0) {
-              productsList.unshift(...pItems);
-            }
-          }
-        }
-      }
-
-      // 3. Fallback collection `products`
-      const productsSnap = await db.collection('products')
-        .where('userId', '==', userDoc.id)
-        .get();
-      
-      const dbProducts = productsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      productsList.push(...dbProducts);
-
-      // 4. Fallback catalogue vêtements par défaut (T-Shirt, Hoodie, Polo, Sweat) si aucun mockup spécifique n'a été créé
-      if (productsList.length === 0) {
-        const company = userData.companyName || userData.username || 'Artiste';
-        const logo = extractBestImageUrl({ imageUrl: userData.auditLogoUrl || userData.logoUrl, url: userData.avatarUrl }) || '/logo.png';
-
-        productsList.push(
-          {
-            id: 'item-tshirt',
-            title: `T-Shirt Premium ${company}`,
-            price: 29.90,
-            imageUrl: logo,
-            garment: 'tshirt',
-            frontImageUrl: '/assets/tshirt-black-JHK170.png',
-            backImageUrl: '/assets/tshirt-black-JHK170-dos.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir', 'Blanc']
-          },
-          {
-            id: 'item-hoodie',
-            title: `Hoodie Officiel ${company}`,
-            price: 49.90,
-            imageUrl: logo,
-            garment: 'hoodie',
-            frontImageUrl: '/assets/hoodie-black-JHK421.png',
-            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir']
-          },
-          {
-            id: 'item-polo',
-            title: `Polo Piqué ${company}`,
-            price: 39.90,
-            imageUrl: logo,
-            garment: 'polo',
-            frontImageUrl: '/assets/polo-black-JHK510.png',
-            backImageUrl: '/assets/polo-black-JHK510-dos.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir', 'Blanc']
-          },
-          {
-            id: 'item-sweat',
-            title: `Sweatshirt Crewneck ${company}`,
-            price: 44.90,
-            imageUrl: logo,
-            garment: 'sweat',
-            frontImageUrl: '/assets/hoodie-black-JHK421.png',
-            backImageUrl: '/assets/hoodie-black-JHK421-dos.png',
-            sizes: ['S', 'M', 'L', 'XL'],
-            colors: ['Noir', 'Gris']
-          }
-        );
-      }
-
-      // 1. Filtrer les cartes de visite (business_card)
-      const filteredItems = productsList.filter(item => {
-        const garment = String(item.garment || item.category || '').toLowerCase();
-        const title = String(item.title || item.name || '').toLowerCase();
-        return garment !== 'business_card' && !title.includes('carte de visite') && !title.includes('visite');
-      });
-
-      // 2. Regrouper les vues Face et Dos par type de vêtement
-      const groupedMap = {};
-
-      filteredItems.forEach((item, index) => {
-        let garmentKey = (item.garment || item.category || `item-${index}`).toLowerCase();
-        if (garmentKey === 'sweat' || garmentKey === 'sweatshirt') garmentKey = 'hoodie';
-        
-        let frontCandidate = extractBestImageUrl(item, 'front');
-        let backCandidate = extractBestImageUrl(item, 'back');
-
-        const defaultFrontTemplate = garmentKey === 'polo' 
-          ? '/assets/polo-black-JHK510.png' 
-          : (garmentKey === 'hoodie' ? '/assets/hoodie-black-JHK421.png' : '/assets/tshirt-black-JHK170.png');
-
-        const defaultBackTemplate = garmentKey === 'polo' 
-          ? '/assets/polo-black-JHK510-dos.png' 
-          : (garmentKey === 'hoodie' ? '/assets/hoodie-black-JHK421-dos.png' : '/assets/tshirt-black-JHK170-dos.png');
-
-        if (!frontCandidate || frontCandidate.includes('dokiin_') || frontCandidate.includes('aaronh_') || frontCandidate.includes('thementalist_') || frontCandidate.includes('elox_')) {
-          frontCandidate = defaultFrontTemplate;
-        }
-
-        if (!backCandidate || backCandidate.includes('dokiin_') || backCandidate.includes('aaronh_') || backCandidate.includes('thementalist_') || backCandidate.includes('elox_')) {
-          backCandidate = defaultBackTemplate;
-        }
-
-        if (!groupedMap[garmentKey]) {
-          let title = item.title || item.name || item.info?.title || `Produit Merch ${garmentKey.toUpperCase()}`;
-          title = String(title).replace(/\s+(FACE|DOS)$/i, '').trim();
-          const defaultPriceMap = {
-            tshirt: 29.90,
-            tshirt_basic: 24.90,
-            polo: 39.90,
-            sweat: 44.90,
-            sweatshirt: 44.90,
-            hoodie: 49.90
-          };
-          const stdPrice = defaultPriceMap[garmentKey] || 29.90;
-          const priceRaw = item.price || item.info?.price;
-          const price = typeof priceRaw === 'number' ? priceRaw : (parseFloat(String(priceRaw || '').replace(/[^\d.]/g, '')) || stdPrice);
-
-          let initialFront = frontCandidate || defaultFrontTemplate;
-          if (initialFront && (initialFront.includes('logo_official') || initialFront.includes('logo_white_') || initialFront.includes('logo_A_active')) && !initialFront.includes('tshirt') && !initialFront.includes('polo') && !initialFront.includes('hoodie')) {
-            initialFront = defaultFrontTemplate;
-          }
-          let initialBack = backCandidate || defaultBackTemplate;
-          if (initialBack && (initialBack.includes('logo_official') || initialBack.includes('logo_white_') || initialBack.includes('logo_A_active')) && !initialBack.includes('tshirt') && !initialBack.includes('polo') && !initialBack.includes('hoodie')) {
-            initialBack = defaultBackTemplate;
-          }
-
-          groupedMap[garmentKey] = {
-            id: String(item.id || `garment-${garmentKey}`),
-            name: String(title),
-            price: price,
-            garment: garmentKey,
-            frontImageUrl: initialFront,
-            backImageUrl: initialBack,
-            imageUrl: initialFront,
-            sizes: Array.isArray(item.sizes) ? item.sizes : ['S', 'M', 'L', 'XL'],
-            colors: Array.isArray(item.colors) ? item.colors : ['Noir', 'Blanc']
-          };
-        } else {
-          if (item.title && (!item.view || item.view === 'front')) {
-            groupedMap[garmentKey].name = String(item.title).replace(/\s+(FACE|DOS)$/i, '').trim();
-          }
-          const isFrontCustom = frontCandidate && (
-            frontCandidate.includes('storage.googleapis.com') ||
-            frontCandidate.includes('firebasestorage') ||
-            frontCandidate.includes('btp_mockups') ||
-            frontCandidate.includes('dfazz') ||
-            frontCandidate.includes('aaronh') ||
-            frontCandidate.includes('clubvision') ||
-            frontCandidate.startsWith('data:') ||
-            (frontCandidate.startsWith('/assets/') && !frontCandidate.includes('JHK') && !frontCandidate.includes('card-base') && !frontCandidate.includes('neutral'))
-          );
-          const currentFrontIsGeneric = !groupedMap[garmentKey].frontImageUrl || groupedMap[garmentKey].frontImageUrl.includes('logo_') || groupedMap[garmentKey].frontImageUrl.includes('JHK') || groupedMap[garmentKey].frontImageUrl.includes('bctw');
-
-          if (frontCandidate && (currentFrontIsGeneric || isFrontCustom)) {
-            groupedMap[garmentKey].frontImageUrl = frontCandidate;
-          }
-
-          const isBackCustom = backCandidate && (
-            backCandidate.includes('storage.googleapis.com') ||
-            backCandidate.includes('firebasestorage') ||
-            backCandidate.includes('btp_mockups') ||
-            backCandidate.includes('dfazz') ||
-            backCandidate.includes('aaronh') ||
-            backCandidate.includes('clubvision') ||
-            backCandidate.startsWith('data:') ||
-            (backCandidate.startsWith('/assets/') && !backCandidate.includes('JHK') && !backCandidate.includes('card-base') && !backCandidate.includes('neutral'))
-          );
-          const currentBackIsGeneric = !groupedMap[garmentKey].backImageUrl || groupedMap[garmentKey].backImageUrl.includes('logo_') || groupedMap[garmentKey].backImageUrl.includes('JHK') || groupedMap[garmentKey].backImageUrl.includes('bctw');
-
-          if (backCandidate && (currentBackIsGeneric || isBackCustom)) {
-            groupedMap[garmentKey].backImageUrl = backCandidate;
-          } else if (!groupedMap[garmentKey].backImageUrl) {
-            groupedMap[garmentKey].backImageUrl = defaultBackTemplate;
-          }
-        }
-      });
-
-      const ensurePublicAssetUrl = (url) => {
-        if (!url || typeof url !== 'string') return url || '';
-        if (url.includes('firebasestorage.googleapis.com/v0/b/signaid-prod-assets/o/')) {
-          const match = url.match(/\/o\/(.*?)(?:\?|$)/);
-          if (match) {
-            const assetPath = decodeURIComponent(match[1]);
-            return `https://us-central1-signaid-prod.cloudfunctions.net/getAsset?path=${encodeURIComponent(assetPath)}`;
-          }
-        }
-        return url;
-      };
-
-      let lastStorageError = null;
-      const uploadBase64ToStorage = async (base64Str, assetPath) => {
-        if (!base64Str || typeof base64Str !== 'string' || !base64Str.startsWith('data:')) {
-          return ensurePublicAssetUrl(base64Str) || '';
-        }
-        try {
-          const commaIdx = base64Str.indexOf(',');
-          if (commaIdx === -1) return base64Str;
-
-          const header = base64Str.substring(0, commaIdx);
-          const base64Data = base64Str.substring(commaIdx + 1);
-
-          const mimeMatch = header.match(/data:(.*?);/);
-          const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
-          const buffer = Buffer.from(base64Data.trim(), 'base64');
-
-          const bucket = admin.storage().bucket('signaid-prod-assets');
-          const file = bucket.file(assetPath);
-
-          await file.save(buffer, {
-            metadata: {
-              contentType: mimeType,
-              cacheControl: 'public, max-age=86400'
-            },
-            resumable: false
-          });
-          await file.makePublic().catch(() => {});
-
-          const encodedPath = encodeURIComponent(assetPath);
-          return `https://us-central1-signaid-prod.cloudfunctions.net/getAsset?path=${encodedPath}`;
-        } catch (err) {
-          console.error('[Storage Upload Error]', err);
-          lastStorageError = String(err.message || err);
-          return base64Str;
-        }
-      };
-
-      let needsFirestoreUpdate = false;
-
-      // 1. Logo Profil (Avatar / Bulle de profil) :
-      // Le logo de création de profil (userData.logoUrl / avatarUrl / profileLogoUrl) est PRIORITAIRE pour la bulle.
-      let cleanLogoUrl = extractBestImageUrl({ imageUrl: userData.logoUrl || userData.avatarUrl || userData.profileLogoUrl || previewDocData?.logoUrl || userData.auditLogoUrl || previewDocData?.auditLogoUrl }) || '';
-      if (cleanLogoUrl.startsWith('data:image/')) {
-        cleanLogoUrl = await uploadBase64ToStorage(cleanLogoUrl, `btp_mockups/${userDoc.id}/web/logo_${Date.now()}.png`);
-        needsFirestoreUpdate = true;
-      } else {
-        cleanLogoUrl = ensurePublicAssetUrl(cleanLogoUrl);
-      }
-
-      // 2. Logos Merch / Textiles (Audit) :
-      // Pour les visuels de merch, les logos de l'audit sont PRIORITAIRES.
-      let cleanAuditLogoA = extractBestImageUrl({ imageUrl: userData.auditLogoUrl || userData.logoA || previewDocData?.auditLogoUrl || previewDocData?.logoA || userData.logoUrl }) || cleanLogoUrl;
-      if (cleanAuditLogoA.startsWith('data:image/')) {
-        cleanAuditLogoA = await uploadBase64ToStorage(cleanAuditLogoA, `btp_mockups/${userDoc.id}/web/audit_logoA_${Date.now()}.png`);
-        needsFirestoreUpdate = true;
-      } else {
-        cleanAuditLogoA = ensurePublicAssetUrl(cleanAuditLogoA);
-      }
-
-      let cleanAuditLogoB = extractBestImageUrl({ imageUrl: userData.logoB || userData.logoAdaptedUrl || previewDocData?.logoB || previewDocData?.logoAdaptedUrl || userData.auditLogoUrl || userData.logoA || userData.logoUrl }) || cleanAuditLogoA;
-      if (cleanAuditLogoB.startsWith('data:image/')) {
-        cleanAuditLogoB = await uploadBase64ToStorage(cleanAuditLogoB, `btp_mockups/${userDoc.id}/web/audit_logoB_${Date.now()}.png`);
-        needsFirestoreUpdate = true;
-      } else {
-        cleanAuditLogoB = ensurePublicAssetUrl(cleanAuditLogoB);
-      }
-
-      let cleanLivePhotoUrl = extractBestImageUrl({ imageUrl: userData.livePhotoUrl }) || '';
-      if (cleanLivePhotoUrl.startsWith('data:image/')) {
-        cleanLivePhotoUrl = await uploadBase64ToStorage(cleanLivePhotoUrl, `btp_mockups/${userDoc.id}/web/live_${Date.now()}.png`);
-        needsFirestoreUpdate = true;
-      } else {
-        cleanLivePhotoUrl = ensurePublicAssetUrl(cleanLivePhotoUrl);
-      }
-
-      // Strict Anti-Leakage Guard: Prevent DJ D-FAZZ logo from leaking into any other artist profile
-      if (slug === 'aaronh' || userDoc.id === 'aaronh') {
-        cleanLogoUrl = cleanLogoUrl || '/aaronh_logo_transparent.png';
-      } else if (slug === 'mentalist' || slug === 'thementalist' || userDoc.id === 'mentalist' || userDoc.id === 'thementalist') {
-        cleanLogoUrl = cleanLogoUrl || 'https://storage.googleapis.com/signaid-prod-assets/users/audit-msx4a4h6crjy/logos/1787516508472_logo.png';
-      } else if (slug === 'elox' || userDoc.id === 'elox') {
-        cleanLogoUrl = cleanLogoUrl || '/elox_logo.png';
-      } else if (!isDfazzUser) {
-        if (cleanLogoUrl.toLowerCase().includes('dfazz') || cleanLogoUrl.includes('audit-8f198p5') || cleanLogoUrl.includes('guest_ms3ijgnco2xnid')) {
-          cleanLogoUrl = '';
-        }
-        if (cleanLivePhotoUrl.toLowerCase().includes('dfazz') || cleanLivePhotoUrl.includes('audit-8f198p5') || cleanLivePhotoUrl.includes('guest_ms3ijgnco2xnid')) {
-          cleanLivePhotoUrl = '';
-        }
-      }
-
-      const fallbackLogo = cleanLogoUrl || '/logo.png';
-
-      const defaultGarmentImages = {
-        tshirt: '/assets/tshirt-black-JHK170.png',
-        polo: '/assets/polo-black-JHK510.png',
-        sweat: '/assets/hoodie-black-JHK421.png',
-        hoodie: '/assets/hoodie-black-JHK421.png',
-        sweatshirt: '/assets/hoodie-black-JHK421.png'
-      };
-
-      const normalizedProducts = await Promise.all(Object.values(groupedMap).map(async (p, idx) => {
-        let fImg = p.frontImageUrl || p.imageUrl || '';
-        let bImg = p.backImageUrl || '';
-
-        // Si l'image de face est totalement absente, utiliser l'image de gabarit vêtement par défaut
-        if (!fImg) {
-          const garmentKey = String(p.garment || '').toLowerCase();
-          fImg = defaultGarmentImages[garmentKey] || fallbackLogo;
-        }
-
-        if (fImg.startsWith('data:')) {
-          fImg = await uploadBase64ToStorage(fImg, `btp_mockups/${userDoc.id}/web/${p.id}_front_${Date.now()}_${idx}.png`);
-          needsFirestoreUpdate = true;
-        } else {
-          fImg = ensurePublicAssetUrl(fImg);
-        }
-        if (bImg.startsWith('data:')) {
-          bImg = await uploadBase64ToStorage(bImg, `btp_mockups/${userDoc.id}/web/${p.id}_back_${Date.now()}_${idx}.png`);
-          needsFirestoreUpdate = true;
-        } else {
-          bImg = ensurePublicAssetUrl(bImg);
-        }
-
-        const mainImg = fImg || bImg || fallbackLogo;
-
-        return {
-          id: String(p.id),
-          name: String(p.name),
-          price: Number(p.price),
-          garment: String(p.garment),
-          frontImageUrl: String(fImg),
-          backImageUrl: String(bImg),
-          imageUrl: String(mainImg),
-          sizes: Array.isArray(p.sizes) ? p.sizes : ['S', 'M', 'L', 'XL'],
-          colors: Array.isArray(p.colors) ? p.colors : ['Noir', 'Blanc']
-        };
-      }));
-
-      // Si des chaînes Base64 ont été migrées vers Firebase Storage, persistez les nouvelles URLs dans Firestore (SiteConfigs, prospects, audits, vault)
-      if (needsFirestoreUpdate) {
-        try {
-          const updateData = {};
-          if (cleanLogoUrl.startsWith('http')) updateData.logoUrl = cleanLogoUrl;
-          if (cleanLivePhotoUrl.startsWith('http')) updateData.livePhotoUrl = cleanLivePhotoUrl;
-
-          updateData.mockups = normalizedProducts.map(p => ({
-            id: p.id,
-            title: p.name,
-            garment: p.garment,
-            price: p.price,
-            imageFront: p.frontImageUrl,
-            imageBack: p.backImageUrl,
-            imageUrl: p.imageUrl,
-            url: p.imageUrl
-          }));
-
-          await db.collection('SiteConfigs').doc(userDoc.id).set(updateData, { merge: true });
-          console.log(`[Base64 Migration] SiteConfigs/${userDoc.id} updated with Cloud Storage URLs.`);
-
-          // Synchronisation normalisée complète dans prospects, audits et vault
-          await persistProspectProfileBackend(admin, {
-            prospectSlug: userDoc.id,
-            slug: userDoc.id,
-            companyName: userData.companyName || userDoc.id,
-            logoUrl: cleanLogoUrl.startsWith('http') ? cleanLogoUrl : undefined,
-            livePhotoUrl: cleanLivePhotoUrl.startsWith('http') ? cleanLivePhotoUrl : undefined,
-            products: normalizedProducts
-          });
-        } catch (updateErr) {
-          console.warn('[Base64 Migration Error]', updateErr);
-        }
-      }
-
-      // Filtrer strictement les champs publics de l'artiste pour minimiser le payload
-      const cleanSocials = Array.isArray(userData.socials)
-        ? userData.socials
-            .filter(s => s && s.enabled !== false && (s.platform || s.url) && String(s.url || '').trim() !== '')
-            .map(s => ({
-              platform: String(s?.platform || ''),
-              url: String(s?.url || ''),
-              enabled: s?.enabled !== false
-            }))
-        : [];
-
-      const cleanCustomLinks = Array.isArray(userData.customLinks)
-        ? userData.customLinks.map(l => ({
-            id: String(l?.id || ''),
-            title: String(l?.title || ''),
-            type: String(l?.type || ''),
-            url: String(l?.url || ''),
-            platform: String(l?.platform || ''),
-            icon: String(l?.icon || ''),
-            bgColor: String(l?.bgColor || ''),
-            textColor: String(l?.textColor || ''),
-            enabled: l?.enabled !== false
-          })).filter(l => l.title || l.url || l.type)
-        : [];
-
-      const responseData = {
-        success: true,
-        artist: {
-          id: String(userData.id),
-          companyName: String(userData.companyName !== undefined ? userData.companyName : (previewDocData?.companyName || '')).trim(),
-          activitySector: String(userData.activitySector || previewDocData?.activitySector || '').trim(),
-          slug: String(userData.slug || slug),
-          logoUrl: cleanLogoUrl,
-          auditLogoUrl: cleanAuditLogoA,
-          logoA: cleanAuditLogoA,
-          logoB: cleanAuditLogoB,
-          logoAdaptedUrl: cleanAuditLogoB,
-          logoPlacements: userData.logoPlacements || { tFront: 'B', tBack: 'A', pFront: 'B', pBack: 'A', hFront: 'B', hBack: 'A' },
-          presentation: String(userData.presentation || userData.bio || ''),
-          whatsapp: String(userData.whatsappNumber || userData.whatsapp || ''),
-          contactEmail: String(userData.contactEmail || userData.email || ''),
-          socials: cleanSocials,
-          customLinks: cleanCustomLinks,
-          theme: String(userData.theme || 'auto'),
-          accentColor: String(userData.accentColor || '#ff3366'),
-          logoOverlayColor: String(userData.logoOverlayColor || previewDocData?.logoOverlayColor || 'auto'),
-          logoScale: userData.logoScale !== undefined ? userData.logoScale : (previewDocData?.logoScale !== undefined ? previewDocData.logoScale : 100),
-          coverHeight: userData.coverHeight !== undefined ? userData.coverHeight : (previewDocData?.coverHeight !== undefined ? previewDocData.coverHeight : 280),
-          coverZoom: userData.coverZoom !== undefined ? userData.coverZoom : (previewDocData?.coverZoom !== undefined ? previewDocData.coverZoom : 100),
-          coverPositionY: userData.coverPositionY !== undefined ? userData.coverPositionY : (previewDocData?.coverPositionY !== undefined ? previewDocData.coverPositionY : 50),
-          coverPositionX: userData.coverPositionX !== undefined ? userData.coverPositionX : (previewDocData?.coverPositionX !== undefined ? previewDocData.coverPositionX : 50),
-          livePhotoUrl: cleanLivePhotoUrl,
-          invertLogoInLightMode: userData.invertLogoInLightMode !== false
-        },
-        products: normalizedProducts,
-        storageError: lastStorageError
-      };
-
-      console.log('[PAYLOAD CHECK] Size:', Buffer.byteLength(JSON.stringify(responseData)), 'bytes');
-
-      // ── Cache write ──────────────────────────────────────────────────────
-      if (_slugCache.size >= 200) _slugCache.delete(_slugCache.keys().next().value);
-      _slugCache.set(slug, { data: responseData, ts: Date.now() });
-      // ─────────────────────────────────────────────────────────────────────
-
-      res.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
-      return res.status(200).json(responseData);
-    } catch (error) {
-      console.error('Erreur getUserBySlug:', error);
-      return res.status(500).json({ error: error.message });
+    } catch (e) { }
+
+    // Logo en direct
+    let directLogo = userData.logoUrl || userData.logoAdaptedUrl || userData.auditLogoUrl || previewDocData?.logoUrl || previewDocData?.logoAdaptedUrl || '';
+    if (!userData.logoUrl && directLogo) {
+      userData.logoUrl = directLogo;
     }
+    if (!userData.auditLogoUrl && directLogo) {
+      userData.auditLogoUrl = directLogo;
+    }
+
+    const isBannerRemoved = userData.isBannerRemoved === true || (
+      !userData.livePhotoUrl && !userData.coverUrl && !userData.bannerUrl && !userData.coverImage
+    );
+
+    // Live photo en direct
+    if (!isBannerRemoved && !userData.livePhotoUrl && previewDocData?.livePhotoUrl) {
+      userData.livePhotoUrl = previewDocData.livePhotoUrl;
+    }
+
+    // Company name en direct
+    if (!userData.companyName && previewDocData?.companyName) {
+      userData.companyName = previewDocData.companyName;
+    }
+
+    // Accent color en direct
+    if (!userData.accentColor && previewDocData?.accentColor) {
+      userData.accentColor = previewDocData.accentColor;
+    }
+
+    // Récupérer en priorité absolue les produits / mockups réels de la session (100% data-driven)
+    let productsList = [];
+
+    // Priorité 1 : userData.products ou previewDocData.products si c'est un tableau (cas post-sync)
+    const prodsArray = (Array.isArray(userData.products) && userData.products.length > 0)
+      ? userData.products
+      : (Array.isArray(previewDocData?.products) && previewDocData.products.length > 0 ? previewDocData.products : null);
+
+    if (prodsArray) {
+      productsList = [...prodsArray];
+    }
+
+    // Priorité 2 : si products est un objet (dictionnaire), itérer ses valeurs
+    if (productsList.length === 0) {
+      const prodsSource = (userData.products && typeof userData.products === 'object' && !Array.isArray(userData.products))
+        ? userData.products
+        : (previewDocData?.products && typeof previewDocData.products === 'object' && !Array.isArray(previewDocData.products) ? previewDocData.products : null);
+
+      if (prodsSource) {
+        Object.keys(prodsSource).forEach(k => {
+          const prod = prodsSource[k];
+          if (prod && typeof prod === 'object') {
+            const fImg = prod.imageFront || prod.frontImageUrl || prod.imageUrl || prod.aiImageUrl;
+            const bImg = prod.imageBack || prod.backImageUrl || '';
+            let finalPrice = prod.price || (k === 'hoodie' ? 49.00 : (k === 'polo' ? 39.90 : 29.90));
+            if ((k === 'hoodie' || prod.garment === 'sweat' || prod.garment === 'hoodie' || (prod.title && prod.title.toLowerCase().includes('hoodie'))) && finalPrice > 50) {
+              finalPrice = 49.00;
+            }
+            if (fImg || bImg) {
+              productsList.push({
+                id: prod.id || `${slug}-${k}`,
+                sku: prod.sku || undefined,
+                title: prod.name || prod.title || `Produit ${k.toUpperCase()}`,
+                name: prod.name || prod.title || `Produit ${k.toUpperCase()}`,
+                price: finalPrice,
+                garment: prod.garment || k,
+                color: prod.color || (String(k).includes('white') || String(k).includes('blanc') || String(prod.sku || '').toLowerCase().includes('wht') ? 'Blanc' : 'Noir'),
+                frontImageUrl: fImg,
+                backImageUrl: bImg,
+                imageUrl: fImg,
+                sizes: prod.sizes || ['S', 'M', 'L', 'XL'],
+                colors: prod.colors || ['Noir']
+              });
+            }
+          }
+        });
+      }
+    }
+
+    // Priorité 3 : userData.mockups / userData.items / previewDocData
+    if (productsList.length === 0) {
+      if (Array.isArray(userData.mockups) && userData.mockups.length > 0) {
+        productsList = [...userData.mockups];
+      } else if (Array.isArray(userData.items) && userData.items.length > 0) {
+        productsList = [...userData.items];
+      } else if (previewDocData && Array.isArray(previewDocData.items) && previewDocData.items.length > 0) {
+        productsList = [...previewDocData.items];
+      } else if (previewDocData && Array.isArray(previewDocData.mockups) && previewDocData.mockups.length > 0) {
+        productsList = [...previewDocData.mockups];
+      }
+    }
+
+    if (productsList.length === 0 || productsList.every(p => !p.backImageUrl)) {
+      // 2. Chercher également dans btp_projects et anonymous_previews
+      const keysToTry = [...new Set([userDoc.id, userData.actuationKey, userData.generatedKey, slug, userData.cleanUid, userData.previewId, userData.auditId, `audit-${slug}`])].filter(Boolean);
+      for (const k of keysToTry) {
+        let projSnap = await db.collection('btp_projects').where('projectId', '==', k).get();
+        if (projSnap.empty) {
+          projSnap = await db.collection('btp_projects').where('previewId', '==', k).get();
+        }
+        if (projSnap.empty) {
+          const directProj = await db.collection('btp_projects').doc(k).get();
+          if (directProj.exists) projSnap = { empty: false, docs: [directProj] };
+        }
+        if (projSnap && !projSnap.empty) {
+          const pData = projSnap.docs[0].data();
+          if (pData.logoUrl || pData.logoAdaptedUrl) {
+            userData.auditLogoUrl = pData.logoUrl || pData.logoAdaptedUrl;
+          }
+          const foundItems = pData.mockups || pData.items || [];
+          if (foundItems.length > 0) {
+            productsList.unshift(...foundItems);
+          }
+        }
+        const prevDoc = await db.collection('anonymous_previews').doc(k).get();
+        if (prevDoc.exists) {
+          const pData = prevDoc.data();
+          if (pData.logoUrl || pData.logoAdaptedUrl) {
+            userData.auditLogoUrl = pData.logoUrl || pData.logoAdaptedUrl;
+          }
+          const pItems = pData.items || pData.mockups || [];
+          if (pItems.length > 0) {
+            productsList.unshift(...pItems);
+          }
+        }
+      }
+    }
+
+    // 3. Fallback collection `products`
+    const productsSnap = await db.collection('products')
+      .where('userId', '==', userDoc.id)
+      .get();
+
+    const dbProducts = productsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    productsList.push(...dbProducts);
+
+    // 1. Filtrer les cartes de visite (business_card) et exclure formellement tout gabarit à plat sans IA
+    const filteredItems = productsList.filter(item => {
+      const garment = String(item.garment || item.category || '').toLowerCase();
+      const title = String(item.title || item.name || '').toLowerCase();
+      if (garment === 'business_card' || title.includes('carte de visite') || title.includes('visite')) return false;
+      // Exclure les gabarits sans aucune image IA
+      const f = extractBestImageUrl(item, 'front');
+      const b = extractBestImageUrl(item, 'back');
+      return isRealAiImage(f) || isRealAiImage(b) || isRealAiImage(item.imageUrl) || isRealAiImage(item.ai) || isRealAiImage(item.aiRemastered);
+    });
+
+    // 2. Regrouper les vues Face et Dos par type de vêtement et par couleur
+    const groupedMap = {};
+
+    const isWhiteItem = (item) => {
+      const color = String(item.color || '').toLowerCase();
+      const id = String(item.id || '').toLowerCase();
+      const sku = String(item.sku || '').toLowerCase();
+      const title = String(item.title || item.name || '').toLowerCase();
+      return color === 'white' || color === 'blanc' || color === '#ffffff' ||
+        id.includes('white') || id.includes('blanc') || id.includes('-wht') || id.startsWith('twhite') || id.startsWith('pwhite') || id.startsWith('hwhite') ||
+        sku.includes('wht') || sku.includes('white') ||
+        title.includes('blanc') || title.includes('white');
+    };
+
+    const buildMockupStorageUrl = (s, itemId) => {
+      const clean = String(s || '').toLowerCase().trim();
+      const path = `btp_mockups/${clean}/web/${itemId}.png`;
+      return `https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/${encodeURIComponent(path)}?alt=media`;
+    };
+
+    const defaultGarmentTemplates = {
+      tshirt: {
+        black: { front: '/assets/tshirt-black-JHK170.png', back: '/assets/tshirt-black-JHK170-dos.png' },
+        white: { front: '/assets/tshirt-white-JHK170.png', back: '/assets/tshirt-white-JHK170-dos.png' }
+      },
+      polo: {
+        black: { front: '/assets/polo-black-JHK510.png', back: '/assets/polo-black-JHK510-dos.png' },
+        white: { front: '/assets/polo-white-JHK510.png', back: '/assets/polo-white-JHK510-dos.png' }
+      },
+      hoodie: {
+        black: { front: '/assets/hoodie-black-JHK421.png', back: '/assets/hoodie-black-JHK421-dos.png' },
+        white: { front: '/assets/hoodie-white-JHK421.png', back: '/assets/hoodie-white-JHK421-dos.png' }
+      },
+      sweat: {
+        black: { front: '/assets/hoodie-black-JHK421.png', back: '/assets/hoodie-black-JHK421-dos.png' },
+        white: { front: '/assets/hoodie-white-JHK421.png', back: '/assets/hoodie-white-JHK421-dos.png' }
+      },
+      tank_top: {
+        black: { front: '/merch/visionroom/tank-front.png', back: '/merch/visionroom/tank-back.png' },
+        white: { front: '/merch/visionroom/tank-white-front.png', back: '/merch/visionroom/tank-white-back.png' }
+      },
+      tshirt_oversize: {
+        black: { front: '/merch/visionroom/oversize-front.png', back: '/merch/visionroom/oversize-back.png' },
+        white: { front: '/assets/tshirt-white-NX7200.png', back: '/assets/tshirt-white-NX7200-dos.png' }
+      },
+      sport_tshirt: {
+        black: { front: '/assets/tshirt-black-JHK170.png', back: '/assets/tshirt-black-JHK170-dos.png' },
+        white: { front: '/assets/tshirt-white-JHK170.png', back: '/assets/tshirt-white-JHK170-dos.png' }
+      }
+    };
+
+    filteredItems.forEach((item, index) => {
+      let garmentKey = (item.garment || item.category || `item-${index}`).toLowerCase();
+      if (garmentKey === 'sweat' || garmentKey === 'sweatshirt') garmentKey = 'hoodie';
+
+      const itemIsWhite = isWhiteItem(item);
+      const itemColor = itemIsWhite ? 'Blanc' : (item.color || 'Noir');
+      const groupKey = `${garmentKey}_${itemColor.toLowerCase()}`;
+
+      let frontCandidate = extractBestImageUrl(item, 'front');
+      let backCandidate = extractBestImageUrl(item, 'back');
+
+      // Résolution dynamique Storage selon la convention btp_mockups/${slug}/web/${id}.png
+      const itemId = String(item.id || '');
+      if (!frontCandidate && itemId && !itemId.startsWith('item-') && !itemId.startsWith('garment-')) {
+        if (item.view !== 'back' && !itemId.toLowerCase().includes('back') && !itemId.toLowerCase().includes('dos')) {
+          frontCandidate = buildMockupStorageUrl(slug, itemId);
+        }
+      }
+      if (!backCandidate && itemId && (item.view === 'back' || itemId.toLowerCase().includes('back') || itemId.toLowerCase().includes('dos'))) {
+        backCandidate = buildMockupStorageUrl(slug, itemId);
+      }
+
+      // EXCLUSION FORMELLE DES GABARITS 2D PLATS SANS MANNEQUIN
+      if (!isRealAiImage(frontCandidate)) frontCandidate = null;
+      if (!isRealAiImage(backCandidate)) backCandidate = null;
+
+      // Si le vêtement n'a aucune image IA de mannequin, ne JAMAIS le pousser dans le catalogue shop
+      if (!frontCandidate && !backCandidate) {
+        return;
+      }
+      if (!frontCandidate) frontCandidate = backCandidate;
+      if (!backCandidate) backCandidate = frontCandidate;
+
+      // Determine SKU if available
+      let itemSku = item.sku;
+      if (!itemSku) {
+        if (garmentKey === 'tshirt') itemSku = itemIsWhite ? 'JHK170-WHT' : 'JHK170-BLK';
+        else if (garmentKey === 'polo') itemSku = itemIsWhite ? 'JHK510-WHT' : 'JHK510-BLK';
+        else if (garmentKey === 'hoodie') itemSku = itemIsWhite ? 'JHK421-WHT' : 'JHK421-BLK';
+        else if (garmentKey === 'tank_top') itemSku = itemIsWhite ? 'BYBB011-WHT' : 'BYBB011-BLK';
+        else if (garmentKey === 'tshirt_oversize') itemSku = itemIsWhite ? 'NX7200-WHT' : 'NX7200-BLK';
+        else if (garmentKey === 'sport_tshirt') itemSku = 'E3520';
+      }
+
+      if (!groupedMap[groupKey]) {
+        let title = item.title || item.name || item.info?.title || `Produit Merch ${garmentKey.toUpperCase()} ${itemColor}`;
+        title = String(title).replace(/\s+(FACE|DOS)$/i, '').trim();
+        const defaultPriceMap = {
+          tshirt: 29.90,
+          tshirt_basic: 24.90,
+          polo: 39.90,
+          sweat: 44.90,
+          sweatshirt: 44.90,
+          hoodie: 49.90,
+          tank_top: 27.99,
+          tshirt_oversize: 34.99,
+          sport_tshirt: 30.00
+        };
+        const stdPrice = defaultPriceMap[garmentKey] || 29.90;
+        const priceRaw = item.price || item.info?.price;
+        const price = typeof priceRaw === 'number' ? priceRaw : (parseFloat(String(priceRaw || '').replace(/[^\d.]/g, '')) || stdPrice);
+
+        groupedMap[groupKey] = {
+          id: String(item.id || `garment-${groupKey}`),
+          sku: itemSku,
+          name: String(title),
+          price: price,
+          garment: garmentKey,
+          color: itemColor,
+          frontImageUrl: frontCandidate,
+          backImageUrl: backCandidate,
+          imageUrl: frontCandidate || backCandidate,
+          sizes: Array.isArray(item.sizes) ? item.sizes : ['S', 'M', 'L', 'XL'],
+          colors: [itemColor]
+        };
+      } else {
+        if (item.title && (!item.view || item.view === 'front')) {
+          groupedMap[groupKey].name = String(item.title).replace(/\s+(FACE|DOS)$/i, '').trim();
+        }
+        if (itemSku && !groupedMap[groupKey].sku) {
+          groupedMap[groupKey].sku = itemSku;
+        }
+
+        if (frontCandidate && isRealAiImage(frontCandidate)) {
+          groupedMap[groupKey].frontImageUrl = frontCandidate;
+          groupedMap[groupKey].imageUrl = frontCandidate;
+        }
+
+        if (backCandidate && isRealAiImage(backCandidate)) {
+          groupedMap[groupKey].backImageUrl = backCandidate;
+        }
+      }
+    });
+
+    const ensurePublicAssetUrl = (url) => {
+      if (!url || typeof url !== 'string') return url || '';
+      if (url.includes('firebasestorage.googleapis.com/v0/b/signaid-prod-assets/o/')) {
+        const match = url.match(/\/o\/(.*?)(?:\?|$)/);
+        if (match) {
+          const assetPath = decodeURIComponent(match[1]);
+          return `https://us-central1-signaid-prod.cloudfunctions.net/getAsset?path=${encodeURIComponent(assetPath)}`;
+        }
+      }
+      return url;
+    };
+
+    let lastStorageError = null;
+    const uploadBase64ToStorage = async (base64Str, assetPath) => {
+      if (!base64Str || typeof base64Str !== 'string' || !base64Str.startsWith('data:')) {
+        return ensurePublicAssetUrl(base64Str) || '';
+      }
+      try {
+        const commaIdx = base64Str.indexOf(',');
+        if (commaIdx === -1) return base64Str;
+
+        const header = base64Str.substring(0, commaIdx);
+        const base64Data = base64Str.substring(commaIdx + 1);
+
+        const mimeMatch = header.match(/data:(.*?);/);
+        const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+        const buffer = Buffer.from(base64Data.trim(), 'base64');
+
+        const bucket = admin.storage().bucket('signaid-prod-assets');
+        const file = bucket.file(assetPath);
+
+        await file.save(buffer, {
+          metadata: {
+            contentType: mimeType,
+            cacheControl: 'public, max-age=86400'
+          },
+          resumable: false
+        });
+        await file.makePublic().catch(() => { });
+
+        const encodedPath = encodeURIComponent(assetPath);
+        return `https://us-central1-signaid-prod.cloudfunctions.net/getAsset?path=${encodedPath}`;
+      } catch (err) {
+        console.error('[Storage Upload Error]', err);
+        lastStorageError = String(err.message || err);
+        return base64Str;
+      }
+    };
+
+    let needsFirestoreUpdate = false;
+
+    // 1. Logo Profil (Avatar / Bulle de profil) :
+    let cleanLogoUrl = extractBestImageUrl({ imageUrl: userData.logoUrl || userData.avatarUrl || userData.profileLogoUrl || previewDocData?.logoUrl || userData.auditLogoUrl || previewDocData?.auditLogoUrl }) || '';
+    if (cleanLogoUrl.startsWith('data:image/')) {
+      cleanLogoUrl = await uploadBase64ToStorage(cleanLogoUrl, `btp_mockups/${userDoc.id}/web/logo_${Date.now()}.png`);
+      needsFirestoreUpdate = true;
+    } else {
+      cleanLogoUrl = ensurePublicAssetUrl(cleanLogoUrl);
+    }
+
+    // 2. Logos Merch / Textiles (Audit) :
+    let cleanAuditLogoA = extractBestImageUrl({ imageUrl: userData.auditLogoUrl || userData.logoA || previewDocData?.auditLogoUrl || previewDocData?.logoA || userData.logoUrl }) || cleanLogoUrl;
+    if (cleanAuditLogoA.startsWith('data:image/')) {
+      cleanAuditLogoA = await uploadBase64ToStorage(cleanAuditLogoA, `btp_mockups/${userDoc.id}/web/audit_logoA_${Date.now()}.png`);
+      needsFirestoreUpdate = true;
+    } else {
+      cleanAuditLogoA = ensurePublicAssetUrl(cleanAuditLogoA);
+    }
+
+    let cleanAuditLogoB = extractBestImageUrl({ imageUrl: userData.logoB || userData.logoAdaptedUrl || previewDocData?.logoB || previewDocData?.logoAdaptedUrl || userData.auditLogoUrl || userData.logoA || userData.logoUrl }) || cleanAuditLogoA;
+    if (cleanAuditLogoB.startsWith('data:image/')) {
+      cleanAuditLogoB = await uploadBase64ToStorage(cleanAuditLogoB, `btp_mockups/${userDoc.id}/web/audit_logoB_${Date.now()}.png`);
+      needsFirestoreUpdate = true;
+    } else {
+      cleanAuditLogoB = ensurePublicAssetUrl(cleanAuditLogoB);
+    }
+
+    let cleanLivePhotoUrl = isBannerRemoved ? '' : (extractBestImageUrl({ imageUrl: userData.livePhotoUrl }) || '');
+    if (cleanLivePhotoUrl.startsWith('data:image/')) {
+      cleanLivePhotoUrl = await uploadBase64ToStorage(cleanLivePhotoUrl, `btp_mockups/${userDoc.id}/web/live_${Date.now()}.png`);
+      needsFirestoreUpdate = true;
+    } else {
+      cleanLivePhotoUrl = ensurePublicAssetUrl(cleanLivePhotoUrl);
+    }
+
+    const fallbackLogo = cleanLogoUrl || '/logo.png';
+
+    const rawNormalized = await Promise.all(Object.values(groupedMap).map(async (p, idx) => {
+      let fImg = isRealAiImage(p.frontImageUrl) ? p.frontImageUrl : (isRealAiImage(p.imageUrl) ? p.imageUrl : '');
+      let bImg = isRealAiImage(p.backImageUrl) ? p.backImageUrl : '';
+      if (!fImg && bImg) fImg = bImg;
+      if (!bImg && fImg) bImg = fImg;
+      if (!fImg && !bImg) return null;
+
+      if (fImg.startsWith('data:')) {
+        fImg = await uploadBase64ToStorage(fImg, `btp_mockups/${userDoc.id}/web/${p.id}_front_${Date.now()}_${idx}.png`);
+        needsFirestoreUpdate = true;
+      } else {
+        fImg = ensurePublicAssetUrl(fImg);
+      }
+      if (bImg.startsWith('data:')) {
+        bImg = await uploadBase64ToStorage(bImg, `btp_mockups/${userDoc.id}/web/${p.id}_back_${Date.now()}_${idx}.png`);
+        needsFirestoreUpdate = true;
+      } else {
+        bImg = ensurePublicAssetUrl(bImg);
+      }
+
+      if (!isRealAiImage(fImg) && !isRealAiImage(bImg)) return null;
+
+      const mainImg = fImg || bImg;
+      const isWhite = String(p.color || '').toLowerCase() === 'blanc' || String(p.color || '').toLowerCase() === 'white' || String(p.id || '').toLowerCase().includes('white') || String(p.sku || '').toLowerCase().includes('wht');
+
+      return {
+        id: String(p.id),
+        sku: p.sku ? String(p.sku) : undefined,
+        name: String(p.name),
+        price: Number(p.price),
+        garment: String(p.garment),
+        color: p.color || (isWhite ? 'Blanc' : 'Noir'),
+        frontImageUrl: String(fImg),
+        backImageUrl: String(bImg),
+        imageUrl: String(mainImg),
+        sizes: Array.isArray(p.sizes) ? p.sizes : ['S', 'M', 'L', 'XL'],
+        colors: Array.isArray(p.colors) ? p.colors : [p.color || (isWhite ? 'Blanc' : 'Noir')]
+      };
+    }));
+
+    const normalizedProducts = rawNormalized.filter(Boolean);
+
+    // Si des chaînes Base64 ont été migrées vers Firebase Storage, persistez les nouvelles URLs dans Firestore (SiteConfigs, prospects, audits, vault)
+    if (needsFirestoreUpdate) {
+      try {
+        const updateData = {};
+        if (cleanLogoUrl.startsWith('http')) updateData.logoUrl = cleanLogoUrl;
+        if (cleanLivePhotoUrl.startsWith('http')) updateData.livePhotoUrl = cleanLivePhotoUrl;
+
+        updateData.mockups = normalizedProducts.map(p => ({
+          id: p.id,
+          sku: p.sku,
+          title: p.name,
+          garment: p.garment,
+          color: p.color,
+          price: p.price,
+          imageFront: p.frontImageUrl,
+          imageBack: p.backImageUrl,
+          imageUrl: p.imageUrl,
+          url: p.imageUrl
+        }));
+
+        await db.collection('SiteConfigs').doc(userDoc.id).set(updateData, { merge: true });
+        console.log(`[Base64 Migration] SiteConfigs/${userDoc.id} updated with Cloud Storage URLs.`);
+
+        // Synchronisation normalisée complète dans prospects, audits et vault
+        await persistProspectProfileBackend(admin, {
+          prospectSlug: userDoc.id,
+          slug: userDoc.id,
+          companyName: userData.companyName || userDoc.id,
+          logoUrl: cleanLogoUrl.startsWith('http') ? cleanLogoUrl : undefined,
+          livePhotoUrl: cleanLivePhotoUrl.startsWith('http') ? cleanLivePhotoUrl : undefined,
+          products: normalizedProducts
+        });
+      } catch (updateErr) {
+        console.warn('[Base64 Migration Error]', updateErr);
+      }
+    }
+
+    // Filtrer strictement les champs publics de l'artiste pour minimiser le payload
+    const cleanSocials = Array.isArray(userData.socials)
+      ? userData.socials
+        .filter(s => s && s.enabled !== false && (s.platform || s.url) && String(s.url || '').trim() !== '')
+        .map(s => ({
+          platform: String(s?.platform || ''),
+          url: String(s?.url || ''),
+          enabled: s?.enabled !== false
+        }))
+      : [];
+
+    const cleanCustomLinks = Array.isArray(userData.customLinks)
+      ? userData.customLinks.map(l => ({
+        id: String(l?.id || ''),
+        title: String(l?.title || ''),
+        type: String(l?.type || ''),
+        url: String(l?.url || ''),
+        platform: String(l?.platform || ''),
+        icon: String(l?.icon || ''),
+        bgColor: String(l?.bgColor || ''),
+        textColor: String(l?.textColor || ''),
+        enabled: l?.enabled !== false
+      })).filter(l => l.title || l.url || l.type)
+      : [];
+
+    let effEnabledProductIds = userData.enabledProductIds || previewDocData?.enabledProductIds || undefined;
+
+    let filteredProducts = normalizedProducts;
+    if (Array.isArray(effEnabledProductIds) && effEnabledProductIds.length > 0) {
+      filteredProducts = normalizedProducts.filter(p => {
+        const pId = String(p.id || '').toLowerCase();
+        const pSku = String(p.sku || '').toLowerCase();
+        const g = String(p.garment || '').toLowerCase();
+        const pColor = String(p.color || '').toLowerCase();
+
+        const isWhiteVariant = pColor === 'blanc' || pColor === 'white' ||
+          pId.includes('white') || pId.includes('blanc') || pId.includes('-wht') ||
+          pId.startsWith('twhite') || pId.startsWith('pwhite') || pId.startsWith('hwhite') ||
+          pSku.includes('wht') || pSku.includes('white');
+
+        return effEnabledProductIds.some(id => {
+          const lid = String(id).toLowerCase();
+          return lid === pId ||
+            (pSku && lid === pSku) ||
+            lid === g ||
+            lid.includes(g) ||
+            (g && g.includes(lid)) ||
+            (isWhiteVariant && (
+              lid.includes('white') || lid.includes('blanc') || lid.includes('wht') ||
+              lid === g.replace('_white', '') ||
+              (g === 'tshirt' && (lid.includes('tshirt') || lid.includes('tfront') || lid.includes('tee'))) ||
+              (g === 'polo' && (lid.includes('polo') || lid.includes('pfront'))) ||
+              (g === 'sweat' && (lid.includes('hoodie') || lid.includes('sweat'))) ||
+              (g === 'hoodie' && (lid.includes('hoodie') || lid.includes('sweat')))
+            )) ||
+            (g === 'sweat' && (lid.includes('hoodie') || lid.includes('hfront') || lid.includes('sweat'))) ||
+            (g === 'hoodie' && (lid.includes('sweat') || lid.includes('hfront') || lid.includes('hoodie'))) ||
+            (g === 'tshirt' && (lid.includes('tshirt') || lid.includes('tfront') || lid.includes('tee'))) ||
+            (g === 'polo' && (lid.includes('polo') || lid.includes('pfront')));
+        });
+      });
+    }
+
+    if (!effEnabledProductIds || !Array.isArray(effEnabledProductIds) || effEnabledProductIds.length === 0) {
+      effEnabledProductIds = filteredProducts.flatMap(p => [p.garment, p.id, p.sku, p?.type].filter(Boolean));
+    }
+
+
+    const responseData = {
+      success: true,
+      artist: {
+        id: String(userData.id),
+        companyName: String(userData.companyName !== undefined ? userData.companyName : (previewDocData?.companyName || '')).trim(),
+        activitySector: String(userData.activitySector || previewDocData?.activitySector || '').trim(),
+        slug: String(userData.slug || slug),
+        logoUrl: cleanLogoUrl,
+        auditLogoUrl: cleanAuditLogoA,
+        logoA: cleanAuditLogoA,
+        logoB: cleanAuditLogoB,
+        logoAdaptedUrl: cleanAuditLogoB,
+        logoPlacements: userData.logoPlacements || { tFront: 'B', tBack: 'A', pFront: 'B', pBack: 'A', hFront: 'B', hBack: 'A' },
+        presentation: String(userData.presentation || userData.bio || ''),
+        whatsapp: String(userData.whatsappNumber || userData.whatsapp || ''),
+        contactEmail: String(userData.contactEmail || userData.email || ''),
+        socials: cleanSocials,
+        customLinks: cleanCustomLinks,
+        theme: String(userData.theme || 'auto'),
+        accentColor: String(userData.accentColor || '#ff3366'),
+        logoOverlayColor: String(userData.logoOverlayColor || previewDocData?.logoOverlayColor || 'auto'),
+        logoScale: userData.logoScale !== undefined ? userData.logoScale : (previewDocData?.logoScale !== undefined ? previewDocData.logoScale : 100),
+        coverHeight: userData.coverHeight !== undefined ? userData.coverHeight : (previewDocData?.coverHeight !== undefined ? previewDocData.coverHeight : 280),
+        coverZoom: userData.coverZoom !== undefined ? userData.coverZoom : (previewDocData?.coverZoom !== undefined ? previewDocData.coverZoom : 100),
+        coverPositionY: userData.coverPositionY !== undefined ? userData.coverPositionY : (previewDocData?.coverPositionY !== undefined ? previewDocData.coverPositionY : 50),
+        coverPositionX: userData.coverPositionX !== undefined ? userData.coverPositionX : (previewDocData?.coverPositionX !== undefined ? previewDocData.coverPositionX : 50),
+        livePhotoUrl: cleanLivePhotoUrl,
+        coverUrl: isBannerRemoved ? null : (userData.coverUrl || null),
+        bannerUrl: isBannerRemoved ? null : (userData.bannerUrl || null),
+        livePhotoUrls: isBannerRemoved ? [] : (userData.livePhotoUrls || (cleanLivePhotoUrl ? [cleanLivePhotoUrl] : [])),
+        photos: isBannerRemoved ? [] : (userData.photos || []),
+        invertLogoInLightMode: userData.invertLogoInLightMode !== false,
+        enabledProductIds: effEnabledProductIds
+      },
+      enabledProductIds: effEnabledProductIds,
+      products: filteredProducts,
+      storageError: lastStorageError
+    };
+
+    console.log('[PAYLOAD CHECK] Size:', Buffer.byteLength(JSON.stringify(responseData)), 'bytes');
+
+    // ── Cache write ──────────────────────────────────────────────────────
+    if (_slugCache.size >= 200) _slugCache.delete(_slugCache.keys().next().value);
+    _slugCache.set(slug, { data: responseData, ts: Date.now() });
+    // ─────────────────────────────────────────────────────────────────────
+
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+    return res.status(200).json(responseData);
+  } catch (error) {
+    console.error('Erreur getUserBySlug:', error);
+    return res.status(500).json({ error: error.message });
+  }
 });
 
 // Helper pour créer une session Stripe de manière 100% robuste (résout les problèmes de DNS/Sockets Node 20 sur Cloud Run)
 async function createStripeCheckoutSession(key, sessionData) {
   const Stripe = require('stripe');
-  
+
   // Stratégie 1 : SDK Stripe avec client Fetch natif (contourne les sockets HTTP Node 20)
   try {
     const stripe = new Stripe(key, {
@@ -2848,9 +3019,9 @@ exports.createCheckout = onRequest({ cors: true, invoker: 'public' }, async (req
     });
   } catch (error) {
     console.error('Erreur createCheckout (Stripe):', error);
-    return res.status(400).json({ 
-      success: false, 
-      error: error.raw?.message || error.message || 'Impossible de créer la session de paiement Stripe.' 
+    return res.status(400).json({
+      success: false,
+      error: error.raw?.message || error.message || 'Impossible de créer la session de paiement Stripe.'
     });
   }
 });
@@ -2865,7 +3036,7 @@ exports.createDomainCheckout = onRequest({ cors: true, invoker: 'public' }, asyn
       if (stripeSecretKey && typeof stripeSecretKey.value === 'function') {
         key = stripeSecretKey.value();
       }
-    } catch (e) {}
+    } catch (e) { }
     if (!key) key = process.env.STRIPE_SECRET_KEY;
     if (!key && functions.config().stripe) key = functions.config().stripe.secret;
 
@@ -3093,7 +3264,7 @@ exports.stripeWebhook = onRequest({ cors: true, invoker: 'public' }, async (req,
     if (stripeSecretKey && typeof stripeSecretKey.value === 'function') {
       key = stripeSecretKey.value();
     }
-  } catch (e) {}
+  } catch (e) { }
   if (!key) key = process.env.STRIPE_SECRET_KEY;
   if (!key && functions.config().stripe) key = functions.config().stripe.secret;
 
@@ -3102,7 +3273,7 @@ exports.stripeWebhook = onRequest({ cors: true, invoker: 'public' }, async (req,
     if (stripeWebhookSecret && typeof stripeWebhookSecret.value === 'function') {
       endpointSecret = stripeWebhookSecret.value();
     }
-  } catch (e) {}
+  } catch (e) { }
   if (!endpointSecret) endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
   let event;
@@ -3239,7 +3410,7 @@ exports.sendBookingEmail = onRequest({ cors: true, invoker: 'public', secrets: [
 
     // 2. Recherche de l'email de l'artiste dans Firestore (collection SiteConfigs / users)
     const targetSlug = String(artistSlug || '').toLowerCase();
-    
+
     if (bookingRecipientEmail && typeof bookingRecipientEmail === 'string' && bookingRecipientEmail.includes('@') && !bookingRecipientEmail.includes('entreprise.com')) {
       recipientEmail = bookingRecipientEmail.trim();
     }
@@ -3452,10 +3623,10 @@ exports.uploadImage = onRequest({ cors: true, invoker: 'public' }, async (req, r
       const mimeType = matches ? matches[1] : 'image/jpeg';
       const ext = mimeType.includes('png') ? 'png' : (mimeType.includes('webp') ? 'webp' : 'jpg');
       const buffer = Buffer.from(matches ? matches[2] : base64Data, 'base64');
-      
+
       const fileName = customName ? `${customName}.${ext}` : `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${ext}`;
       const filePath = path ? (path.endsWith('/') ? `${path}${fileName}` : `${path}/${fileName}`) : `uploads/${fileName}`;
-      
+
       const file = bucket.file(filePath);
       await file.save(buffer, {
         metadata: {
@@ -3463,7 +3634,7 @@ exports.uploadImage = onRequest({ cors: true, invoker: 'public' }, async (req, r
           cacheControl: 'public, max-age=86400'
         }
       });
-      await file.makePublic().catch(() => {});
+      await file.makePublic().catch(() => { });
       const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
       return res.status(200).json({ success: true, url: publicUrl });
     } catch (e) {
@@ -3496,7 +3667,7 @@ exports.getAsset = onRequest({ cors: true, invoker: 'public', maxInstances: 20 }
 
       const [metadata] = await file.getMetadata();
       const mimeType = metadata.contentType || (rawPath.endsWith('.png') ? 'image/png' : (rawPath.endsWith('.webp') ? 'image/webp' : 'image/jpeg'));
-      
+
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800');
 
@@ -3557,7 +3728,7 @@ exports.uploadBatchImages = onRequest({ cors: true, invoker: 'public', maxInstan
             },
             resumable: false
           });
-          await file.makePublic().catch(() => {});
+          await file.makePublic().catch(() => { });
 
           results.push({
             path: item.path,
@@ -3640,7 +3811,7 @@ exports.detectSocialLinks = onRequest({ cors: true, invoker: 'public' }, async (
         try {
           const searchQuery = `"${brandName}" (site:instagram.com OR site:tiktok.com OR site:spotify.com OR site:youtube.com OR site:soundcloud.com)`;
           const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
-          
+
           const response = await fetch(searchUrl, {
             signal: controller.signal,
             headers: {
@@ -3768,9 +3939,9 @@ exports.detectSocialLinks = onRequest({ cors: true, invoker: 'public' }, async (
 // ==========================================
 const { runMigrationPipeline } = require('./migrateAllProfilesToSnapshots');
 
-exports.migrateAllProfiles = onRequest({ 
-  timeoutSeconds: 540, 
-  memory: '1GiB', 
+exports.migrateAllProfiles = onRequest({
+  timeoutSeconds: 540,
+  memory: '1GiB',
   cors: true,
   minInstances: 0
 }, async (req, res) => {
@@ -3791,7 +3962,7 @@ exports.migrateAllProfiles = onRequest({
     const force = req.query.force === 'true' || req.query.force === '1';
     const slug = req.query.slug || req.query.id || null;
     const limit = req.query.limit ? parseInt(req.query.limit, 10) : 500;
-    
+
     console.log(`[API MIGRATION] Lancement de la migration des profils... (slug=${slug}, force=${force}, limit=${limit})`);
     const results = await runMigrationPipeline(admin, { force, slug, limit });
 

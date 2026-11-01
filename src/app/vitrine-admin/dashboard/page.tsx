@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { getStoredConfig, saveStoredConfig, SiteConfig, ProfileLink, processLogo, generateAIPresentation, generatePitchFromWebSearch, generatePitchFromDocument, Social, CustomSection, defaultConfig } from "../../../lib/store";
 import { cleanAndProcessDtfMaster, generateGarmentMockupSuite, downloadMasterDtfFile, downloadMasterPdfFile } from "../../../services/dtfMasterService";
 import { sanitizeForFirestore } from "../../../utils/firestoreSanitizer";
+import { sanitizeHtml, stripHtmlTags } from "../../../utils/helpers";
 import { compressImageFile, compressDataUrl } from "../../../utils/imageUtils";
 import { ref, uploadBytes, getDownloadURL, uploadString } from "firebase/storage";
 import { storage, auth, db } from "../../../firebaseConfig";
@@ -2032,10 +2033,12 @@ export default function AdminPage() {
 
     const updatedConfig: SiteConfig = {
       ...config,
-      livePhotoUrl: "",
+      livePhotoUrl: "" as any,
       livePhotoUrls: [],
-      coverUrl: "",
-      coverImage: ""
+      coverUrl: null as any,
+      bannerUrl: null as any,
+      coverImage: null as any,
+      photos: []
     };
 
     setConfig(updatedConfig);
@@ -2046,15 +2049,26 @@ export default function AdminPage() {
         await saveStoredConfig(updatedConfig, uidToSave);
         const cleanSlug = (config.slug || config.companyName || '').toLowerCase().trim().replace(/[^a-z0-9_-]/g, '');
         const payload = {
-          livePhotoUrl: "",
+          livePhotoUrl: null,
           livePhotoUrls: [],
-          coverUrl: "",
-          coverImage: ""
+          coverUrl: null,
+          bannerUrl: null,
+          coverImage: null,
+          photos: []
         };
-        if (cleanSlug && cleanSlug !== uidToSave) {
+        const targetsToClear = new Set<string>();
+        if (uidToSave) targetsToClear.add(uidToSave);
+        if (cleanSlug) targetsToClear.add(cleanSlug);
+        if (cleanSlug.startsWith('audit-')) targetsToClear.add(cleanSlug.replace(/^audit-/, ''));
+        if (uidToSave.startsWith('audit-')) targetsToClear.add(uidToSave.replace(/^audit-/, ''));
+        if (cleanSlug) targetsToClear.add(`audit-${cleanSlug}`);
+
+        for (const t of targetsToClear) {
           try {
-            await setDoc(doc(db, "SiteConfigs", cleanSlug), payload, { merge: true });
-            await setDoc(doc(db, "anonymous_previews", cleanSlug), payload, { merge: true });
+            await setDoc(doc(db, "SiteConfigs", t), payload, { merge: true });
+            await setDoc(doc(db, "anonymous_previews", t), payload, { merge: true });
+            await setDoc(doc(db, "configs", t), payload, { merge: true });
+            await setDoc(doc(db, "btp_projects", t), payload, { merge: true });
           } catch (e) {}
         }
         if (uidToSave === 'guest_ms3ijgnco2xnid' || uidToSave === 'fabrizio' || uidToSave === 'audit-8f198p5' || uidToSave === 'djdfazz') {
@@ -2900,6 +2914,31 @@ export default function AdminPage() {
         }
       }
 
+      const normSavedName = (config.companyName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const isDfazzDoc = uidToSave === 'guest_ms3ijgnco2xnid' || 
+                         uidToSave === 'fabrizio' || 
+                         uidToSave === 'audit-8f198p5' || 
+                         uidToSave === 'djdfazz' ||
+                         uidToSave === '5qk5ntk' ||
+                         uidToSave === '4eckgu2' ||
+                         uidToSave === '3j0f5kl' ||
+                         normSavedName.includes('dfazz') ||
+                         normSavedName.includes('fazz');
+
+      const isVisionDoc = uidToSave === 'clubvisionroom' || 
+                          uidToSave === 'mt074jnaldxn' || 
+                          uidToSave === 'clubvision' || 
+                          cleanSlug === 'clubvisionroom' || 
+                          cleanSlug === 'clubvision' || 
+                          normSavedName.includes('clubvision') || 
+                          normSavedName.includes('visionroom');
+
+      const isBannerRemoved = 
+        config.livePhotoUrl === "" || config.livePhotoUrl === null ||
+        config.coverUrl === "" || config.coverUrl === null ||
+        config.bannerUrl === "" || config.bannerUrl === null ||
+        (!config.livePhotoUrl && (!config.livePhotoUrls || config.livePhotoUrls.length === 0));
+
       const siteConfig: SiteConfig = {
         ...config,
         slug: cleanSlug,
@@ -2909,6 +2948,26 @@ export default function AdminPage() {
         sector: config.activitySector || '',
         status: 'validated'
       };
+
+      if (isBannerRemoved && !isDfazzDoc && !isVisionDoc) {
+        siteConfig.livePhotoUrl = "" as any;
+        siteConfig.livePhotoUrls = [];
+        siteConfig.coverUrl = null as any;
+        siteConfig.bannerUrl = null as any;
+        siteConfig.coverImage = null as any;
+        (siteConfig as any).photos = [];
+
+        // Met également à jour le state local React
+        setConfig(prev => prev ? {
+          ...prev,
+          livePhotoUrl: "",
+          livePhotoUrls: [],
+          coverUrl: null as any,
+          bannerUrl: null as any,
+          coverImage: null as any,
+          photos: []
+        } : prev);
+      }
 
       // Si une URL pérenne Cloud Storage est trouvée, remplacer définitivement
       // logoUrl, auditLogoUrl, logoAdaptedUrl, logoA et logoB dans le payload envoyé à Firestore
@@ -2954,14 +3013,49 @@ export default function AdminPage() {
           ...siteConfig,
           slug: cleanSlug,
           docId: uidToSave,
-          originalUid: uidToSave
+          originalUid: uidToSave,
+          ...(isBannerRemoved && !isDfazzDoc && !isVisionDoc ? {
+            livePhotoUrl: null,
+            livePhotoUrls: [],
+            coverUrl: null,
+            bannerUrl: null,
+            coverImage: null,
+            photos: []
+          } : {})
         });
         try {
           await setDoc(doc(db, "SiteConfigs", cleanSlug), payload, { merge: true });
           await setDoc(doc(db, "anonymous_previews", cleanSlug), payload, { merge: true });
           await setDoc(doc(db, "configs", cleanSlug), payload, { merge: true });
+          await setDoc(doc(db, "btp_projects", cleanSlug), payload, { merge: true });
         } catch (slugErr) {
           console.warn("Slug alias sync warning:", slugErr);
+        }
+      }
+
+      // Purge explicite des documents d'audit et preview liés en cas de suppression de bannière
+      if (isBannerRemoved && !isDfazzDoc && !isVisionDoc) {
+        const targetsToPurge = new Set<string>();
+        if (uidToSave) targetsToPurge.add(uidToSave);
+        if (cleanSlug) targetsToPurge.add(cleanSlug);
+        if (cleanSlug.startsWith('audit-')) targetsToPurge.add(cleanSlug.replace(/^audit-/, ''));
+        if (uidToSave.startsWith('audit-')) targetsToPurge.add(uidToSave.replace(/^audit-/, ''));
+        if (cleanSlug) targetsToPurge.add(`audit-${cleanSlug}`);
+        const clearPayload = {
+          livePhotoUrl: null,
+          livePhotoUrls: [],
+          coverUrl: null,
+          bannerUrl: null,
+          coverImage: null,
+          photos: []
+        };
+        for (const t of targetsToPurge) {
+          try {
+            await setDoc(doc(db, "SiteConfigs", t), clearPayload, { merge: true });
+            await setDoc(doc(db, "anonymous_previews", t), clearPayload, { merge: true });
+            await setDoc(doc(db, "configs", t), clearPayload, { merge: true });
+            await setDoc(doc(db, "btp_projects", t), clearPayload, { merge: true });
+          } catch (e) {}
         }
       }
 
@@ -2980,17 +3074,6 @@ export default function AdminPage() {
       setInitialSlug(cleanSlug);
 
       // 4. If editing DJ D-FAZZ, sync across all related Firestore docs and custom domains (djdfazz.be / signaid.eu/djdfazz)
-      const normSavedName = (config.companyName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const isDfazzDoc = uidToSave === 'guest_ms3ijgnco2xnid' || 
-                         uidToSave === 'fabrizio' || 
-                         uidToSave === 'audit-8f198p5' || 
-                         uidToSave === 'djdfazz' ||
-                         uidToSave === '5qk5ntk' ||
-                         uidToSave === '4eckgu2' ||
-                         uidToSave === '3j0f5kl' ||
-                         normSavedName.includes('dfazz') ||
-                         normSavedName.includes('fazz');
-
       if (isDfazzDoc) {
         const payload = sanitizeForFirestore(siteConfig);
         try {
@@ -3008,14 +3091,6 @@ export default function AdminPage() {
       }
 
       // 5. If editing Club Vision Room, sync across all related Firestore docs (clubvisionroom, mt074jnaldxn, clubvision)
-      const isVisionDoc = uidToSave === 'clubvisionroom' || 
-                          uidToSave === 'mt074jnaldxn' || 
-                          uidToSave === 'clubvision' || 
-                          cleanSlug === 'clubvisionroom' || 
-                          cleanSlug === 'clubvision' || 
-                          normSavedName.includes('clubvision') || 
-                          normSavedName.includes('visionroom');
-
       if (isVisionDoc) {
         const visionPayload = sanitizeForFirestore({
           ...siteConfig,
@@ -3055,8 +3130,12 @@ export default function AdminPage() {
           logoB: finalLogoForCache,
           accentColor: siteConfig.accentColor || '#dc2626',
           theme: siteConfig.theme || 'dark',
-          livePhotoUrls: siteConfig.livePhotoUrls || (siteConfig.livePhotoUrl ? [siteConfig.livePhotoUrl] : []),
-          livePhotoUrl: siteConfig.livePhotoUrl || '',
+          livePhotoUrls: (isBannerRemoved && !isDfazzDoc && !isVisionDoc) ? [] : (siteConfig.livePhotoUrls || (siteConfig.livePhotoUrl ? [siteConfig.livePhotoUrl] : [])),
+          livePhotoUrl: (isBannerRemoved && !isDfazzDoc && !isVisionDoc) ? '' : (siteConfig.livePhotoUrl || ''),
+          coverUrl: (isBannerRemoved && !isDfazzDoc && !isVisionDoc) ? null : (siteConfig.coverUrl || null),
+          bannerUrl: (isBannerRemoved && !isDfazzDoc && !isVisionDoc) ? null : (siteConfig.bannerUrl || null),
+          coverImage: (isBannerRemoved && !isDfazzDoc && !isVisionDoc) ? null : (siteConfig.coverImage || null),
+          photos: (isBannerRemoved && !isDfazzDoc && !isVisionDoc) ? [] : (siteConfig.photos || []),
           coverHeight: siteConfig.coverHeight,
           coverZoom: siteConfig.coverZoom,
           coverPositionY: siteConfig.coverPositionY,
@@ -3095,8 +3174,8 @@ export default function AdminPage() {
         const keysToRemove: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
-          if (k && (k.startsWith('fast_artist_cache_') || k.startsWith('btp_'))) {
-            const isMatch = Array.from(targetIdentifiers).some(id => k === `fast_artist_cache_v92_${id}` || k === `fast_artist_cache_${id}`);
+          if (k && (k.startsWith('fast_artist_cache_') || k.startsWith('btp_') || k.startsWith('artist_'))) {
+            const isMatch = Array.from(targetIdentifiers).some(id => k === `fast_artist_cache_v99_${id}` || k === `fast_artist_cache_${id}` || k === `artist_${id}`);
             if (!isMatch) {
               keysToRemove.push(k);
             }
@@ -3106,11 +3185,12 @@ export default function AdminPage() {
 
         // Enregistrement des clés lues par la vue profil public
         targetIdentifiers.forEach(id => {
-          localStorage.setItem(`fast_artist_cache_v92_${id}`, JSON.stringify(cachedFull));
+          localStorage.setItem(`fast_artist_cache_v99_${id}`, JSON.stringify(cachedFull));
           localStorage.setItem(`fast_artist_cache_${id}`, JSON.stringify(cachedFull));
           localStorage.setItem(`artist_${id}`, JSON.stringify(cachedArtist));
           localStorage.setItem(`signaid_meta_${id}`, JSON.stringify(cachedMeta));
           sessionStorage.setItem(`signaid_meta_${id}`, JSON.stringify(cachedMeta));
+          sessionStorage.setItem(`signaid_profile_cache_${id}`, JSON.stringify(cachedFull));
         });
       } catch (cacheErr) {
         console.warn("Visitor cache sync error:", cacheErr);
@@ -3787,6 +3867,22 @@ export default function AdminPage() {
           color: #0f172a !important;
           fill: #0f172a !important;
         }
+        .studio-artist-bio-text p {
+          margin: 0 0 0.5rem 0;
+        }
+        .studio-artist-bio-text p:last-child {
+          margin-bottom: 0;
+        }
+        .studio-artist-bio-text b,
+        .studio-artist-bio-text strong {
+          font-weight: 700;
+          color: inherit;
+        }
+        .studio-artist-bio-text a {
+          color: inherit;
+          text-decoration: underline;
+          font-weight: 600;
+        }
         body.admin-console-light [style*="background: rgba(30, 41, 59, 0.6)"],
         body.admin-console-light [style*="background:rgba(30, 41, 59, 0.6)"] {
           background: #e2e8f0 !important;
@@ -3963,7 +4059,7 @@ export default function AdminPage() {
             const vanityName = getProfileVanitySlug();
             return (
               <Link 
-                to={`/${vanityName}`} 
+                to={`/${vanityName}?preview=admin`} 
                 target="_blank"
                 style={{ 
                   padding: '0.45rem 0.95rem', 
@@ -5141,6 +5237,7 @@ export default function AdminPage() {
                           : (config.livePhotoUrl && config.livePhotoUrl.trim().length > 10 && config.livePhotoUrl !== 'none' ? [config.livePhotoUrl] : []);
                         const hasLivePhotos = validPhotos.length > 0;
                         const scale = (config.logoScale || 100) / 100;
+                        const logoDim = scale !== 1 ? `${Math.min(95, Math.max(40, Math.round(90 * scale)))}%` : '90%';
 
                         const overlayMode = config.logoOverlayColor || 'auto';
                         const isWhiteForced = overlayMode === 'white';
@@ -5395,6 +5492,7 @@ export default function AdminPage() {
                                 <div 
                                   onClick={() => logoFileInputRef.current?.click()}
                                   title="Cliquer pour remplacer le logo"
+                                  className="p-1.5"
                                   style={{
                                     position: 'absolute',
                                     bottom: '-46px',
@@ -5411,7 +5509,8 @@ export default function AdminPage() {
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    padding: '12px',
+                                    padding: '6px',
+                                    boxSizing: 'border-box',
                                     cursor: 'pointer',
                                     boxShadow: isLightPreview 
                                       ? '0 14px 35px rgba(0, 0, 0, 0.15)' 
@@ -5422,11 +5521,13 @@ export default function AdminPage() {
                                     src={effectiveLogoUrl} 
                                     alt={config.companyName || 'Logo'} 
                                     style={{ 
-                                      maxHeight: `${maxLogoH}px`, 
-                                      maxWidth: `${maxLogoW}px`, 
-                                      width: `${Math.round(85 * scale)}%`, 
-                                      height: 'auto', 
+                                      width: logoDim,
+                                      height: logoDim,
+                                      maxWidth: logoDim,
+                                      maxHeight: logoDim,
                                       objectFit: 'contain',
+                                      display: 'block',
+                                      margin: 'auto',
                                       filter: logoFilter,
                                       transition: 'all 0.15s ease'
                                     }} 
@@ -5477,6 +5578,7 @@ export default function AdminPage() {
                             <div
                               onClick={() => logoFileInputRef.current?.click()}
                               title={effectiveLogoUrl ? "Cliquer pour remplacer le logo" : "Cliquer pour charger un logo"}
+                              className="p-1.5"
                               style={{ 
                                 cursor: 'pointer', 
                                 width: '140px',
@@ -5490,7 +5592,8 @@ export default function AdminPage() {
                                 flexDirection: 'column',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                padding: '12px',
+                                padding: '6px',
+                                boxSizing: 'border-box',
                                 boxShadow: isLightPreview ? '0 8px 24px rgba(0, 0, 0, 0.08)' : '0 12px 30px rgba(0, 0, 0, 0.5)'
                               }}
                             >
@@ -5499,11 +5602,13 @@ export default function AdminPage() {
                                   src={effectiveLogoUrl} 
                                   alt={config.companyName || 'Logo'} 
                                   style={{ 
-                                    maxHeight: `${maxLogoH}px`, 
-                                    maxWidth: `${maxLogoW}px`, 
-                                    width: `${Math.round(85 * scale)}%`, 
-                                    height: 'auto', 
+                                    width: logoDim,
+                                    height: logoDim,
+                                    maxWidth: logoDim,
+                                    maxHeight: logoDim,
                                     objectFit: 'contain',
+                                    display: 'block',
+                                    margin: 'auto',
                                     filter: logoFilter,
                                     transition: 'all 0.15s ease'
                                   }} 
@@ -5585,36 +5690,46 @@ export default function AdminPage() {
                       </div>
 
                   {/* 4. BIO / PITCH EN CARTE VERRE FUMÉ (SOUS LE NOM / SLOGAN) */}
-                  {config.presentation && (
-                    <div 
-                      onClick={() => setActiveEditDrawer('bio')}
-                      title="Cliquer pour modifier la bio (Section Identité & Bio)"
-                      style={{
-                        background: isLightPreview ? 'rgba(255, 255, 255, 0.85)' : 'rgba(15, 23, 42, 0.65)',
-                        backdropFilter: 'blur(16px)',
-                        WebkitBackdropFilter: 'blur(16px)',
-                        border: isLightPreview ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
-                        borderRadius: '16px',
-                        padding: '1.25rem 1.5rem',
-                        margin: '0 auto 1.5rem auto',
-                        maxWidth: '540px',
-                        boxShadow: isLightPreview ? '0 10px 25px -5px rgba(0, 0, 0, 0.05)' : '0 10px 30px -5px rgba(0, 0, 0, 0.5)',
-                        textAlign: 'center',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      <p style={{
-                        margin: 0,
-                        fontSize: '0.92rem',
-                        lineHeight: 1.6,
-                        color: isLightPreview ? '#334155' : '#cbd5e1',
-                        fontWeight: 500,
-                        letterSpacing: '0.01em'
-                      }}>
-                        {config.presentation}
-                      </p>
-                    </div>
-                  )}
+                  {(() => {
+                    const rawBio = config.presentation;
+                    if (!rawBio || typeof rawBio !== 'string' || !rawBio.trim()) return null;
+                    const textOnly = stripHtmlTags(rawBio);
+                    if (!textOnly) return null;
+                    const cleanBio = sanitizeHtml(rawBio);
+
+                    return (
+                      <div 
+                        onClick={() => setActiveEditDrawer('bio')}
+                        title="Cliquer pour modifier la bio (Section Identité & Bio)"
+                        style={{
+                          background: isLightPreview ? 'rgba(255, 255, 255, 0.85)' : 'rgba(15, 23, 42, 0.65)',
+                          backdropFilter: 'blur(16px)',
+                          WebkitBackdropFilter: 'blur(16px)',
+                          border: isLightPreview ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
+                          borderRadius: '16px',
+                          padding: '1.25rem 1.5rem',
+                          margin: '0 auto 1.5rem auto',
+                          maxWidth: '540px',
+                          boxShadow: isLightPreview ? '0 10px 25px -5px rgba(0, 0, 0, 0.05)' : '0 10px 30px -5px rgba(0, 0, 0, 0.5)',
+                          textAlign: 'center',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        <div 
+                          className="studio-artist-bio-text"
+                          style={{
+                            margin: 0,
+                            fontSize: '0.92rem',
+                            lineHeight: 1.6,
+                            color: isLightPreview ? '#334155' : '#cbd5e1',
+                            fontWeight: 500,
+                            letterSpacing: '0.01em'
+                          }}
+                          dangerouslySetInnerHTML={{ __html: cleanBio }}
+                        />
+                      </div>
+                    );
+                  })()}
 
                   {/* 5. BARRE DES RÉSEAUX SOCIAUX & STREAMING (PICTOGRAMMES RONDS SOUS LA BIO) */}
                   {(() => {
@@ -6775,7 +6890,7 @@ export default function AdminPage() {
             type="button"
             onClick={() => {
               const vanitySlug = getProfileVanitySlug();
-              window.open(`/${vanitySlug}`, '_blank');
+              window.open(`/${vanitySlug}?preview=admin`, '_blank');
             }}
             style={{
               background: 'rgba(255,255,255,0.08)',

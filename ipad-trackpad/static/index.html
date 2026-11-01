@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>WinPad - iPad Trackpad & Tablette Graphique</title>
+  
+  <!-- Optimisations specifiques iOS Safari & PWA -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="WinPad">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#08090d">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Barre superieure / En-tete -->
+  <header id="top-bar">
+    <div class="top-left">
+      <!-- Indicateur de connexion & Latence -->
+      <div id="connection-status" class="status-badge disconnected" title="Statut WebSocket">
+        <span class="status-dot"></span>
+        <span id="status-text">Connexion...</span>
+        <span id="ping-text" class="ping-badge">-- ms</span>
+      </div>
+
+      <!-- Indicateur de mode stylet / Apple Pencil & Pression -->
+      <div id="pencil-hud" class="pencil-hud hidden">
+        <svg class="hud-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+          <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+        </svg>
+        <span class="pencil-label">Pencil</span>
+        <div class="pressure-track">
+          <div id="pressure-bar" class="pressure-fill" style="width: 0%;"></div>
+        </div>
+        <span id="pressure-val" class="pressure-text">0%</span>
+      </div>
+    </div>
+
+    <!-- Selecteur de mode : Trackpad vs Tablette Graphique -->
+    <div class="mode-selector">
+      <button id="btn-mode-trackpad" class="mode-btn active" data-mode="trackpad">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="4" y="2" width="16" height="20" rx="4"></rect>
+          <line x1="12" y1="2" x2="12" y2="8"></line>
+        </svg>
+        <span>Trackpad</span>
+      </button>
+      <button id="btn-mode-tablet" class="mode-btn" data-mode="tablet">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
+          <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
+        </svg>
+        <span>Tablette</span>
+      </button>
+    </div>
+
+    <!-- Actions superieures droites -->
+    <div class="top-right">
+      <button id="btn-shortcuts-toggle" class="icon-btn" title="Raccourcis Windows">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+          <line x1="6" y1="8" x2="6.01" y2="8"></line>
+          <line x1="10" y1="8" x2="10.01" y2="8"></line>
+          <line x1="14" y1="8" x2="14.01" y2="8"></line>
+          <line x1="18" y1="8" x2="18.01" y2="8"></line>
+          <line x1="6" y1="12" x2="6.01" y2="12"></line>
+          <line x1="18" y1="12" x2="18.01" y2="12"></line>
+          <line x1="8" y1="16" x2="16" y2="16"></line>
+        </svg>
+      </button>
+      <button id="btn-settings-toggle" class="icon-btn" title="Parametres">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+      <button id="btn-fullscreen" class="icon-btn" title="Plein ecran">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Zone Tactile Principale (Trackpad / Surface Tablette) -->
+  <main id="touch-area">
+    <!-- Cadre de proportion d'ecran Windows pour la tablette graphique -->
+    <div id="tablet-frame" class="tablet-frame hidden">
+      <div class="tablet-screen-hint">
+        <span id="screen-dim-label">1920 × 1080</span>
+      </div>
+    </div>
+
+    <!-- Marqueurs visuels de contact multi-touch -->
+    <div id="touch-feedback-layer"></div>
+
+    <!-- Indication de bienvenue / gestes au centre (s'estompe a la premiere touche) -->
+    <div id="gesture-hint" class="gesture-hint">
+      <div class="hint-pill">
+        <span class="hint-mode-label">Mode Trackpad</span>
+        <span class="hint-details">1 doigt = Curseur & Clic &bull; 2 doigts = Scroll & Clic droit</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- Barre d'actions physiques inferieure (Clics gauche, molette, clic droit, verrouillage glisser) -->
+  <footer id="bottom-bar">
+    <button id="btn-left-click" class="action-pad left-pad">
+      <span class="action-pad-title">Clic Gauche</span>
+      <span class="action-pad-sub">Tap simple</span>
+    </button>
+    <button id="btn-middle-click" class="action-pad middle-pad" title="Clic molette">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="7" y="2" width="10" height="20" rx="5"></rect>
+        <line x1="12" y1="6" x2="12" y2="10"></line>
+      </svg>
+      <span class="action-pad-sub">Milieu</span>
+    </button>
+    <button id="btn-drag-lock" class="action-pad drag-pad" title="Verrouiller le glisser-deposer">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+      <span id="drag-lock-label" class="action-pad-sub">Glisser Off</span>
+    </button>
+    <button id="btn-right-click" class="action-pad right-pad">
+      <span class="action-pad-title">Clic Droit</span>
+      <span class="action-pad-sub">2 doigts</span>
+    </button>
+    <button id="btn-toggle-bottom" class="collapse-btn" title="Masquer/Afficher les boutons">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+    </button>
+  </footer>
+
+  <!-- Tiroir de Raccourcis Clavier Windows (Escamotable) -->
+  <div id="shortcuts-drawer" class="drawer hidden">
+    <div class="drawer-header">
+      <span class="drawer-title">Raccourcis Windows</span>
+      <button id="btn-close-shortcuts" class="drawer-close">&times;</button>
+    </div>
+    <div class="shortcuts-grid">
+      <button class="key-btn" data-key="ctrl+z">↩ Annuler (Ctrl+Z)</button>
+      <button class="key-btn" data-key="ctrl+y">↪ Refaire (Ctrl+Y)</button>
+      <button class="key-btn" data-key="ctrl+c">📋 Copier (Ctrl+C)</button>
+      <button class="key-btn" data-key="ctrl+v">📑 Coller (Ctrl+V)</button>
+      <button class="key-btn" data-key="ctrl+s">💾 Enregistrer (Ctrl+S)</button>
+      <button class="key-btn" data-key="esc">⎋ Echap</button>
+      <button class="key-btn" data-key="enter">↵ Entree</button>
+      <button class="key-btn" data-key="backspace">⌫ Retour</button>
+      <button class="key-btn" data-key="win">❖ Windows</button>
+      <button class="key-btn" data-key="win+d">🖥 Bureau (Win+D)</button>
+      <button class="key-btn" data-key="win+tab">🗂 Vues (Win+Tab)</button>
+      <button class="key-btn" data-key="space">␣ Espace</button>
+    </div>
+  </div>
+
+  <!-- Modal des Parametres (Sensibilite, Scroll, Apple Pencil) -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Parametres du WinPad</h2>
+        <button id="btn-close-settings" class="modal-close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Sensibilite du curseur -->
+        <div class="setting-group">
+          <div class="setting-label-row">
+            <span>Sensibilite du curseur</span>
+            <span id="val-sensitivity" class="setting-value">1.2x</span>
+          </div>
+          <input type="range" id="slider-sensitivity" min="0.5" max="3.0" step="0.1" value="1.2">
+        </div>
+
+        <!-- Acceleration -->
+        <div class="setting-group-switch">
+          <div class="switch-info">
+            <span class="setting-title">Acceleration balistique</span>
+            <span class="setting-desc">Mouvement plus rapide sur gestes vifs</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="switch-accel" checked>
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+
+        <!-- Defilement Naturel -->
+        <div class="setting-group-switch">
+          <div class="switch-info">
+            <span class="setting-title">Defilement naturel (macOS / iOS)</span>
+            <span class="setting-desc">Glisser 2 doigts vers le bas monte le contenu</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="switch-natural-scroll" checked>
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+
+        <!-- Vitesse du defilement -->
+        <div class="setting-group">
+          <div class="setting-label-row">
+            <span>Vitesse de defilement (Scroll)</span>
+            <span id="val-scroll-speed" class="setting-value">1.0x</span>
+          </div>
+          <input type="range" id="slider-scroll-speed" min="0.3" max="2.5" step="0.1" value="1.0">
+        </div>
+
+        <!-- Mode Tablette : Conserver le ratio de l'ecran Windows -->
+        <div class="setting-group-switch">
+          <div class="switch-info">
+            <span class="setting-title">Tablette : Ratio d'aspect Windows</span>
+            <span class="setting-desc">Adapte la surface tactile au ratio du moniteur PC</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="switch-keep-aspect" checked>
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+
+        <!-- Seuil minimal de pression Apple Pencil -->
+        <div class="setting-group">
+          <div class="setting-label-row">
+            <span>Seuil de pression min. Apple Pencil</span>
+            <span id="val-pencil-threshold" class="setting-value">2%</span>
+          </div>
+          <input type="range" id="slider-pencil-threshold" min="0.0" max="0.2" step="0.01" value="0.02">
+        </div>
+
+        <!-- Reconnexion manuelle -->
+        <div class="setting-actions">
+          <button id="btn-reconnect" class="btn-primary">Forcer la reconnexion</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notification de deconnexion -->
+  <div id="toast-disconnected" class="toast-disconnected hidden">
+    <span>⚠️ Connexion perdue avec le PC. Reconnexion automatique...</span>
+    <button id="btn-toast-reconnect">Reessayer</button>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

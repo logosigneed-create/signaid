@@ -1,6 +1,9 @@
 import { SiteConfig, defaultConfig } from "./store";
 import { collection, getDocs, limit, orderBy, query, doc, getDoc, setDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./firebase";
+import { withCacheBust, getSessionCacheBuster, refreshSessionCacheBuster } from "./cacheBuster";
+
+export { withCacheBust, getSessionCacheBuster, refreshSessionCacheBuster };
 
 export interface ProfileSummary {
   id: string;
@@ -8,12 +11,18 @@ export interface ProfileSummary {
   companyName: string;
   activitySector?: string;
   logoUrl?: string;
+  avatarUrl?: string;
+  logo?: string;
+  logoA?: string;
+  logoB?: string;
+  logoAdaptedUrl?: string;
   accentColor?: string;
   theme?: 'dark' | 'light';
   source: 'local' | 'cloud' | 'audit';
   lastUpdated?: string;
   mockupCount?: number;
   previewUrls?: string[];
+  presentation?: string;
   userData?: {
     email?: string;
     phone?: string;
@@ -96,20 +105,125 @@ export async function getAllAuditDBKeys(): Promise<string[]> {
   });
 }
 
-// Verified Seed Data from pipeline execution for clubvisionroom
+// Verified Canonical Seed Data for clubvisionroom (Standard Fixed Names)
 export const CLUBVISION_MOCKUP_ASSETS = {
-  tFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtFront_1788693827681.png?alt=media&token=351044ba-98e5-4139-b194-e182b80fb846',
-  tBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtBack_1788693827685.png?alt=media&token=43c3717a-2294-4098-9b61-24dfb79df8c0',
-  pFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FpFront_1788693827686.png?alt=media&token=c94713f8-4ca2-4cdb-b959-82d5ae6d2c4b',
-  pBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FpBack_1788693827687.png?alt=media&token=cdc6ba8f-418a-4ea7-9629-523e3f607012',
-  hFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FhFront_1788693827689.png?alt=media&token=f1affb8b-0f66-4f8e-899b-b1da4c825f8c',
-  hBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FhBack_1788693827690.png?alt=media&token=ee00ba8d-0a66-45c6-856c-fe6a4b122320',
-  tankFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront_1788698451810.png?alt=media&token=32465cf4-7a0c-48aa-a010-08c999a7d0d1',
-  tankBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankBack_1788693827691.png?alt=media&token=042abb56-7970-4a26-92dc-2de88698e7a6',
-  heavyFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront_1788693827695.png?alt=media&token=65d0698f-0070-4fc8-a827-0861153b2113',
-  heavyBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyBack_1788693827696.png?alt=media&token=5645a2aa-48ba-43ba-ad68-1916f9d238e3',
-  tankWhiteFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteFront_1788693827692.png?alt=media&token=3602273b-ef06-4dbd-8dae-809894d7e147',
-  tankWhiteBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteBack_1788693827694.png?alt=media&token=0e6b5a90-6ffe-499d-9a91-71043c6cb636'
+  tFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtFront.png?alt=media',
+  tBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtBack.png?alt=media',
+  tWhiteFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FJHK170-WHT_front.png?alt=media',
+  tWhiteBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FJHK170-WHT_back.png?alt=media',
+  pFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FpFront.png?alt=media',
+  pBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FpBack.png?alt=media',
+  pWhiteFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FJHK510-WHT_front.png?alt=media',
+  pWhiteBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FJHK510-WHT_back.png?alt=media',
+  hFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FhFront.png?alt=media',
+  hBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FhBack.png?alt=media',
+  hWhiteFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FJHK421-WHT_front.png?alt=media',
+  hWhiteBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FJHK421-WHT_back.png?alt=media',
+  tankFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront.png?alt=media',
+  tankBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankBack.png?alt=media',
+  heavyFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront.png?alt=media',
+  heavyBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyBack.png?alt=media',
+  tankWhiteFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteFront.png?alt=media',
+  tankWhiteBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteBack.png?alt=media',
+  heavyWhiteFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyWhiteFront.png?alt=media',
+  heavyWhiteBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyWhiteBack.png?alt=media'
+};
+
+export const PBS_MOCKUP_ASSETS = {
+  banner: '/assets/pbs_banner.png',
+  bannerRemote: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/users%2Fprospects%2F1789294328554_logo_dtf.png?alt=media&token=9d870cfa-89a7-4029-9654-3f1c7003bbdb',
+  e3520Front: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fpbs%2Fweb%2FE3520_front.png?alt=media',
+  e3520Back: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fpbs%2Fweb%2FE3520_back.png?alt=media',
+  e3520FrontMech: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fpbs%2Fweb%2FE3520_front_mech.png?alt=media',
+  e3520BackMech: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fpbs%2Fweb%2FE3520_back_mech.png?alt=media',
+  logoA: '/assets/pbs_logo_A.png',
+  logoB: '/assets/pbs_logo_B.png',
+  logoARemote: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fpbs%2Fweb%2Flogo_A_active.png?alt=media',
+  logoBRemote: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2Fpbs%2Fweb%2Flogo_B_active.png?alt=media'
+};
+
+export function getStandardMockupUrl(slug: string, id: string): string {
+  return `https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F${encodeURIComponent(slug)}%2Fweb%2F${encodeURIComponent(id)}.png?alt=media`;
+}
+
+export const PBS_PRODUCT_ASSETS = {
+  sport_tshirt: {
+    front: PBS_MOCKUP_ASSETS.e3520Front,
+    back: PBS_MOCKUP_ASSETS.e3520Back
+  },
+  e3520: {
+    front: PBS_MOCKUP_ASSETS.e3520Front,
+    back: PBS_MOCKUP_ASSETS.e3520Back
+  },
+  tshirt: {
+    front: PBS_MOCKUP_ASSETS.e3520Front,
+    back: PBS_MOCKUP_ASSETS.e3520Back
+  }
+};
+
+export const PBS_GARMENT_MOCKUPS: Record<string, string> = {
+  sport_tshirt_front: PBS_MOCKUP_ASSETS.e3520Front,
+  sport_tshirt_back: PBS_MOCKUP_ASSETS.e3520Back,
+  sport_tshirt: PBS_MOCKUP_ASSETS.e3520Front,
+  e3520_front: PBS_MOCKUP_ASSETS.e3520Front,
+  e3520_back: PBS_MOCKUP_ASSETS.e3520Back,
+  E3520_front: PBS_MOCKUP_ASSETS.e3520Front,
+  E3520_back: PBS_MOCKUP_ASSETS.e3520Back,
+  e3520Front: PBS_MOCKUP_ASSETS.e3520Front,
+  e3520Back: PBS_MOCKUP_ASSETS.e3520Back,
+  E3520: PBS_MOCKUP_ASSETS.e3520Front
+};
+
+
+export const CLUBVISION_PRODUCT_ASSETS = {
+  tshirt: {
+    front: CLUBVISION_MOCKUP_ASSETS.tFront,
+    back: CLUBVISION_MOCKUP_ASSETS.tBack
+  },
+  tshirt_white: {
+    front: CLUBVISION_MOCKUP_ASSETS.tWhiteFront,
+    back: CLUBVISION_MOCKUP_ASSETS.tWhiteBack
+  },
+  polo: {
+    front: CLUBVISION_MOCKUP_ASSETS.pFront,
+    back: CLUBVISION_MOCKUP_ASSETS.pBack
+  },
+  polo_white: {
+    front: CLUBVISION_MOCKUP_ASSETS.pWhiteFront,
+    back: CLUBVISION_MOCKUP_ASSETS.pWhiteBack
+  },
+  hoodie: {
+    front: CLUBVISION_MOCKUP_ASSETS.hFront,
+    back: CLUBVISION_MOCKUP_ASSETS.hBack
+  },
+  hoodie_white: {
+    front: CLUBVISION_MOCKUP_ASSETS.hWhiteFront,
+    back: CLUBVISION_MOCKUP_ASSETS.hWhiteBack
+  },
+  sweat: {
+    front: CLUBVISION_MOCKUP_ASSETS.hFront,
+    back: CLUBVISION_MOCKUP_ASSETS.hBack
+  },
+  sweat_white: {
+    front: CLUBVISION_MOCKUP_ASSETS.hWhiteFront,
+    back: CLUBVISION_MOCKUP_ASSETS.hWhiteBack
+  },
+  tshirt_oversize: {
+    front: CLUBVISION_MOCKUP_ASSETS.heavyFront,
+    back: CLUBVISION_MOCKUP_ASSETS.heavyBack
+  },
+  tshirt_oversize_white: {
+    front: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront,
+    back: CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack
+  },
+  tank_top: {
+    front: CLUBVISION_MOCKUP_ASSETS.tankFront,
+    back: CLUBVISION_MOCKUP_ASSETS.tankBack
+  },
+  tank_top_white: {
+    front: CLUBVISION_MOCKUP_ASSETS.tankWhiteFront,
+    back: CLUBVISION_MOCKUP_ASSETS.tankWhiteBack
+  }
 };
 
 export const CLUBVISION_GARMENT_MOCKUPS: Record<string, string> = {
@@ -118,11 +232,23 @@ export const CLUBVISION_GARMENT_MOCKUPS: Record<string, string> = {
   tshirt: CLUBVISION_MOCKUP_ASSETS.tFront,
   tFront: CLUBVISION_MOCKUP_ASSETS.tFront,
   tBack: CLUBVISION_MOCKUP_ASSETS.tBack,
+  tshirt_white_front: CLUBVISION_MOCKUP_ASSETS.tWhiteFront,
+  tshirt_white_back: CLUBVISION_MOCKUP_ASSETS.tWhiteBack,
+  tWhiteFront: CLUBVISION_MOCKUP_ASSETS.tWhiteFront,
+  tWhiteBack: CLUBVISION_MOCKUP_ASSETS.tWhiteBack,
+  'JHK170-WHT_front': CLUBVISION_MOCKUP_ASSETS.tWhiteFront,
+  'JHK170-WHT_back': CLUBVISION_MOCKUP_ASSETS.tWhiteBack,
   polo_front: CLUBVISION_MOCKUP_ASSETS.pFront,
   polo_back: CLUBVISION_MOCKUP_ASSETS.pBack,
   polo: CLUBVISION_MOCKUP_ASSETS.pFront,
   pFront: CLUBVISION_MOCKUP_ASSETS.pFront,
   pBack: CLUBVISION_MOCKUP_ASSETS.pBack,
+  polo_white_front: CLUBVISION_MOCKUP_ASSETS.pWhiteFront,
+  polo_white_back: CLUBVISION_MOCKUP_ASSETS.pWhiteBack,
+  pWhiteFront: CLUBVISION_MOCKUP_ASSETS.pWhiteFront,
+  pWhiteBack: CLUBVISION_MOCKUP_ASSETS.pWhiteBack,
+  'JHK510-WHT_front': CLUBVISION_MOCKUP_ASSETS.pWhiteFront,
+  'JHK510-WHT_back': CLUBVISION_MOCKUP_ASSETS.pWhiteBack,
   hoodie_front: CLUBVISION_MOCKUP_ASSETS.hFront,
   hoodie_back: CLUBVISION_MOCKUP_ASSETS.hBack,
   hoodie: CLUBVISION_MOCKUP_ASSETS.hFront,
@@ -131,6 +257,14 @@ export const CLUBVISION_GARMENT_MOCKUPS: Record<string, string> = {
   sweat: CLUBVISION_MOCKUP_ASSETS.hFront,
   hFront: CLUBVISION_MOCKUP_ASSETS.hFront,
   hBack: CLUBVISION_MOCKUP_ASSETS.hBack,
+  hoodie_white_front: CLUBVISION_MOCKUP_ASSETS.hWhiteFront,
+  hoodie_white_back: CLUBVISION_MOCKUP_ASSETS.hWhiteBack,
+  sweat_white_front: CLUBVISION_MOCKUP_ASSETS.hWhiteFront,
+  sweat_white_back: CLUBVISION_MOCKUP_ASSETS.hWhiteBack,
+  hWhiteFront: CLUBVISION_MOCKUP_ASSETS.hWhiteFront,
+  hWhiteBack: CLUBVISION_MOCKUP_ASSETS.hWhiteBack,
+  'JHK421-WHT_front': CLUBVISION_MOCKUP_ASSETS.hWhiteFront,
+  'JHK421-WHT_back': CLUBVISION_MOCKUP_ASSETS.hWhiteBack,
   tank_front: CLUBVISION_MOCKUP_ASSETS.tankFront,
   tank_back: CLUBVISION_MOCKUP_ASSETS.tankBack,
   tank_top: CLUBVISION_MOCKUP_ASSETS.tankFront,
@@ -145,6 +279,70 @@ export const CLUBVISION_GARMENT_MOCKUPS: Record<string, string> = {
   tank_white_back: CLUBVISION_MOCKUP_ASSETS.tankWhiteBack,
   tankWhiteFront: CLUBVISION_MOCKUP_ASSETS.tankWhiteFront,
   tankWhiteBack: CLUBVISION_MOCKUP_ASSETS.tankWhiteBack,
+  tank_top_white: CLUBVISION_MOCKUP_ASSETS.tankWhiteFront,
+  tank_top_white_front: CLUBVISION_MOCKUP_ASSETS.tankWhiteFront,
+  tank_top_white_back: CLUBVISION_MOCKUP_ASSETS.tankWhiteBack,
+  'BYBB011-WHT_front': CLUBVISION_MOCKUP_ASSETS.tankWhiteFront,
+  'BYBB011-WHT_back': CLUBVISION_MOCKUP_ASSETS.tankWhiteBack,
+  heavy_white_front: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront,
+  heavy_white_back: CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack,
+  heavyWhiteFront: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront,
+  heavyWhiteBack: CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack,
+  tshirt_oversize_white: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront,
+  tshirt_oversize_white_front: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront,
+  tshirt_oversize_white_back: CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack,
+  'NX7200-WHT_front': CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront,
+  'NX7200-WHT_back': CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack,
+};
+
+export const PARTY_2000_MOCKUP_ASSETS = {
+  logoActive: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2Flogo_A_active.png?alt=media&token=33bc2147-0ae9-4e03-9de3-f6118e31376e',
+  tFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FtFront.png?alt=media&token=e61c81aa-e34e-4d0e-a6f9-f9c9cf820d60',
+  tBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FtBack.png?alt=media&token=e1ed941d-2919-4599-aa93-1cb08eee05e1',
+  pFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FpFront.png?alt=media&token=5d211d11-85e0-464d-85ed-1c787d17de25',
+  pBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FpBack.png?alt=media&token=991a8e51-cdd5-4d78-8c1e-677d27fb8af9',
+  hFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FhFront.png?alt=media&token=14255116-e180-4c3a-80b3-e445b021fff4',
+  hBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FhBack.png?alt=media&token=7126610f-3f0b-4d55-8a6f-3c149a3a5ba7'
+};
+
+export const PARTY_2000_PRODUCT_ASSETS = {
+  tshirt: {
+    front: PARTY_2000_MOCKUP_ASSETS.tFront,
+    back: PARTY_2000_MOCKUP_ASSETS.tBack
+  },
+  polo: {
+    front: PARTY_2000_MOCKUP_ASSETS.pFront,
+    back: PARTY_2000_MOCKUP_ASSETS.pBack
+  },
+  hoodie: {
+    front: PARTY_2000_MOCKUP_ASSETS.hFront,
+    back: PARTY_2000_MOCKUP_ASSETS.hBack
+  },
+  sweat: {
+    front: PARTY_2000_MOCKUP_ASSETS.hFront,
+    back: PARTY_2000_MOCKUP_ASSETS.hBack
+  }
+};
+
+export const PARTY_2000_GARMENT_MOCKUPS: Record<string, string> = {
+  tshirt_front: PARTY_2000_MOCKUP_ASSETS.tFront,
+  tshirt_back: PARTY_2000_MOCKUP_ASSETS.tBack,
+  tshirt: PARTY_2000_MOCKUP_ASSETS.tFront,
+  tFront: PARTY_2000_MOCKUP_ASSETS.tFront,
+  tBack: PARTY_2000_MOCKUP_ASSETS.tBack,
+  polo_front: PARTY_2000_MOCKUP_ASSETS.pFront,
+  polo_back: PARTY_2000_MOCKUP_ASSETS.pBack,
+  polo: PARTY_2000_MOCKUP_ASSETS.pFront,
+  pFront: PARTY_2000_MOCKUP_ASSETS.pFront,
+  pBack: PARTY_2000_MOCKUP_ASSETS.pBack,
+  hoodie_front: PARTY_2000_MOCKUP_ASSETS.hFront,
+  hoodie_back: PARTY_2000_MOCKUP_ASSETS.hBack,
+  hoodie: PARTY_2000_MOCKUP_ASSETS.hFront,
+  sweat_front: PARTY_2000_MOCKUP_ASSETS.hFront,
+  sweat_back: PARTY_2000_MOCKUP_ASSETS.hBack,
+  sweat: PARTY_2000_MOCKUP_ASSETS.hFront,
+  hFront: PARTY_2000_MOCKUP_ASSETS.hFront,
+  hBack: PARTY_2000_MOCKUP_ASSETS.hBack
 };
 
 
@@ -159,32 +357,126 @@ export const SEED_PROFILES: Record<string, ProfileSummary> = {
     theme: 'dark',
     source: 'audit',
     lastUpdated: 'Pipeline Audit Visuel',
+    mockupCount: 0,
+    previewUrls: [],
     userData: {
       name: 'Direction La Cuve à Bière',
       company: 'LA CUVE À BIÈRE',
       email: 'contact@lacuveabiere.fr',
       phone: '+33 6 00 00 00 00',
-      message: 'Initialisation vitrine La Cuve à Bière'
+      message: 'Initialisation directe profil La Cuve à Bière'
     }
   },
   clubvisionroom: {
     id: 'clubvisionroom',
     slug: 'clubvisionroom',
-    companyName: 'CLUBVISIONROOM',
-    activitySector: 'Événementiel & Audiovisuel - Vêtements de Scène & Merchandising Clubbing',
-    logoUrl: 'https://storage.googleapis.com/signaid-prod-assets/logos/mt074jnaldxn/1787803061043_logo_dtf.png',
-    accentColor: 'rgb(59, 130, 246)',
+    companyName: 'CLUB VISION',
+    activitySector: 'Collectif Artistique & Événementiel Techno',
+    logoUrl: '/assets/previews/clubvision_avatar.png',
+    accentColor: '#8b5cf6',
     theme: 'dark',
     source: 'audit',
-    lastUpdated: 'Initialisé via Pipeline Audit',
-    mockupCount: 12,
-    previewUrls: Object.values(CLUBVISION_MOCKUP_ASSETS),
+    lastUpdated: 'Pipeline Audit Visuel',
+    mockupCount: 14,
+    previewUrls: [
+      CLUBVISION_MOCKUP_ASSETS.tFront,
+      CLUBVISION_MOCKUP_ASSETS.tBack,
+      CLUBVISION_MOCKUP_ASSETS.pFront,
+      CLUBVISION_MOCKUP_ASSETS.pBack,
+      CLUBVISION_MOCKUP_ASSETS.hFront,
+      CLUBVISION_MOCKUP_ASSETS.hBack,
+      CLUBVISION_MOCKUP_ASSETS.tankFront,
+      CLUBVISION_MOCKUP_ASSETS.tankBack,
+      CLUBVISION_MOCKUP_ASSETS.heavyFront,
+      CLUBVISION_MOCKUP_ASSETS.heavyBack,
+      CLUBVISION_MOCKUP_ASSETS.tankWhiteFront,
+      CLUBVISION_MOCKUP_ASSETS.tankWhiteBack,
+      CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront,
+      CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack
+    ],
     userData: {
-      name: 'Direction CLUBVISIONROOM',
-      company: 'CLUBVISIONROOM',
-      email: 'contact@clubvisionroom.com',
-      phone: '+33 6 12 34 56 78',
-      message: 'Initialisation via Pipeline Audit Visuel 3D et dotation scénique'
+      name: 'Direction Club Vision',
+      company: 'CLUB VISION',
+      email: 'contact@clubvision.fr',
+      phone: '+33 6 00 00 00 00',
+      message: 'Initialisation directe profil Club Vision'
+    }
+  },
+  pbs: {
+    id: 'pbs',
+    slug: 'pbs',
+    companyName: 'PBS',
+    activitySector: 'Club de tennis de table',
+    logoUrl: PBS_MOCKUP_ASSETS.logoA,
+    avatarUrl: PBS_MOCKUP_ASSETS.logoA,
+    logo: PBS_MOCKUP_ASSETS.logoA,
+    accentColor: '#00b5e2',
+    theme: 'dark',
+    presentation: '',
+    source: 'audit',
+    lastUpdated: 'Profil Initialisé PBS',
+    mockupCount: 1,
+    previewUrls: ['/assets/pbs_banner.png'],
+    userData: {
+      name: 'Direction PBS',
+      company: 'PBS',
+      email: 'contact@pbs.com',
+      phone: '+33 6 00 00 00 00',
+      message: 'Initialisation directe profil PBS'
+    }
+  },
+  '2000theparty': {
+    id: 'audit-2000theparty-eyem',
+    slug: '2000theparty',
+    companyName: '2000 the PARTY',
+    activitySector: 'Événementiel, Musique & DJ',
+    logoUrl: PARTY_2000_MOCKUP_ASSETS.logoActive,
+    avatarUrl: PARTY_2000_MOCKUP_ASSETS.logoActive,
+    logo: PARTY_2000_MOCKUP_ASSETS.logoActive,
+    accentColor: '#ec4899',
+    theme: 'dark',
+    presentation: 'La soirée référence pour se replonger dans les années 2000! Reste connecté..',
+    source: 'audit',
+    lastUpdated: 'Pipeline Prospects Facebook',
+    mockupCount: 3,
+    previewUrls: [
+      PARTY_2000_MOCKUP_ASSETS.tFront,
+      PARTY_2000_MOCKUP_ASSETS.pFront,
+      PARTY_2000_MOCKUP_ASSETS.hFront
+    ],
+    userData: {
+      name: '2000 the PARTY',
+      company: '2000 the PARTY',
+      email: 'contact@entreprise.com',
+      phone: '',
+      message: 'La soirée référence pour se replonger dans les années 2000! Reste connecté..'
+    }
+  },
+  'audit-2000theparty-eyem': {
+    id: 'audit-2000theparty-eyem',
+    slug: 'audit-2000theparty-eyem',
+    companyName: '2000 the PARTY',
+    activitySector: 'Événementiel, Musique & DJ',
+    logoUrl: PARTY_2000_MOCKUP_ASSETS.logoActive,
+    avatarUrl: PARTY_2000_MOCKUP_ASSETS.logoActive,
+    logo: PARTY_2000_MOCKUP_ASSETS.logoActive,
+    accentColor: '#ec4899',
+    theme: 'dark',
+    presentation: 'La soirée référence pour se replonger dans les années 2000! Reste connecté..',
+    source: 'audit',
+    lastUpdated: 'Pipeline Prospects Facebook',
+    mockupCount: 3,
+    previewUrls: [
+      PARTY_2000_MOCKUP_ASSETS.tFront,
+      PARTY_2000_MOCKUP_ASSETS.pFront,
+      PARTY_2000_MOCKUP_ASSETS.hFront
+    ],
+    userData: {
+      name: '2000 the PARTY',
+      company: '2000 the PARTY',
+      email: 'contact@entreprise.com',
+      phone: '',
+      message: 'La soirée référence pour se replonger dans les années 2000! Reste connecté..'
     }
   }
 };
@@ -200,20 +492,26 @@ export function ensureLocalProfileSeeded(slug: string) {
 
   try {
     const metaKey = `meta_${cleanSlug}`;
-    if (!localStorage.getItem(metaKey)) {
+    const existingMeta = localStorage.getItem(metaKey);
+    const isVisionSlug = cleanSlug === 'clubvisionroom' || cleanSlug === 'visionroom' || cleanSlug === 'clubvision';
+    const isPbsSlug = cleanSlug === 'pbs';
+    const is2000PartySlug = cleanSlug === '2000theparty' || cleanSlug === 'audit-2000theparty-eyem';
+
+    if (!existingMeta || (cleanSlug === 'pbs' && (existingMeta.includes('1789483691723_logo_nobg') || !existingMeta.includes('pbs_logo_A'))) || (is2000PartySlug && (existingMeta.includes('1789579603133_logo_nobg') || !existingMeta.includes('logo_A_active')))) {
       localStorage.setItem(metaKey, JSON.stringify({
         displayName: seed.companyName,
         logoUrl: seed.logoUrl,
+        avatarUrl: seed.avatarUrl || seed.logoUrl,
+        logo: seed.logo || seed.logoUrl,
         primaryColor: seed.accentColor,
         theme: seed.theme,
-        initials: 'CVR',
+        initials: cleanSlug === 'pbs' ? 'PBS' : (is2000PartySlug ? '2P' : 'CVR'),
         isReady: true
       }));
     }
 
     const sessionKey = `btp_session_${cleanSlug}`;
     const sessionObjKey = `session_obj_${cleanSlug}`;
-    const isVisionSlug = cleanSlug === 'clubvisionroom' || cleanSlug === 'visionroom' || cleanSlug === 'clubvision';
 
     const existingSession = localStorage.getItem(sessionKey);
     let shouldUpdateSession = !existingSession;
@@ -222,19 +520,411 @@ export function ensureLocalProfileSeeded(slug: string) {
         const parsed = JSON.parse(existingSession);
         const mockups = Array.isArray(parsed.mockups) ? parsed.mockups : [];
         const hasTankWhite = mockups.some((m: any) => m.id === 'tankWhiteFront' || m.id === 'tankWhiteBack');
-        const hasStudioTee = mockups.some((m: any) => (m.url || m.imageUrl || '').includes('studio'));
-        const hasAllMockups = mockups.length >= 10;
-        if (!hasTankWhite || !hasAllMockups || !hasStudioTee) shouldUpdateSession = true;
+        const hasHeavyWhite = mockups.some((m: any) => m.id === 'heavyWhiteFront' || m.id === 'heavyWhiteBack');
+        const hasAllMockups = mockups.length >= 14;
+        const hasLegacyTimestamps = mockups.some((m: any) => /_\d{10,}\.png/.test(m.url || m.imageUrl || m.frontImageUrl || ''));
+        if (!hasTankWhite || !hasHeavyWhite || !hasAllMockups || hasLegacyTimestamps) shouldUpdateSession = true;
       } catch {
         shouldUpdateSession = true;
       }
+    }
+    if (existingSession && isPbsSlug) {
+      try {
+        const parsed = JSON.parse(existingSession);
+        const mockups = Array.isArray(parsed.mockups) ? parsed.mockups : [];
+        const hasFront = mockups.some((m: any) => m.id === 'E3520_front');
+        const hasBack = mockups.some((m: any) => m.id === 'E3520_back');
+        const isStrictTwo = mockups.length === 2;
+        const hasCorrectLogo = parsed.logoA === PBS_MOCKUP_ASSETS.logoA && parsed.logoB === PBS_MOCKUP_ASSETS.logoB;
+        const hasModel = mockups.every((m: any) => !!m.model);
+        const hasCyanColor = mockups.every((m: any) => m.color === '#00b5e2');
+        const hasStorageAsset = mockups.every((m: any) => (m.ai || m.url || '').includes('firebasestorage.googleapis.com'));
+        const hasSportGarment = mockups.every((m: any) => m.garment === 'sport_tshirt');
+        const hasCorrectBanner = parsed.livePhotoUrl === '/assets/pbs_banner.png';
+        const hasCorrectSector = parsed.activitySector === 'Club de tennis de table';
+        if (!hasFront || !hasBack || !isStrictTwo || !hasCorrectLogo || !hasModel || !hasCyanColor || !hasStorageAsset || !hasSportGarment || !hasCorrectBanner || !hasCorrectSector) shouldUpdateSession = true;
+      } catch {
+        shouldUpdateSession = true;
+      }
+    }
+    if (existingSession && is2000PartySlug) {
+      try {
+        const parsed = JSON.parse(existingSession);
+        const mockups = Array.isArray(parsed.mockups) ? parsed.mockups : [];
+        const hasTshirt = mockups.some((m: any) => m.id === 'tFront' || m.garment === 'tshirt');
+        const hasPolo = mockups.some((m: any) => m.id === 'pFront' || m.garment === 'polo');
+        const hasHoodie = mockups.some((m: any) => m.id === 'hFront' || m.garment === 'sweat' || m.garment === 'hoodie');
+        const hasActiveLogo = (parsed.logoUrl || '').includes('logo_A_active') || (parsed.logoA || '').includes('logo_A_active');
+        const hasBadLogo = (parsed.logoUrl || '').includes('1789579603133_logo_nobg') || (parsed.logoA || '').includes('1789579603133_logo_nobg');
+        if (!hasTshirt || !hasPolo || !hasHoodie || !hasActiveLogo || hasBadLogo || mockups.length < 6) {
+          shouldUpdateSession = true;
+        }
+      } catch {
+        shouldUpdateSession = true;
+      }
+    }
+
+    if (shouldUpdateSession && isPbsSlug) {
+      const pbsMockupsList = [
+        {
+          id: 'E3520_front',
+          sku: 'E3520',
+          productId: 'prod_signaid_sportt_poly_mtzmb4zr',
+          title: 'T-shirt Sport Polyester Respirant Interlock Face',
+          name: 'T-shirt Sport Polyester Respirant Interlock Face',
+          garment: 'sport_tshirt',
+          color: '#00b5e2',
+          view: 'front',
+          selected: true,
+          model: '/assets/models/male_tshirt_front.png',
+          url: PBS_MOCKUP_ASSETS.e3520Front,
+          imageUrl: PBS_MOCKUP_ASSETS.e3520Front,
+          frontImageUrl: PBS_MOCKUP_ASSETS.e3520Front,
+          ai: PBS_MOCKUP_ASSETS.e3520Front,
+          aiRemastered: PBS_MOCKUP_ASSETS.e3520Front,
+          mechanical: PBS_MOCKUP_ASSETS.e3520FrontMech,
+          base: '/assets/sport-blue-E3520.png',
+          hasAi: true,
+          isFresh: true,
+          placement: 'A'
+        },
+        {
+          id: 'E3520_back',
+          sku: 'E3520',
+          productId: 'prod_signaid_sportt_poly_mtzmb4zr',
+          title: 'T-shirt Sport Polyester Respirant Interlock Dos',
+          name: 'T-shirt Sport Polyester Respirant Interlock Dos',
+          garment: 'sport_tshirt',
+          color: '#00b5e2',
+          view: 'back',
+          selected: true,
+          model: '/assets/models/male_tshirt_back.png',
+          url: PBS_MOCKUP_ASSETS.e3520Back,
+          imageUrl: PBS_MOCKUP_ASSETS.e3520Back,
+          backImageUrl: PBS_MOCKUP_ASSETS.e3520Back,
+          ai: PBS_MOCKUP_ASSETS.e3520Back,
+          aiRemastered: PBS_MOCKUP_ASSETS.e3520Back,
+          mechanical: PBS_MOCKUP_ASSETS.e3520BackMech,
+          base: '/assets/sport-blue-E3520-dos.png',
+          hasAi: true,
+          isFresh: true,
+          placement: 'B'
+        }
+      ];
+
+      const pbsPayload = {
+        userData: seed.userData,
+        companyName: 'PBS',
+        activitySector: 'Club de tennis de table',
+        logoUrl: '/assets/pbs_logo_A.png',
+        avatarUrl: '/assets/pbs_logo_A.png',
+        logo: '/assets/pbs_logo_A.png',
+        logoA: '/assets/pbs_logo_A.png',
+        logoB: '/assets/pbs_logo_B.png',
+        livePhotoUrl: '/assets/pbs_banner.png',
+        livePhotoUrls: ['/assets/pbs_banner.png'],
+        previewUrls: ['/assets/pbs_banner.png'],
+        enabledProductIds: ['prod_signaid_sportt_poly_mtzmb4zr', 'E3520_front', 'E3520_back', 'E3520'],
+        logoPlacements: {
+          E3520_front: 'A',
+          E3520_back: 'B'
+        },
+        mockups: pbsMockupsList,
+        items: pbsMockupsList,
+        products: {
+          sport_tshirt: {
+            id: 'E3520',
+            name: 'T-Shirt Sport Respirant (E3520)',
+            garment: 'sport_tshirt',
+            price: 30.00,
+            frontImageUrl: PBS_MOCKUP_ASSETS.e3520Front,
+            backImageUrl: PBS_MOCKUP_ASSETS.e3520Back,
+            ai: PBS_MOCKUP_ASSETS.e3520Front,
+            aiRemastered: PBS_MOCKUP_ASSETS.e3520Front,
+            aiBack: PBS_MOCKUP_ASSETS.e3520Back,
+            aiRemasteredBack: PBS_MOCKUP_ASSETS.e3520Back,
+            mechanical: PBS_MOCKUP_ASSETS.e3520FrontMech,
+            mechanicalBack: PBS_MOCKUP_ASSETS.e3520BackMech
+          },
+          e3520: {
+            id: 'E3520',
+            name: 'T-Shirt Sport Respirant (E3520)',
+            garment: 'sport_tshirt',
+            price: 30.00,
+            frontImageUrl: PBS_MOCKUP_ASSETS.e3520Front,
+            backImageUrl: PBS_MOCKUP_ASSETS.e3520Back,
+            ai: PBS_MOCKUP_ASSETS.e3520Front,
+            aiRemastered: PBS_MOCKUP_ASSETS.e3520Front,
+            aiBack: PBS_MOCKUP_ASSETS.e3520Back,
+            aiRemasteredBack: PBS_MOCKUP_ASSETS.e3520Back,
+            mechanical: PBS_MOCKUP_ASSETS.e3520FrontMech,
+            mechanicalBack: PBS_MOCKUP_ASSETS.e3520BackMech
+          }
+        },
+        garmentMockups: PBS_GARMENT_MOCKUPS,
+        dynamicMockups: {
+          E3520_front: PBS_MOCKUP_ASSETS.e3520Front,
+          E3520_back: PBS_MOCKUP_ASSETS.e3520Back,
+          e3520Front: PBS_MOCKUP_ASSETS.e3520Front,
+          e3520Back: PBS_MOCKUP_ASSETS.e3520Back
+        }
+      };
+
+      const enabledIdsStr = JSON.stringify(['prod_signaid_sportt_poly_mtzmb4zr', 'E3520_front', 'E3520_back', 'E3520']);
+      const gmJson = JSON.stringify(pbsPayload.garmentMockups);
+      const mockupsJson = JSON.stringify(pbsMockupsList);
+      const payloadJson = JSON.stringify(pbsPayload);
+
+      localStorage.setItem(sessionKey, payloadJson);
+      localStorage.setItem(sessionObjKey, payloadJson);
+      localStorage.setItem('btp_enabled_product_ids', enabledIdsStr);
+      localStorage.setItem('enabled_products_pbs', enabledIdsStr);
+      localStorage.setItem('btp_enabled_products_pbs', enabledIdsStr);
+      localStorage.setItem('garmentMockups_pbs', gmJson);
+      localStorage.setItem('btp_garment_mockups_pbs', gmJson);
+      localStorage.setItem('mockups_pbs', mockupsJson);
+
+      // Purge any residual keys from other sessions or previous faulty seedings
+      localStorage.removeItem('btp_mockup_tshirt_front_pbs');
+      localStorage.removeItem('btp_mockup_tshirt_back_pbs');
+      localStorage.removeItem('btp_mockup_tshirt_pbs');
+      localStorage.removeItem('btp_mockup_polo_front_pbs');
+      localStorage.removeItem('btp_mockup_polo_back_pbs');
+      localStorage.removeItem('btp_mockup_hoodie_front_pbs');
+      localStorage.removeItem('btp_mockup_hoodie_back_pbs');
+      localStorage.removeItem('btp_mockup_hoodie_pbs');
+      localStorage.removeItem('btp_mockup_tank_front_pbs');
+      localStorage.removeItem('btp_mockup_tank_back_pbs');
+      return;
+    }
+
+    if (shouldUpdateSession && is2000PartySlug) {
+      const partyMockupsList = [
+        {
+          id: 'tFront',
+          sku: 'tFront',
+          title: 'T-shirt Noir 2000 the PARTY Face',
+          name: 'T-shirt Noir 2000 the PARTY Face',
+          garment: 'tshirt',
+          color: 'Noir',
+          view: 'front',
+          selected: true,
+          url: PARTY_2000_MOCKUP_ASSETS.tFront,
+          imageUrl: PARTY_2000_MOCKUP_ASSETS.tFront,
+          frontImageUrl: PARTY_2000_MOCKUP_ASSETS.tFront,
+          imageFront: PARTY_2000_MOCKUP_ASSETS.tFront,
+          ai: PARTY_2000_MOCKUP_ASSETS.tFront,
+          aiRemastered: PARTY_2000_MOCKUP_ASSETS.tFront,
+          hasAi: true,
+          isFresh: true,
+          price: 29.90
+        },
+        {
+          id: 'tBack',
+          sku: 'tBack',
+          title: 'T-shirt Noir 2000 the PARTY Dos',
+          name: 'T-shirt Noir 2000 the PARTY Dos',
+          garment: 'tshirt',
+          color: 'Noir',
+          view: 'back',
+          selected: true,
+          url: PARTY_2000_MOCKUP_ASSETS.tBack,
+          imageUrl: PARTY_2000_MOCKUP_ASSETS.tBack,
+          backImageUrl: PARTY_2000_MOCKUP_ASSETS.tBack,
+          imageBack: PARTY_2000_MOCKUP_ASSETS.tBack,
+          ai: PARTY_2000_MOCKUP_ASSETS.tBack,
+          aiRemastered: PARTY_2000_MOCKUP_ASSETS.tBack,
+          hasAi: true,
+          isFresh: true,
+          price: 29.90
+        },
+        {
+          id: 'pFront',
+          sku: 'pFront',
+          title: 'Polo Premium 2000 the PARTY Face',
+          name: 'Polo Premium 2000 the PARTY Face',
+          garment: 'polo',
+          color: 'Noir',
+          view: 'front',
+          selected: true,
+          url: PARTY_2000_MOCKUP_ASSETS.pFront,
+          imageUrl: PARTY_2000_MOCKUP_ASSETS.pFront,
+          frontImageUrl: PARTY_2000_MOCKUP_ASSETS.pFront,
+          imageFront: PARTY_2000_MOCKUP_ASSETS.pFront,
+          ai: PARTY_2000_MOCKUP_ASSETS.pFront,
+          aiRemastered: PARTY_2000_MOCKUP_ASSETS.pFront,
+          hasAi: true,
+          isFresh: true,
+          price: 39.90
+        },
+        {
+          id: 'pBack',
+          sku: 'pBack',
+          title: 'Polo Premium 2000 the PARTY Dos',
+          name: 'Polo Premium 2000 the PARTY Dos',
+          garment: 'polo',
+          color: 'Noir',
+          view: 'back',
+          selected: true,
+          url: PARTY_2000_MOCKUP_ASSETS.pBack,
+          imageUrl: PARTY_2000_MOCKUP_ASSETS.pBack,
+          backImageUrl: PARTY_2000_MOCKUP_ASSETS.pBack,
+          imageBack: PARTY_2000_MOCKUP_ASSETS.pBack,
+          ai: PARTY_2000_MOCKUP_ASSETS.pBack,
+          aiRemastered: PARTY_2000_MOCKUP_ASSETS.pBack,
+          hasAi: true,
+          isFresh: true,
+          price: 39.90
+        },
+        {
+          id: 'hFront',
+          sku: 'hFront',
+          title: 'Hoodie Premium 2000 the PARTY Face',
+          name: 'Hoodie Premium 2000 the PARTY Face',
+          garment: 'sweat',
+          color: 'Noir',
+          view: 'front',
+          selected: true,
+          url: PARTY_2000_MOCKUP_ASSETS.hFront,
+          imageUrl: PARTY_2000_MOCKUP_ASSETS.hFront,
+          frontImageUrl: PARTY_2000_MOCKUP_ASSETS.hFront,
+          imageFront: PARTY_2000_MOCKUP_ASSETS.hFront,
+          ai: PARTY_2000_MOCKUP_ASSETS.hFront,
+          aiRemastered: PARTY_2000_MOCKUP_ASSETS.hFront,
+          hasAi: true,
+          isFresh: true,
+          price: 49.90
+        },
+        {
+          id: 'hBack',
+          sku: 'hBack',
+          title: 'Hoodie Premium 2000 the PARTY Dos',
+          name: 'Hoodie Premium 2000 the PARTY Dos',
+          garment: 'sweat',
+          color: 'Noir',
+          view: 'back',
+          selected: true,
+          url: PARTY_2000_MOCKUP_ASSETS.hBack,
+          imageUrl: PARTY_2000_MOCKUP_ASSETS.hBack,
+          backImageUrl: PARTY_2000_MOCKUP_ASSETS.hBack,
+          imageBack: PARTY_2000_MOCKUP_ASSETS.hBack,
+          ai: PARTY_2000_MOCKUP_ASSETS.hBack,
+          aiRemastered: PARTY_2000_MOCKUP_ASSETS.hBack,
+          hasAi: true,
+          isFresh: true,
+          price: 49.90
+        }
+      ];
+
+      const partyProductsMap = {
+        tshirt: {
+          id: 'tFront',
+          name: 'T-Shirt 2000 the PARTY',
+          title: 'T-Shirt 2000 the PARTY',
+          price: 29.90,
+          garment: 'tshirt',
+          color: 'Noir',
+          frontImageUrl: PARTY_2000_MOCKUP_ASSETS.tFront,
+          imageFront: PARTY_2000_MOCKUP_ASSETS.tFront,
+          imageUrl: PARTY_2000_MOCKUP_ASSETS.tFront,
+          backImageUrl: PARTY_2000_MOCKUP_ASSETS.tBack,
+          imageBack: PARTY_2000_MOCKUP_ASSETS.tBack,
+          ai: PARTY_2000_MOCKUP_ASSETS.tFront,
+          aiRemastered: PARTY_2000_MOCKUP_ASSETS.tFront,
+          aiBack: PARTY_2000_MOCKUP_ASSETS.tBack,
+          aiRemasteredBack: PARTY_2000_MOCKUP_ASSETS.tBack
+        },
+        polo: {
+          id: 'pFront',
+          name: 'Polo 2000 the PARTY',
+          title: 'Polo 2000 the PARTY',
+          price: 39.90,
+          garment: 'polo',
+          color: 'Noir',
+          frontImageUrl: PARTY_2000_MOCKUP_ASSETS.pFront,
+          imageFront: PARTY_2000_MOCKUP_ASSETS.pFront,
+          imageUrl: PARTY_2000_MOCKUP_ASSETS.pFront,
+          backImageUrl: PARTY_2000_MOCKUP_ASSETS.pBack,
+          imageBack: PARTY_2000_MOCKUP_ASSETS.pBack,
+          ai: PARTY_2000_MOCKUP_ASSETS.pFront,
+          aiRemastered: PARTY_2000_MOCKUP_ASSETS.pFront,
+          aiBack: PARTY_2000_MOCKUP_ASSETS.pBack,
+          aiRemasteredBack: PARTY_2000_MOCKUP_ASSETS.pBack
+        },
+        hoodie: {
+          id: 'hFront',
+          name: 'Sweat Hoodie 2000 the PARTY',
+          title: 'Sweat Hoodie 2000 the PARTY',
+          price: 49.90,
+          garment: 'sweat',
+          color: 'Noir',
+          frontImageUrl: PARTY_2000_MOCKUP_ASSETS.hFront,
+          imageFront: PARTY_2000_MOCKUP_ASSETS.hFront,
+          imageUrl: PARTY_2000_MOCKUP_ASSETS.hFront,
+          backImageUrl: PARTY_2000_MOCKUP_ASSETS.hBack,
+          imageBack: PARTY_2000_MOCKUP_ASSETS.hBack,
+          ai: PARTY_2000_MOCKUP_ASSETS.hFront,
+          aiRemastered: PARTY_2000_MOCKUP_ASSETS.hFront,
+          aiBack: PARTY_2000_MOCKUP_ASSETS.hBack,
+          aiRemasteredBack: PARTY_2000_MOCKUP_ASSETS.hBack
+        }
+      };
+
+      const partyPayload = {
+        sessionId: cleanSlug,
+        id: cleanSlug,
+        companyName: '2000 the PARTY',
+        companySlug: cleanSlug,
+        activitySector: 'Événementiel, Musique & DJ',
+        logoUrl: PARTY_2000_MOCKUP_ASSETS.logoActive,
+        avatarUrl: PARTY_2000_MOCKUP_ASSETS.logoActive,
+        logo: PARTY_2000_MOCKUP_ASSETS.logoActive,
+        logoA: PARTY_2000_MOCKUP_ASSETS.logoActive,
+        logoB: PARTY_2000_MOCKUP_ASSETS.logoActive,
+        logoAdaptedUrl: PARTY_2000_MOCKUP_ASSETS.logoActive,
+        accentColor: '#ec4899',
+        theme: 'dark',
+        presentation: 'La soirée référence pour se replonger dans les années 2000! Reste connecté..',
+        socials: [
+          { platform: 'Facebook', url: 'https://www.facebook.com/people/2000-the-PARTY/61566467420783/' }
+        ],
+        mockups: partyMockupsList,
+        items: partyMockupsList,
+        products: partyProductsMap,
+        garmentMockups: PARTY_2000_GARMENT_MOCKUPS
+      };
+
+      const payloadJson = JSON.stringify(partyPayload);
+      const gmJson = JSON.stringify(PARTY_2000_GARMENT_MOCKUPS);
+      const mockupsJson = JSON.stringify(partyMockupsList);
+
+      ['2000theparty', 'audit-2000theparty-eyem'].forEach(k => {
+        localStorage.setItem(`btp_session_${k}`, payloadJson);
+        localStorage.setItem(`session_obj_${k}`, payloadJson);
+        localStorage.setItem(`garmentMockups_${k}`, gmJson);
+        localStorage.setItem(`btp_garment_mockups_${k}`, gmJson);
+        localStorage.setItem(`mockups_${k}`, mockupsJson);
+        localStorage.setItem(`meta_${k}`, JSON.stringify({
+          displayName: '2000 the PARTY',
+          logoUrl: PARTY_2000_MOCKUP_ASSETS.logoActive,
+          avatarUrl: PARTY_2000_MOCKUP_ASSETS.logoActive,
+          logo: PARTY_2000_MOCKUP_ASSETS.logoActive,
+          primaryColor: '#ec4899',
+          theme: 'dark',
+          initials: '2P',
+          isReady: true
+        }));
+      });
+
+      return;
     }
 
     if (shouldUpdateSession) {
       const mockupsList = seed.previewUrls?.map((url, i) => {
         const isTankWhite = url.includes('tankWhiteFront') || url.includes('tankWhiteBack');
         const isTank = !isTankWhite && (url.includes('tankFront') || url.includes('tankBack') || url.includes('tank'));
-        const isHeavy = url.includes('heavyFront') || url.includes('heavyBack') || url.includes('heavy');
+        const isHeavyWhite = url.includes('heavyWhiteFront') || url.includes('heavyWhiteBack');
+        const isHeavy = !isHeavyWhite && (url.includes('heavyFront') || url.includes('heavyBack') || url.includes('heavy'));
         const isBack = url.includes('Back') || url.includes('back');
 
         let id = `mockup_${i}`;
@@ -247,6 +937,10 @@ export function ensureLocalProfileSeeded(slug: string) {
         } else if (isTank) {
           id = isBack ? 'tankBack' : 'tankFront';
           garment = 'tank_top';
+        } else if (isHeavyWhite) {
+          id = isBack ? 'heavyWhiteBack' : 'heavyWhiteFront';
+          garment = 'tshirt_oversize';
+          color = 'Blanc';
         } else if (isHeavy) {
           id = isBack ? 'heavyBack' : 'heavyFront';
           garment = 'tshirt_oversize';
@@ -351,6 +1045,19 @@ export function ensureLocalProfileSeeded(slug: string) {
             aiRemastered: CLUBVISION_MOCKUP_ASSETS.tankWhiteFront,
             aiBack: CLUBVISION_MOCKUP_ASSETS.tankWhiteBack,
             aiRemasteredBack: CLUBVISION_MOCKUP_ASSETS.tankWhiteBack
+          },
+          tshirt_oversize_white: {
+            id: 'heavyWhiteFront',
+            name: 'T-Shirt Heavyweight Blanc Oversize',
+            garment: 'tshirt_oversize',
+            color: 'Blanc',
+            price: 34.99,
+            frontImageUrl: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront,
+            backImageUrl: CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack,
+            ai: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront,
+            aiRemastered: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront,
+            aiBack: CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack,
+            aiRemasteredBack: CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack
           }
         } : undefined,
         garmentMockups: isVisionSlug ? CLUBVISION_GARMENT_MOCKUPS : undefined
@@ -653,6 +1360,9 @@ export async function scanLocalProfiles(): Promise<ProfileSummary[]> {
   // Ensure default known seed is available if not deleted
   if (!deletedSet.has('clubvisionroom')) {
     ensureLocalProfileSeeded('clubvisionroom');
+  }
+  if (!deletedSet.has('pbs')) {
+    ensureLocalProfileSeeded('pbs');
   }
 
   // 1. Scan LocalStorage
@@ -961,9 +1671,9 @@ export function buildSiteConfigFromProfile(profile: ProfileSummary, base: SiteCo
   return {
     ...base,
     companyName: company,
-    activitySector: profile.activitySector || `${company} - Équipements Professionnels & Solutions Scéniques`,
-    presentation: `${company} transforme l'impact visuel de ses événements et de ses équipes avec des équipements personnalisés haut de gamme. Conçu pour imposer une autorité incontestable, ce dispositif combine rendu 3D d'élite et gestion automatisée pour une logistique vestimentaire zéro friction.`,
-    rawPitch: {
+    activitySector: profile.activitySector || (profile.slug === 'pbs' ? 'Club de tennis de table' : `${company} - Équipements Professionnels & Solutions Scéniques`),
+    presentation: profile.slug === 'pbs' ? '' : (profile.presentation || (profile.slug.toLowerCase().includes('2000theparty') ? 'La soirée référence pour se replonger dans les années 2000! Reste connecté..' : `${company} transforme l'impact visuel de ses événements et de ses équipes avec des équipements personnalisés haut de gamme. Conçu pour imposer une autorité incontestable, ce dispositif combine rendu 3D d'élite et gestion automatisée pour une logistique vestimentaire zéro friction.`)),
+    rawPitch: profile.slug === 'pbs' ? { what: '', who: '', difference: '', service: '' } : {
       what: `Dotation et merchandising officiel haut de gamme pour ${company}.`,
       who: `Aux collaborateurs, membres et partenaires de ${company} exigeant une qualité d'élite.`,
       difference: `Projection 3D ultra-réaliste, finitions soignées et automatisation complète des renouvellements.`,
@@ -978,7 +1688,7 @@ export function buildSiteConfigFromProfile(profile: ProfileSummary, base: SiteCo
     merchUrl: base.merchUrl || `https://shop.signaid.eu/${profile.slug}`,
     livePhotoUrl: photos[0] || '',
     livePhotoUrls: photos,
-    customSections: [
+    customSections: profile.slug === 'pbs' ? [] : [
       {
         title: "Dotation & Merchandising Officiel",
         content: `Découvrez la collection officielle ${company}. Toutes les pièces sont confectionnées avec des matières sélectionnées pour leur durabilité, leur confort et leur rendu visuel d'exception.`

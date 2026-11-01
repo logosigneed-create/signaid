@@ -9,6 +9,7 @@ import { geminiService } from './services/geminiService';
 import { getStoredConfig, saveStoredConfig } from './lib/store';
 import { removeBackground } from './utils/helpers';
 import { sanitizeForFirestore } from './utils/firestoreSanitizer';
+import { compressBase64Image } from './services/imageProcessingService';
 
 type FlowState = 'LANDING' | 'CLEAN_CHECK' | 'SALES_AUDIT' | 'AUDIT' | 'RESULT' | 'ERROR';
 
@@ -32,7 +33,7 @@ interface MockupItem {
     ai: string | null;
     isGenerating: boolean;
     view: 'front' | 'back';
-    garment: 'tshirt' | 'tshirt_basic' | 'polo' | 'sweat' | 'tshirt_bicolore' | 'veste' | 'business_card' | 'banner';
+    garment: 'tshirt' | 'tshirt_basic' | 'polo' | 'sweat' | 'hoodie' | 'tank_top' | 'tshirt_oversize' | 'tshirt_bicolore' | 'veste' | 'business_card' | 'banner';
     mechanical?: string | null;
     model?: string;
     selected: boolean;
@@ -55,27 +56,27 @@ interface BtpLogo {
 // Fallback local pour assurer la continuité de service.
 const DEFAULT_PLACEMENTS = {
     tshirt: {
-        front: { x: 0.64, y: 0.30, scale: 0.20 },
+        front: { x: 0.64, y: 0.34, scale: 0.18 },
         back: { x: 0.50, y: 0.38, scale: 0.40 }
     },
     tshirt_basic: {
-        front: { x: 0.64, y: 0.30, scale: 0.20 },
+        front: { x: 0.64, y: 0.34, scale: 0.18 },
         back: { x: 0.50, y: 0.38, scale: 0.40 }
     },
     tshirt_bicolore: {
-        front: { x: 0.64, y: 0.32, scale: 0.20 },
+        front: { x: 0.64, y: 0.34, scale: 0.18 },
         back: { x: 0.50, y: 0.32, scale: 0.40 }
     },
     sweat: {
-        front: { x: 0.64, y: 0.34, scale: 0.20 },
+        front: { x: 0.64, y: 0.35, scale: 0.18 },
         back: { x: 0.50, y: 0.46, scale: 0.40 }
     },
     polo: {
-        front: { x: 0.64, y: 0.32, scale: 0.16 },
+        front: { x: 0.64, y: 0.34, scale: 0.16 },
         back: { x: 0.50, y: 0.38, scale: 0.40 }
     },
     veste: {
-        front: { x: 0.50, y: 0.45, scale: 0.15 },
+        front: { x: 0.64, y: 0.35, scale: 0.15 },
         back: { x: 0.50, y: 0.40, scale: 0.35 }
     }
 };
@@ -156,8 +157,8 @@ const BtpLandingPage: React.FC = () => {
         { id: 'vFront', title: 'T-shirt Fluo FACE', base: "/assets/tshirt-fluo-grey-front.jpg?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_bicolore' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
 
         // POLO
-        { id: 'pBack', title: 'Polo Noir DOS', base: "/assets/polo-black-JHK510-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'polo' as const, mechanical: null, model: "/assets/polo-black-JHK510-dos.png", selected: true },
-        { id: 'pFront', title: 'Polo Noir FACE', base: "/assets/polo-black-JHK510.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'polo' as const, mechanical: null, model: "/assets/polo-black-JHK510.png", selected: true },
+        { id: 'pBack', title: 'Polo Noir DOS', base: "/assets/polo-black-JHK510-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_polo_back.png", selected: true },
+        { id: 'pFront', title: 'Polo Noir FACE', base: "/assets/polo-black-JHK510.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_polo_front.png", selected: true },
 
         // HOODIE
         { id: 'hBack', title: 'Hoodie Noir DOS', base: "/assets/hoodie-black-JHK421-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_back.png", selected: true },
@@ -702,13 +703,12 @@ const BtpLandingPage: React.FC = () => {
                         if (base64.startsWith('http')) return base64;
                         if (base64.startsWith('data:image') || base64.startsWith('data:')) {
                             try {
-                                const timestamp = Date.now();
-                                const storageRef = ref(storage, `btp_mockups/${sid}/web/logo_${slot}_active_${timestamp}.png`);
+                                const storageRef = ref(storage, `btp_mockups/${sid}/web/logo_${slot}_active.png`);
                                 const match = base64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,/);
                                 const contentType = match ? match[1] : 'image/png';
                                 const metadata: UploadMetadata = {
                                     contentType,
-                                    cacheControl: 'public, max-age=31536000, immutable'
+                                    cacheControl: 'public, max-age=86400, must-revalidate'
                                 };
                                 await uploadString(storageRef, base64, 'data_url', metadata);
                                 return await getDownloadURL(storageRef);
@@ -727,16 +727,32 @@ const BtpLandingPage: React.FC = () => {
                     if (base64OrUrl.startsWith('/assets/')) return base64OrUrl;
                     if (!base64OrUrl.startsWith('data:')) return null;
                     try {
-                        const timestamp = Date.now();
-                        const folder = (type === 'mech' || type === 'print') ? 'print' : 'web';
-                        const storageRef = ref(storage, `btp_mockups/${sid}/${folder}/${id}_${type}_${timestamp}.png`);
-                        const match = base64OrUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,/);
-                        const contentType = match ? match[1] : 'image/png';
+                        const isMech = (type === 'mech' || type === 'print');
+                        const folder = isMech ? 'print' : 'web';
+                        let dataToUpload = base64OrUrl;
+                        let contentType = 'image/png';
+                        let filename = isMech ? `${id}_mech.png` : `${id}.png`;
+
+                        // Enforce WebP compression (quality 82-85%) for web mockups to eliminate heavy 1024x1024 PNGs
+                        if (!isMech) {
+                            try {
+                                const webpData = await compressBase64Image(base64OrUrl, 1024, 0.82);
+                                if (webpData && webpData.startsWith('data:image/webp')) {
+                                    dataToUpload = webpData;
+                                    contentType = 'image/webp';
+                                    filename = `${id}.webp`;
+                                }
+                            } catch (webpErr) {
+                                console.warn(`WebP compression notice for ${id}:`, webpErr);
+                            }
+                        }
+
+                        const storageRef = ref(storage, `btp_mockups/${sid}/${folder}/${filename}`);
                         const metadata: UploadMetadata = {
                             contentType,
-                            cacheControl: 'public, max-age=31536000, immutable'
+                            cacheControl: 'public, max-age=86400, must-revalidate'
                         };
-                        await uploadString(storageRef, base64OrUrl, 'data_url', metadata);
+                        await uploadString(storageRef, dataToUpload, 'data_url', metadata);
                         return await getDownloadURL(storageRef);
                     } catch (e) {
                         console.warn(`Direct upload notice for ${type} for ${id}:`, e);
@@ -901,12 +917,12 @@ const BtpLandingPage: React.FC = () => {
             { id: 'tbFront', title: 'T-shirt Basic FACE', base: "/assets/tshirt-grey-JHK170.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_basic' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
             
             // FLUO T-SHIRT (Replaces Safety Vest)
-            { id: 'vBack', title: 'T-shirt Fluo DOS', base: "/assets/tshirt-fluo-grey-back.jpg?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'tshirt_bicolore' as const, mechanical: null, model: "/assets/models/tshirt_back.png", selected: true },
-            { id: 'vFront', title: 'T-shirt Fluo FACE', base: "/assets/tshirt-fluo-grey-front.jpg?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_bicolore' as const, mechanical: null, model: "/assets/models/tshirt_front.png", selected: true },
+            { id: 'vBack', title: 'T-shirt Fluo DOS', base: "/assets/tshirt-fluo-grey-back.jpg?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'tshirt_bicolore' as const, mechanical: null, model: "/assets/models/male_tshirt_back.png", selected: true },
+            { id: 'vFront', title: 'T-shirt Fluo FACE', base: "/assets/tshirt-fluo-grey-front.jpg?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'tshirt_bicolore' as const, mechanical: null, model: "/assets/models/male_tshirt_front.png", selected: true },
 
             // POLO
-            { id: 'pBack', title: 'Polo Noir DOS', base: "/assets/polo-black-JHK510-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'polo' as const, mechanical: null, model: "/assets/polo-black-JHK510-dos.png", selected: true },
-            { id: 'pFront', title: 'Polo Noir FACE', base: "/assets/polo-black-JHK510.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'polo' as const, mechanical: null, model: "/assets/polo-black-JHK510.png", selected: true },
+            { id: 'pBack', title: 'Polo Noir DOS', base: "/assets/polo-black-JHK510-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_polo_back.png", selected: true },
+            { id: 'pFront', title: 'Polo Noir FACE', base: "/assets/polo-black-JHK510.png?v=V24", ai: null, isGenerating: false, view: 'front' as const, garment: 'polo' as const, mechanical: null, model: "/assets/models/male_polo_front.png", selected: true },
 
             // HOODIE
             { id: 'hBack', title: 'Hoodie Noir DOS', base: "/assets/hoodie-black-JHK421-dos.png?v=V24", ai: null, isGenerating: false, view: 'back' as const, garment: 'sweat' as const, mechanical: null, model: "/assets/models/male_hoodie_back.png", selected: true },
@@ -1387,11 +1403,15 @@ const BtpLandingPage: React.FC = () => {
             const logoW = canvas.width * scale;
             const logoH = logoW * (imgLogo.height / imgLogo.width);
 
+            const isClassicFrontChest = view === 'front' && ['tshirt', 'tshirt_basic', 'polo', 'sweat', 'tshirt_bicolore', 'veste'].includes(type as string);
+            const posX = isClassicFrontChest ? (pos.x >= 0.58 ? pos.x : 0.64) : pos.x;
+            const posY = isClassicFrontChest ? (pos.y >= 0.30 && pos.y <= 0.40 ? pos.y : 0.34) : pos.y;
+
             ctx.globalAlpha = 1.0;
             ctx.drawImage(
                 imgLogo,
-                (canvas.width * pos.x) - (logoW / 2),
-                (canvas.height * pos.y) - (logoH / 2),
+                (canvas.width * posX) - (logoW / 2),
+                (canvas.height * posY) - (logoH / 2),
                 logoW,
                 logoH
             );
@@ -1614,6 +1634,11 @@ STRICT FRAMING & APPAREL VISIBILITY:
                         ? `The model is standing completely facing AWAY from the camera (180-degree rear view). We see the back of the head and the back of the neck, with ZERO facial profile visible. CRITICAL: Maintain a medium shot so the full back of the ${garmentLabel} is completely visible from neck to waist.`
                         : `The model is viewed straight from the front in a medium studio shot, showing the entire front of the ${garmentLabel}.`;
 
+                    const isClassicFrontChest = it.id === 'tFront' || it.id === 'pFront' || it.id === 'hFront' || (it.view === 'front' && ['tshirt', 'tshirt_basic', 'polo', 'sweat', 'tshirt_bicolore', 'veste'].includes(it.garment));
+                    if (isClassicFrontChest) {
+                        contextPrompt += `\nSTRICT CHEST PLACEMENT DIRECTIVE: Place the small emblem/logo strictly on the LEFT CHEST (heart position). Do NOT center the logo on the chest. It must be a discrete left-chest pocket-sized placement.`;
+                    }
+
                     contextPrompt += `\n${poseDesc}\n${framingInstruction}`;
 
                     const result = await geminiService.generateTryOnImage(
@@ -1792,7 +1817,7 @@ STRICT FRAMING & APPAREL VISIBILITY:
             if (rawRemastered === logo.original) {
                 setRemasterStep("ÉCHEC DU SERVEUR, PASSAGE SUR GEMINI IA...");
                 await new Promise(r => setTimeout(r, 1000));
-                rawRemastered = await geminiService.remasterLogo(logo.original!);
+                rawRemastered = await geminiService.remasterLogo(logo.original!, 'color');
             }
             
             // Suppression du fond blanc (cas fallback Gemini) - conserve les couleurs d'origine

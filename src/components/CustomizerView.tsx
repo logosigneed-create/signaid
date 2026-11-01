@@ -3047,7 +3047,7 @@ export function CustomizerView({
     }
 
     return (
-        <div className="flex flex-col min-h-[100dvh] lg:h-full w-full max-w-[1025px] mx-auto relative lg:pb-24 bg-transparent overflow-hidden lg:overflow-visible justify-start" style={{ touchAction: 'pan-y' }}>
+        <div className="flex flex-col min-h-[100dvh] lg:h-full w-full max-w-[1025px] mx-auto relative lg:pb-24 bg-transparent overflow-x-hidden overflow-y-auto lg:overflow-visible justify-start" style={{ touchAction: 'pan-y' }}>
             <style>{dynamicStyles}</style>
             {pendingElement && (
                 <div className="fixed inset-0 z-[100] bg-white/90 backdrop-blur-sm flex items-center justify-center p-4">
@@ -3320,7 +3320,7 @@ export function CustomizerView({
                                 <div
                                     id="preview-container"
                                     className="w-full h-full relative pointer-events-auto"
-                                    style={{ top: '0px', touchAction: isMeasureToolActive ? 'none' : 'auto' }}
+                                    style={{ top: '0px', touchAction: isMeasureToolActive ? 'none' : 'pan-y' }}
                                     onPointerDown={handleMeasureStart}
                                     onPointerMove={handleMeasureMove}
                                     onPointerUp={handleMeasureEnd}

@@ -1,6 +1,10 @@
 import QRCode from 'qrcode';
 import { getStoredConfig } from '../lib/store';
 import { LogoColorMode, UserData } from '../types/audit';
+import { invokeGeminiCloudFunction } from './geminiService';
+import { removeBackgroundWithCanvas } from '../utils/backgroundRemover';
+import { computeToneOverlay } from '../types';
+import { getCurrentUserEmail } from '../utils/adminAuth';
 
 // Canvas memoization cache for rendering performance
 const memoCanvasCache = new Map<string, string>();
@@ -11,37 +15,82 @@ export const clearImageMemoCache = () => {
 
 export const DEFAULT_PLACEMENTS = {
     tshirt: {
-        front: { x: 0.64, y: 0.30, scale: 0.20 },
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
         back: { x: 0.50, y: 0.38, scale: 0.35 }
     },
     tshirt_basic: {
-        front: { x: 0.64, y: 0.30, scale: 0.20 },
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
         back: { x: 0.50, y: 0.38, scale: 0.35 }
     },
     polo: {
-        front: { x: 0.64, y: 0.32, scale: 0.18 },
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
         back: { x: 0.50, y: 0.38, scale: 0.35 }
     },
     tshirt_bicolore: {
-        front: { x: 0.64, y: 0.32, scale: 0.20 },
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
         back: { x: 0.50, y: 0.32, scale: 0.35 }
     },
     sweat: {
-        front: { x: 0.64, y: 0.34, scale: 0.20 },
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
         back: { x: 0.50, y: 0.46, scale: 0.35 }
     },
     veste: {
-        front: { x: 0.50, y: 0.45, scale: 0.15 },
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
         back: { x: 0.50, y: 0.40, scale: 0.35 }
     },
     tank_top: {
-        front: { x: 0.50, y: 0.42, scale: 0.28 },
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
         back: { x: 0.50, y: 0.38, scale: 0.35 }
     },
     tshirt_oversize: {
-        front: { x: 0.50, y: 0.40, scale: 0.28 },
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
         back: { x: 0.50, y: 0.39, scale: 0.36 }
+    },
+    heavyFront: {
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 }
+    },
+    heavyWhiteFront: {
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 }
+    },
+    tankFront: {
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 }
+    },
+    tankWhiteFront: {
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 }
+    },
+    heavy_front: {
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 }
+    },
+    heavy_white_front: {
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 }
+    },
+    tank_front: {
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 }
+    },
+    tank_white_front: {
+        front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 }
     }
+};
+
+export const DEFAULT_FALLBACK_PLACEMENTS = DEFAULT_PLACEMENTS;
+
+export const HARDCODED_FRONT_PLACEMENTS: Record<string, { placement: 'chest_left'; x: number; y: number; scale: number }> = {
+    tank_top: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    tshirt_oversize: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    heavy_front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    heavy_white_front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    tank_front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    tank_white_front: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    heavyFront: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    heavyWhiteFront: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    tankFront: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    tankWhiteFront: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    tshirt: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    tshirt_basic: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    polo: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    sweat: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    tshirt_bicolore: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 },
+    veste: { placement: 'chest_left', x: 0.64, y: 0.34, scale: 0.16 }
 };
 export let PLACEMENTS = DEFAULT_PLACEMENTS;
 
@@ -111,7 +160,35 @@ export const loadImage = (url: string): Promise<HTMLImageElement> => {
         });
     };
 
-export const processLogoDeterministic = (base64: string, shouldInvert: boolean | 'white' | 'black' = true, removeBackground: boolean = true): Promise<string> => {
+export interface ProcessLogoOptions {
+    removeBackground?: boolean;
+    knockoutBlack?: boolean;
+    makePureWhite?: boolean;
+    makePureBlack?: boolean;
+}
+
+export const processLogoDeterministic = (
+    base64: string,
+    options?: boolean | string | {
+        removeBackground?: boolean;
+        knockoutBlack?: boolean;
+        makePureWhite?: boolean;
+        makePureBlack?: boolean;
+    },
+    removeBackgroundParam: boolean = true
+): Promise<string> => {
+    let removeBackground = removeBackgroundParam;
+    let shouldInvert: boolean | 'white' | 'black' = true;
+    let knockoutBlack = false;
+
+    if (typeof options === 'object' && options !== null) {
+        removeBackground = options.removeBackground ?? true;
+        shouldInvert = options.makePureBlack ? 'black' : (options.makePureWhite ? 'white' : false);
+        knockoutBlack = Boolean(options.knockoutBlack);
+    } else if (typeof options === 'boolean' || typeof options === 'string') {
+        shouldInvert = options as any;
+        removeBackground = removeBackgroundParam;
+    }
         if (!removeBackground) {
             return Promise.resolve(base64);
         }
@@ -245,6 +322,16 @@ export const processLogoDeterministic = (base64: string, shouldInvert: boolean |
                     }
                 }
 
+                if (knockoutBlack) {
+                    for (let i = 0; i < data.length; i += 4) {
+                        const r = data[i], g = data[i+1], b = data[i+2];
+                        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                        if (lum <= 45) {
+                            data[i + 3] = 0;
+                        }
+                    }
+                }
+
                 // 2. SOLID WHITE / BLACK CONVERSION (Smart Monochrome Refonte)
                 if (isWhiteInversion || isBlackInversion) {
                     let hasLightPixels = false;
@@ -367,7 +454,23 @@ export const knockoutBlackFromLogo = (base64: string): Promise<string> => {
         });
     };
 
-export const generateMechanicalMockup = async (garmentUrl: string, logoUrl: string, view: 'front' | 'back', customScale?: number, garmentType?: string, colorMode?: LogoColorMode, userDataParam?: Partial<UserData>, assetColorParam?: string, isLightModeParam?: boolean) => {
+export interface MockupOptions {
+    position?: 'chest_left' | 'center' | string;
+    colorMode?: 'original' | 'white' | 'black' | 'knockout_black' | string;
+    garmentType?: string;
+    isModel?: boolean;
+    scale?: number;
+    offsetY?: number;
+    customX?: number;
+    customY?: number;
+}
+
+export const generateMechanicalMockup = async (garmentUrl: string, logoUrl: string, view: 'front' | 'back', customScaleOrOptions?: number | MockupOptions, garmentTypeParam?: string, colorModeParam?: LogoColorMode, userDataParam?: Partial<UserData>, assetColorParam?: string, isLightModeParam?: boolean) => {
+        const isOptionsObject = typeof customScaleOrOptions === 'object' && customScaleOrOptions !== null;
+        const options: MockupOptions = isOptionsObject ? customScaleOrOptions : {};
+        const customScale: number | undefined = isOptionsObject ? options.scale : (customScaleOrOptions as number | undefined);
+        const garmentType: string | undefined = isOptionsObject ? (options.garmentType || garmentTypeParam) : garmentTypeParam;
+        const colorMode: LogoColorMode | undefined = isOptionsObject ? (options.colorMode as LogoColorMode || colorModeParam) : colorModeParam;
         const userData = userDataParam || {};
         const assetColor = assetColorParam || '#f97316';
         if (!garmentUrl) return logoUrl || "";
@@ -764,8 +867,14 @@ export const generateMechanicalMockup = async (garmentUrl: string, logoUrl: stri
                 logoW = logoH * logoRatio;
             }
 
-            const posX = pos.x;
-            const posY = (isHeavyWhite && view === 'back') ? 0.39 : pos.y;
+            // RECENTRAGE STRICT SUR LE CŒUR POUR LES SLOTS FACE CLASSIQUES :
+            // Pour tous les vêtements textiles en vue front (tshirt, oversize, tank, polo, sweat, etc.),
+            // s'assurer que le placement est strictement chest_left (x: 0.60 à 0.68, y: 0.30 à 0.40) et JAMAIS au centre horizontal.
+            const isClassicFrontChest = view === 'front' && rawType !== 'business_card' && rawType !== 'banner';
+            const defaultPosX = isClassicFrontChest ? (pos.x >= 0.58 ? pos.x : 0.64) : pos.x;
+            const posX = (isOptionsObject && typeof options.customX === 'number') ? options.customX : defaultPosX;
+            const defaultPosY = isClassicFrontChest ? (pos.y >= 0.30 && pos.y <= 0.40 ? pos.y : 0.34) : ((isHeavyWhite && view === 'back') ? 0.39 : pos.y);
+            const posY = (isOptionsObject && typeof options.customY === 'number') ? (options.customY + (options.offsetY ? options.offsetY / 100 : 0)) : defaultPosY;
 
             ctx.globalAlpha = 1.0;
             ctx.drawImage(
@@ -846,7 +955,9 @@ export const compressImage = (base64: string, maxEdge: number = 800, forceSquare
                 canvas.height = Math.round(h * scale);
                 const ctx = canvas.getContext('2d')!;
                 ctx.drawImage(img, sx, sy, w, h, 0, 0, canvas.width, canvas.height);
-                const resultUrl = canvas.toDataURL('image/jpeg', 0.85);
+                const isPng = base64.startsWith('data:image/png') || base64.toLowerCase().includes('.png');
+                const mime = isPng ? 'image/png' : 'image/jpeg';
+                const resultUrl = canvas.toDataURL(mime, isPng ? 1.0 : 0.85);
                 canvas.width = 0;
                 canvas.height = 0;
                 img.src = '';
@@ -864,4 +975,1059 @@ export const compressImage = (base64: string, maxEdge: number = 800, forceSquare
 export const drawLogoOnGarment = generateMechanicalMockup;
 export const renderMockup = generateMechanicalMockup;
 export const generateMockup = generateMechanicalMockup;
+
+function safeLoadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    if (!src) return reject(new Error('Source image vide'));
+    const img = new Image();
+    if (src.startsWith('http://') || src.startsWith('https://')) {
+      img.crossOrigin = 'anonymous';
+    }
+    img.onload = () => resolve(img);
+    img.onerror = (e) => reject(e);
+    img.src = src;
+    if (img.complete && img.naturalWidth > 0) resolve(img);
+  });
+}
+
+export async function splitSubjectAlphaAndColor(
+  sourceImage: string | HTMLImageElement
+): Promise<{
+  hasAlpha: boolean;
+  opaqueImageBase64: string;
+  alphaMaskCanvas: HTMLCanvasElement | null;
+  originalWidth: number;
+  originalHeight: number;
+}> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    const rawStr = typeof sourceImage === 'string' ? sourceImage : '';
+    return {
+      hasAlpha: false,
+      opaqueImageBase64: rawStr,
+      alphaMaskCanvas: null,
+      originalWidth: 800,
+      originalHeight: 800,
+    };
+  }
+
+  const img = typeof sourceImage === 'string' ? await safeLoadImage(sourceImage) : sourceImage;
+  const w = img.naturalWidth || img.width || 800;
+  const h = img.naturalHeight || img.height || 800;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    const rawStr = typeof sourceImage === 'string' ? sourceImage : '';
+    return {
+      hasAlpha: false,
+      opaqueImageBase64: rawStr,
+      alphaMaskCanvas: null,
+      originalWidth: w,
+      originalHeight: h,
+    };
+  }
+
+  ctx.drawImage(img, 0, 0, w, h);
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const data = imgData.data;
+
+  let hasAlpha = false;
+  const len = data.length;
+  for (let i = 3; i < len; i += 4) {
+    if (data[i] < 250) {
+      hasAlpha = true;
+      break;
+    }
+  }
+
+  if (!hasAlpha) {
+    const rawStr = typeof sourceImage === 'string' ? sourceImage : canvas.toDataURL('image/png');
+    return {
+      hasAlpha: false,
+      opaqueImageBase64: rawStr,
+      alphaMaskCanvas: null,
+      originalWidth: w,
+      originalHeight: h,
+    };
+  }
+
+  const alphaMaskCanvas = document.createElement('canvas');
+  alphaMaskCanvas.width = w;
+  alphaMaskCanvas.height = h;
+  const alphaCtx = alphaMaskCanvas.getContext('2d', { willReadFrequently: true });
+  if (!alphaCtx) throw new Error("Impossible d'initialiser le contexte Canvas du masque alpha");
+
+  const maskImageData = alphaCtx.createImageData(w, h);
+  const maskData = maskImageData.data;
+  for (let i = 0; i < len; i += 4) {
+    const a = data[i + 3];
+    maskData[i] = a;
+    maskData[i + 1] = a;
+    maskData[i + 2] = a;
+    maskData[i + 3] = a;
+  }
+  alphaCtx.putImageData(maskImageData, 0, 0);
+
+  const silhouetteCanvas = document.createElement('canvas');
+  silhouetteCanvas.width = w;
+  silhouetteCanvas.height = h;
+  const silCtx = silhouetteCanvas.getContext('2d');
+  if (!silCtx) throw new Error("Impossible d'initialiser le canvas silhouette");
+
+  silCtx.fillStyle = '#FFFFFF';
+  silCtx.fillRect(0, 0, w, h);
+  silCtx.drawImage(img, 0, 0, w, h);
+  const opaqueImageBase64 = silhouetteCanvas.toDataURL('image/png');
+
+  return {
+    hasAlpha: true,
+    opaqueImageBase64,
+    alphaMaskCanvas,
+    originalWidth: w,
+    originalHeight: h,
+  };
+}
+
+export function applyCanvasMultiScaleSharpening(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  macroStrength: number = 0.85,
+  microStrength: number = 1.35,
+  contrastBoost: number = 1.05
+): void {
+  const imgData = ctx.getImageData(0, 0, width, height);
+  const data = imgData.data;
+  const copy = new Uint8ClampedArray(data);
+  const stride = width * 4;
+
+  for (let y = 2; y < height - 2; y++) {
+    const rowOffset = y * stride;
+    const rPrev1 = (y - 1) * stride;
+    const rNext1 = (y + 1) * stride;
+    const rPrev2 = (y - 2) * stride;
+    const rNext2 = (y + 2) * stride;
+
+    for (let x = 2; x < width - 2; x++) {
+      const idx = rowOffset + x * 4;
+      const alpha = copy[idx + 3];
+      if (alpha === 0) continue;
+
+      for (let c = 0; c < 3; c++) {
+        const center = copy[idx + c];
+        const up1 = copy[rPrev1 + x * 4 + c];
+        const down1 = copy[rNext1 + x * 4 + c];
+        const left1 = copy[rowOffset + (x - 1) * 4 + c];
+        const right1 = copy[rowOffset + (x + 1) * 4 + c];
+        const laplacian1 = 4 * center - (up1 + down1 + left1 + right1);
+
+        const up2 = copy[rPrev2 + x * 4 + c];
+        const down2 = copy[rNext2 + x * 4 + c];
+        const left2 = copy[rowOffset + (x - 2) * 4 + c];
+        const right2 = copy[rowOffset + (x + 2) * 4 + c];
+        const laplacian2 = 4 * center - (up2 + down2 + left2 + right2);
+
+        let val = center + microStrength * (laplacian1 / 4) + macroStrength * (laplacian2 / 4);
+        if (contrastBoost !== 1.0) {
+          val = (val - 128) * contrastBoost + 128;
+        }
+
+        data[idx + c] = val < 0 ? 0 : val > 255 ? 255 : Math.round(val);
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+}
+
+export async function mergeUpscaledWithAlphaMask(
+  upscaledSource: string | HTMLImageElement,
+  alphaMaskCanvas: HTMLCanvasElement | null,
+  originalWidth: number,
+  originalHeight: number
+): Promise<string> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return typeof upscaledSource === 'string' ? upscaledSource : '';
+  }
+
+  const upscaledImg = typeof upscaledSource === 'string'
+    ? await safeLoadImage(upscaledSource)
+    : upscaledSource;
+
+  const targetW = upscaledImg.naturalWidth || upscaledImg.width || originalWidth;
+  const targetH = upscaledImg.naturalHeight || upscaledImg.height || originalHeight;
+
+  const finalCanvas = document.createElement('canvas');
+  finalCanvas.width = targetW;
+  finalCanvas.height = targetH;
+  const finalCtx = finalCanvas.getContext('2d', { willReadFrequently: true });
+  if (!finalCtx) throw new Error('Impossible de créer le contexte du Canvas final HD');
+
+  finalCtx.drawImage(upscaledImg, 0, 0, targetW, targetH);
+
+  if (alphaMaskCanvas) {
+    const resizedMaskCanvas = document.createElement('canvas');
+    resizedMaskCanvas.width = targetW;
+    resizedMaskCanvas.height = targetH;
+    const rMaskCtx = resizedMaskCanvas.getContext('2d', { willReadFrequently: true });
+    if (!rMaskCtx) throw new Error('Impossible de redimensionner le masque alpha');
+
+    rMaskCtx.imageSmoothingEnabled = true;
+    rMaskCtx.imageSmoothingQuality = 'high';
+    rMaskCtx.drawImage(alphaMaskCanvas, 0, 0, targetW, targetH);
+
+    const maskImgData = rMaskCtx.getImageData(0, 0, targetW, targetH);
+    const maskData = maskImgData.data;
+
+    const finalImgData = finalCtx.getImageData(0, 0, targetW, targetH);
+    const finalData = finalImgData.data;
+    const len = finalData.length;
+
+    for (let i = 0; i < len; i += 4) {
+      finalData[i + 3] = maskData[i + 3];
+    }
+    finalCtx.putImageData(finalImgData, 0, 0);
+  }
+
+  applyCanvasMultiScaleSharpening(finalCtx, targetW, targetH);
+
+  const MAX_SAFE_ASSET_LENGTH = 500 * 1024;
+  let outputDataUrl = finalCanvas.toDataURL('image/webp', 0.94);
+
+  if (outputDataUrl.length > MAX_SAFE_ASSET_LENGTH) {
+    outputDataUrl = finalCanvas.toDataURL('image/webp', 0.88);
+  }
+  if (outputDataUrl.length > MAX_SAFE_ASSET_LENGTH) {
+    outputDataUrl = finalCanvas.toDataURL('image/webp', 0.80);
+  }
+
+  if (outputDataUrl.length > MAX_SAFE_ASSET_LENGTH && (targetW > 2048 || targetH > 2048)) {
+    const maxBound = 2048;
+    const factor = maxBound / Math.max(targetW, targetH);
+    const boundW = Math.round(targetW * factor);
+    const boundH = Math.round(targetH * factor);
+
+    const boundCanvas = document.createElement('canvas');
+    boundCanvas.width = boundW;
+    boundCanvas.height = boundH;
+    const boundCtx = boundCanvas.getContext('2d');
+    if (boundCtx) {
+      boundCtx.imageSmoothingEnabled = true;
+      boundCtx.imageSmoothingQuality = 'high';
+      boundCtx.drawImage(finalCanvas, 0, 0, boundW, boundH);
+      outputDataUrl = boundCanvas.toDataURL('image/webp', 0.85);
+    }
+  }
+
+  return outputDataUrl;
+}
+
+export async function remasterSubjectAi(imageBase64: string, explicitEmail?: string): Promise<string> {
+  if (!imageBase64) return '';
+
+  let splitResult: {
+    hasAlpha: boolean;
+    opaqueImageBase64: string;
+    alphaMaskCanvas: HTMLCanvasElement | null;
+    originalWidth: number;
+    originalHeight: number;
+  } | null = null;
+
+  try {
+    splitResult = await splitSubjectAlphaAndColor(imageBase64);
+  } catch (splitErr) {
+    console.warn('[remasterSubjectAi] Erreur lors du split alpha/couleur :', splitErr);
+  }
+
+  const payloadImage = splitResult ? splitResult.opaqueImageBase64 : imageBase64;
+  let upscaledImageOutput: string | null = null;
+
+  try {
+    const res = await fetch('/api/remaster-subject', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(explicitEmail ? { 'X-User-Email': explicitEmail } : {}),
+      },
+      body: JSON.stringify({
+        imageBase64: payloadImage,
+        userEmail: explicitEmail,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const output = data.remasteredImage || data.processedImageBase64 || data.imageUrl || data.image;
+      if (output && typeof output === 'string' && output.length > 100) {
+        upscaledImageOutput = output;
+      }
+    }
+  } catch (apiErr: any) {
+    console.info('[remasterSubjectAi] API locale notice:', apiErr?.message || apiErr);
+  }
+
+  if (!upscaledImageOutput && explicitEmail) {
+    try {
+      const data = await invokeGeminiCloudFunction<{
+        success: boolean;
+        remasteredImage?: string;
+        processedImageBase64?: string;
+        imageUrl?: string;
+        image?: string;
+        result?: string;
+      }>({
+        action: 'remaster-subject',
+        model: 'gemini-4-argon',
+        image: payloadImage,
+        imageBase64: payloadImage,
+        userEmail: explicitEmail,
+      }, 15000);
+
+      const output =
+        data.remasteredImage ||
+        data.processedImageBase64 ||
+        data.imageUrl ||
+        data.image ||
+        data.result;
+
+      if (output && typeof output === 'string' && output.length > 100) {
+        upscaledImageOutput = output;
+      }
+    } catch (cloudErr: any) {
+      console.info('[remasterSubjectAi] Cloud Function notice, repli vers local :', cloudErr?.message || cloudErr);
+    }
+  }
+
+  if (upscaledImageOutput && splitResult && splitResult.hasAlpha && splitResult.alphaMaskCanvas) {
+    try {
+      return await mergeUpscaledWithAlphaMask(
+        upscaledImageOutput,
+        splitResult.alphaMaskCanvas,
+        splitResult.originalWidth,
+        splitResult.originalHeight
+      );
+    } catch (mergeErr) {
+      console.error('[remasterSubjectAi] Erreur ré-assemblage alpha post-upscale :', mergeErr);
+    }
+  } else if (upscaledImageOutput) {
+    try {
+      return await mergeUpscaledWithAlphaMask(
+        upscaledImageOutput,
+        null,
+        splitResult ? splitResult.originalWidth : 800,
+        splitResult ? splitResult.originalHeight : 800
+      );
+    } catch {
+      return upscaledImageOutput;
+    }
+  }
+
+  if (splitResult && typeof window !== 'undefined') {
+    try {
+      const localUpscaleCanvas = document.createElement('canvas');
+      const origW = splitResult.originalWidth;
+      const origH = splitResult.originalHeight;
+      const maxDim = Math.max(origW, origH);
+      const scaleFactor = Math.min(4, Math.max(2, 2048 / maxDim));
+      const targetW = Math.round(origW * scaleFactor);
+      const targetH = Math.round(origH * scaleFactor);
+
+      localUpscaleCanvas.width = targetW;
+      localUpscaleCanvas.height = targetH;
+      const localCtx = localUpscaleCanvas.getContext('2d');
+      if (localCtx) {
+        localCtx.imageSmoothingEnabled = true;
+        localCtx.imageSmoothingQuality = 'high';
+        const srcImg = await safeLoadImage(payloadImage);
+        localCtx.drawImage(srcImg, 0, 0, targetW, targetH);
+        applyCanvasMultiScaleSharpening(localCtx, targetW, targetH, 0.9, 1.4, 1.06);
+        const localUpscaledBase64 = localUpscaleCanvas.toDataURL('image/png');
+
+        return await mergeUpscaledWithAlphaMask(
+          localUpscaledBase64,
+          splitResult.alphaMaskCanvas,
+          origW,
+          origH
+        );
+      }
+    } catch (localErr) {
+      console.warn('[remasterSubjectAi] Échec repli upscale local :', localErr);
+    }
+  }
+
+  return imageBase64;
+}
+
+export interface HarmonizeSubjectOptions {
+  currentTone?: number;
+  explicitEmail?: string;
+  format?: string;
+}
+
+export interface HarmonizeSubjectLightingAnalysis {
+  lightDirection: string;
+  intensity: string;
+  colorTemperature: string;
+  dominantColor?: string;
+  ambientColor?: string;
+  summary: string;
+}
+
+export interface HarmonizeSubjectResult {
+  success: boolean;
+  harmonizedSubjectImage?: string;
+  compositeImageUrl?: string;
+  wasCutout?: boolean;
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  hueRotate: number;
+  opacity: number;
+  suggestedBackgroundTone?: number;
+  shadow: {
+    offsetX: number;
+    offsetY: number;
+    blur: number;
+    color: string;
+    opacity: number;
+  };
+  blendMode?: 'normal' | 'overlay' | 'soft-light' | 'multiply';
+  analysis: HarmonizeSubjectLightingAnalysis;
+  filterCss: string;
+  source?: string;
+}
+
+export async function prepareImageForAiAnalysis(
+  sourceUrlOrBase64: string,
+  maxDimension = 768,
+  preferWebp = true
+): Promise<string> {
+  if (!sourceUrlOrBase64) return '';
+  try {
+    const img = await safeLoadImage(sourceUrlOrBase64);
+    const naturalW = img.naturalWidth || 512;
+    const naturalH = img.naturalHeight || 512;
+    const scale = Math.min(1, maxDimension / Math.max(naturalW, naturalH));
+    const targetW = Math.max(64, Math.round(naturalW * scale));
+    const targetH = Math.max(64, Math.round(naturalH * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return sourceUrlOrBase64;
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'medium';
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+
+    if (preferWebp) {
+      try {
+        const webp = canvas.toDataURL('image/webp', 0.82);
+        if (webp && webp.startsWith('data:image/webp')) return webp;
+      } catch {}
+    }
+    return canvas.toDataURL('image/png');
+  } catch (err) {
+    console.warn('[prepareImageForAiAnalysis] Repli direct sur la source:', err);
+    return sourceUrlOrBase64;
+  }
+}
+
+export function isImageCutoutCanvas(img: HTMLImageElement | HTMLCanvasElement): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return false;
+    ctx.drawImage(img, 0, 0, 64, 64);
+    const data = ctx.getImageData(0, 0, 64, 64).data;
+    let transparent = 0;
+    const total = 64 * 64;
+    for (let i = 0; i < total; i++) {
+      if (data[i * 4 + 3] < 240) transparent++;
+    }
+    return (transparent / total) > 0.03;
+  } catch {
+    return false;
+  }
+}
+
+function analyzeLightingLocallyViaCanvas(
+  decorImg: HTMLImageElement,
+  currentTone = 0.5
+): HarmonizeSubjectResult {
+  const canvas = document.createElement('canvas');
+  canvas.width = 32;
+  canvas.height = 32;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  let rAvg = 128, gAvg = 128, bAvg = 128;
+  let leftLum = 128, rightLum = 128, topLum = 128, bottomLum = 128;
+
+  if (ctx) {
+    try {
+      ctx.drawImage(decorImg, 0, 0, 32, 32);
+      const imgData = ctx.getImageData(0, 0, 32, 32).data;
+      let totalR = 0, totalG = 0, totalB = 0;
+      let leftL = 0, rightL = 0, topL = 0, bottomL = 0;
+      const count = 32 * 32;
+      const halfCount = count / 2;
+
+      for (let y = 0; y < 32; y++) {
+        for (let x = 0; x < 32; x++) {
+          const idx = (y * 32 + x) * 4;
+          const r = imgData[idx];
+          const g = imgData[idx + 1];
+          const b = imgData[idx + 2];
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+          totalR += r;
+          totalG += g;
+          totalB += b;
+
+          if (x < 16) leftL += lum; else rightL += lum;
+          if (y < 16) topL += lum; else bottomL += lum;
+        }
+      }
+
+      rAvg = totalR / count;
+      gAvg = totalG / count;
+      bAvg = totalB / count;
+      leftLum = leftL / halfCount;
+      rightLum = rightL / halfCount;
+      topLum = topL / halfCount;
+      bottomLum = bottomL / halfCount;
+    } catch {}
+  }
+
+  const overallLum = 0.299 * rAvg + 0.587 * gAvg + 0.114 * bAvg;
+  const isWarm = rAvg > bAvg + 12;
+  const isCool = bAvg > rAvg + 12;
+  const diffX = rightLum - leftLum;
+  const diffY = topLum - bottomLum;
+
+  let lightDir = 'top';
+  let shadowOffsetX = 0;
+  if (diffX > 10) {
+    lightDir = 'top-right';
+    shadowOffsetX = -10;
+  } else if (diffX < -10) {
+    lightDir = 'top-left';
+    shadowOffsetX = 10;
+  }
+
+  const shadowOffsetY = diffY > 8 ? 22 : 16;
+  const shadowBlur = overallLum < 90 ? 32 : 24;
+  const shadowOpacity = overallLum < 90 ? 0.75 : 0.55;
+  const shadowColor = `rgba(0, 0, 0, ${shadowOpacity})`;
+
+  const brightness = overallLum < 80 ? 0.94 : overallLum > 180 ? 1.05 : 0.98;
+  const contrast = overallLum < 80 ? 1.15 : 1.08;
+  const saturation = isWarm ? 1.12 : isCool ? 1.05 : 1.08;
+  const hueRotate = isWarm ? 4 : isCool ? -4 : 0;
+  const opacity = 0.98;
+  const suggestedTone = overallLum < 90 ? 0.75 : overallLum > 175 ? 0.35 : currentTone;
+
+  const tempLabel = isWarm ? 'Chaude' : isCool ? 'Froide' : 'Neutre';
+  const summary = `Lumière ${lightDir.replace('-', ' ')} • Ambiance ${tempLabel.toLowerCase()} (calibrage local)`;
+
+  const filterCss = `drop-shadow(${shadowOffsetX}px ${shadowOffsetY}px ${shadowBlur}px ${shadowColor}) contrast(${contrast}) brightness(${brightness}) saturate(${saturation})${hueRotate ? ` hue-rotate(${hueRotate}deg)` : ''}`;
+
+  return {
+    success: true,
+    brightness,
+    contrast,
+    saturation,
+    hueRotate,
+    opacity,
+    suggestedBackgroundTone: suggestedTone,
+    shadow: {
+      offsetX: shadowOffsetX,
+      offsetY: shadowOffsetY,
+      blur: shadowBlur,
+      color: shadowColor,
+      opacity: shadowOpacity,
+    },
+    blendMode: 'normal',
+    analysis: {
+      lightDirection: lightDir,
+      intensity: 'soft',
+      colorTemperature: isWarm ? 'warm' : isCool ? 'cool' : 'neutral',
+      dominantColor: `rgb(${Math.round(rAvg)}, ${Math.round(gAvg)}, ${Math.round(bAvg)})`,
+      summary,
+    },
+    filterCss,
+    source: 'canvas-local-heuristic',
+  };
+}
+
+async function composeSubjectLocallyViaCanvas(
+  subjectSrc: string,
+  analysis: HarmonizeSubjectResult
+): Promise<{ harmonizedSubjectImage: string; wasCutout: boolean }> {
+  let wasCutout = false;
+  let sourceToDraw = subjectSrc;
+
+  try {
+    const subImg = await safeLoadImage(subjectSrc);
+    const alreadyCutout = isImageCutoutCanvas(subImg);
+    if (!alreadyCutout) {
+      const localCutout = await removeBackgroundWithCanvas(subjectSrc, { type: 'subject' });
+      if (localCutout && localCutout !== subjectSrc && localCutout.length > 50) {
+        sourceToDraw = localCutout;
+        wasCutout = true;
+      }
+    }
+  } catch {}
+
+  try {
+    const cutImg = await safeLoadImage(sourceToDraw);
+    const sw = cutImg.naturalWidth || 800;
+    const sh = cutImg.naturalHeight || 800;
+
+    const padX = Math.abs(analysis.shadow.offsetX) + Math.round(analysis.shadow.blur * 0.6);
+    const padTop = Math.round(analysis.shadow.blur * 0.3);
+    const padBottom = Math.max(0, analysis.shadow.offsetY) + Math.round(analysis.shadow.blur * 0.6);
+    const outW = sw + padX * 2;
+    const outH = sh + padTop + padBottom;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return { harmonizedSubjectImage: sourceToDraw, wasCutout };
+
+    ctx.save();
+    ctx.shadowColor = analysis.shadow.color || 'rgba(0, 0, 0, 0.65)';
+    ctx.shadowBlur = analysis.shadow.blur || 25;
+    ctx.shadowOffsetX = analysis.shadow.offsetX;
+    ctx.shadowOffsetY = analysis.shadow.offsetY;
+    ctx.drawImage(cutImg, padX, padTop, sw, sh);
+    ctx.restore();
+
+    ctx.save();
+    const b = analysis.brightness ?? 0.98;
+    const c = analysis.contrast ?? 1.10;
+    const s = analysis.saturation ?? 1.08;
+    const h = analysis.hueRotate ?? 0;
+    ctx.filter = `contrast(${c}) brightness(${b}) saturate(${s})${h ? ` hue-rotate(${h}deg)` : ''}`;
+    ctx.drawImage(cutImg, padX, padTop, sw, sh);
+    ctx.restore();
+
+    return {
+      harmonizedSubjectImage: canvas.toDataURL('image/png'),
+      wasCutout,
+    };
+  } catch {
+    return { harmonizedSubjectImage: sourceToDraw, wasCutout };
+  }
+}
+
+export async function harmonizeSubjectWithAi(
+  decorUrlOrBase64: string,
+  subjectUrlOrBase64: string,
+  options?: HarmonizeSubjectOptions
+): Promise<HarmonizeSubjectResult> {
+  if (!subjectUrlOrBase64) {
+    throw new Error("Image du sujet requise pour l'harmonisation.");
+  }
+
+  const [preparedDecor, preparedSubject] = await Promise.all([
+    decorUrlOrBase64 ? prepareImageForAiAnalysis(decorUrlOrBase64, 1024, true) : Promise.resolve(''),
+    prepareImageForAiAnalysis(subjectUrlOrBase64, 1600, false),
+  ]);
+
+  const payload = {
+    action: 'harmonize-subject' as const,
+    backgroundImage: preparedDecor,
+    subjectImage: preparedSubject,
+    currentTone: options?.currentTone ?? 0.5,
+    format: options?.format || 'post',
+    userEmail: options?.explicitEmail || getCurrentUserEmail(),
+  };
+
+  try {
+    const response = await invokeGeminiCloudFunction<any>(payload, 30000);
+    if (response && response.success) {
+      const harmonizedImg =
+        response.harmonizedSubjectImage ||
+        response.processedImageBase64 ||
+        response.imageUrl ||
+        response.image;
+
+      const b = Math.max(0.5, Math.min(1.5, Number(response.brightness) || 1.0));
+      const c = Math.max(0.5, Math.min(1.5, Number(response.contrast) || 1.0));
+      const s = Math.max(0.0, Math.min(2.0, Number(response.saturation) || 1.0));
+      const h = Math.max(-180, Math.min(180, Number(response.hueRotate) || 0));
+      const op = Math.max(0.2, Math.min(1.0, Number(response.opacity) || 0.98));
+
+      const shadow = response.shadow || {};
+      const sX = Math.max(-50, Math.min(50, Number(shadow.offsetX) || 0));
+      const sY = Math.max(0, Math.min(60, Number(shadow.offsetY) || 20));
+      const sBlur = Math.max(0, Math.min(60, Number(shadow.blur) || 30));
+      const sOpacity = Math.max(0.1, Math.min(1.0, Number(shadow.opacity) || 0.65));
+      const sColor = shadow.color || `rgba(0, 0, 0, ${sOpacity})`;
+
+      const filterCss = (sBlur > 0 || sOpacity > 0)
+        ? `drop-shadow(${sX}px ${sY}px ${sBlur}px ${sColor}) contrast(${c}) brightness(${b}) saturate(${s})${h ? ` hue-rotate(${h}deg)` : ''}`
+        : `contrast(${c}) brightness(${b}) saturate(${s})${h ? ` hue-rotate(${h}deg)` : ''}`;
+
+      return {
+        success: true,
+        harmonizedSubjectImage: harmonizedImg,
+        compositeImageUrl: response.compositeImageUrl || response.compositeImage,
+        wasCutout: Boolean(response.wasCutout),
+        brightness: Number(b.toFixed(2)),
+        contrast: Number(c.toFixed(2)),
+        saturation: Number(s.toFixed(2)),
+        hueRotate: Math.round(h),
+        opacity: Number(op.toFixed(2)),
+        suggestedBackgroundTone: typeof response.suggestedBackgroundTone === 'number' ? response.suggestedBackgroundTone : undefined,
+        shadow: {
+          offsetX: Math.round(sX),
+          offsetY: Math.round(sY),
+          blur: Math.round(sBlur),
+          color: sColor,
+          opacity: Number(sOpacity.toFixed(2)),
+        },
+        blendMode: response.blendMode || 'normal',
+        analysis: {
+          lightDirection: response.analysis?.lightDirection || 'top',
+          intensity: response.analysis?.intensity || 'soft',
+          colorTemperature: response.analysis?.colorTemperature || 'neutral',
+          dominantColor: response.analysis?.dominantColor,
+          ambientColor: response.analysis?.ambientColor,
+          summary: response.analysis?.summary || 'Éclairage et ombres calibrés par IA',
+        },
+        filterCss,
+        source: response.source || 'gemini-cloud-function',
+      };
+    }
+  } catch (cloudErr) {
+    console.warn('[harmonizeSubjectWithAi] Cloud Function notice, repli local :', cloudErr);
+  }
+
+  try {
+    const directRes = await fetch('/api/harmonize-subject', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options?.explicitEmail ? { 'X-User-Email': options.explicitEmail } : {}),
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (directRes.ok) {
+      const directJson = await directRes.json();
+      if (directJson && directJson.success) {
+        return {
+          ...directJson,
+          harmonizedSubjectImage: directJson.harmonizedSubjectImage || directJson.processedImageBase64,
+          compositeImageUrl: directJson.compositeImageUrl,
+          wasCutout: Boolean(directJson.wasCutout),
+        } as HarmonizeSubjectResult;
+      }
+    }
+  } catch (directErr) {
+    console.warn('[harmonizeSubjectWithAi] /api/harmonize-subject notice:', directErr);
+  }
+
+  try {
+    const decorImg = await safeLoadImage(decorUrlOrBase64 || '/demo/signaid-backgroundImage.webp');
+    const localAnalysis = analyzeLightingLocallyViaCanvas(decorImg, options?.currentTone ?? 0.5);
+    const composed = await composeSubjectLocallyViaCanvas(subjectUrlOrBase64, localAnalysis);
+
+    return {
+      ...localAnalysis,
+      harmonizedSubjectImage: composed.harmonizedSubjectImage,
+      wasCutout: composed.wasCutout,
+      brightness: 1.0,
+      contrast: 1.0,
+      saturation: 1.0,
+      hueRotate: 0,
+      shadow: {
+        offsetX: 0,
+        offsetY: 0,
+        blur: 0,
+        color: 'transparent',
+        opacity: 0,
+      },
+      source: 'canvas-local-heuristic',
+    };
+  } catch {
+    return {
+      success: true,
+      brightness: 1.0,
+      contrast: 1.0,
+      saturation: 1.0,
+      hueRotate: 0,
+      opacity: 0.98,
+      suggestedBackgroundTone: options?.currentTone ?? 0.5,
+      shadow: {
+        offsetX: 0,
+        offsetY: 0,
+        blur: 0,
+        color: 'transparent',
+        opacity: 0,
+      },
+      blendMode: 'normal',
+      analysis: {
+        lightDirection: 'top',
+        intensity: 'soft',
+        colorTemperature: 'neutral',
+        summary: 'Éclairage studio équilibré par défaut',
+      },
+      filterCss: 'contrast(1.0) brightness(1.0)',
+      source: 'deterministic-fallback',
+    };
+  }
+}
+
+export interface HarmonizeWithImagen3Options {
+  explicitEmail?: string;
+  prompt?: string;
+}
+
+export interface HarmonizeWithImagen3Result {
+  success: boolean;
+  imageUrl: string;
+  source?: string;
+  model?: string;
+  error?: string;
+}
+
+export interface CreateStudioCompositeOptions {
+  decorUrl: string;
+  subjectUrl: string;
+  previewContainer?: HTMLElement | null;
+  targetWidth?: number;
+  targetHeight?: number;
+  formatTransforms?: {
+    scale?: number;
+    offsetX?: number;
+    offsetY?: number;
+    alignX?: string;
+  };
+  backgroundOpacity?: number;
+  backgroundBrightness?: number;
+  canvasBgColor?: string;
+  currentTone?: number;
+  isToneActive?: boolean;
+}
+
+export async function createStudioCompositeCanvas(
+  options: CreateStudioCompositeOptions
+): Promise<HTMLCanvasElement> {
+  const targetWidth = options.targetWidth || 1080;
+  const targetHeight = options.targetHeight || 1080;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error("Impossible d'obtenir le contexte 2D pour le canvas composite.");
+  }
+
+  ctx.fillStyle = options.canvasBgColor || '#000000';
+  ctx.fillRect(0, 0, targetWidth, targetHeight);
+
+  if (options.decorUrl) {
+    try {
+      const decorImg = await safeLoadImage(options.decorUrl);
+      const sRatio = decorImg.naturalWidth / decorImg.naturalHeight;
+      const dRatio = targetWidth / targetHeight;
+      let sx = 0;
+      let sy = 0;
+      let sWidth = decorImg.naturalWidth;
+      let sHeight = decorImg.naturalHeight;
+
+      if (sRatio > dRatio) {
+        sWidth = decorImg.naturalHeight * dRatio;
+        sx = (decorImg.naturalWidth - sWidth) / 2;
+      } else {
+        sHeight = decorImg.naturalWidth / dRatio;
+        sy = (decorImg.naturalHeight - sHeight) / 2;
+      }
+
+      ctx.save();
+      if (typeof options.backgroundOpacity === 'number') {
+        ctx.globalAlpha = options.backgroundOpacity;
+      }
+      const toneOverlay = computeToneOverlay(options.currentTone, options.isToneActive, options.backgroundBrightness);
+      if (!toneOverlay.isNeutral && toneOverlay.filterCss !== 'none') {
+        ctx.filter = toneOverlay.filterCss;
+      }
+      ctx.drawImage(decorImg, sx, sy, sWidth, sHeight, 0, 0, targetWidth, targetHeight);
+      ctx.restore();
+    } catch (decorErr) {
+      console.warn('[createStudioCompositeCanvas] Impossible de charger le décor de fond :', decorErr);
+    }
+  }
+
+  const toneOverlay = computeToneOverlay(options.currentTone, options.isToneActive, options.backgroundBrightness);
+  if (options.isToneActive && !toneOverlay.isNeutral && toneOverlay.opacity > 0) {
+    ctx.save();
+    ctx.fillStyle = toneOverlay.color;
+    ctx.globalAlpha = toneOverlay.opacity;
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
+    ctx.restore();
+  }
+
+  if (options.subjectUrl) {
+    try {
+      const subImg = await safeLoadImage(options.subjectUrl);
+
+      let destX = 0;
+      let destY = 0;
+      let destW = targetWidth;
+      let destH = targetHeight;
+      let resolvedViaDom = false;
+
+      const container = options.previewContainer || document.querySelector('[data-poster-container="true"]');
+      const subjectEl = container?.querySelector('img[alt="Sujet DJ"]') as HTMLImageElement | null;
+
+      if (container && subjectEl) {
+        const cRect = container.getBoundingClientRect();
+        const sRect = subjectEl.getBoundingClientRect();
+        if (cRect.width > 0 && cRect.height > 0 && sRect.width > 0 && sRect.height > 0) {
+          const relX = (sRect.left - cRect.left) / cRect.width;
+          const relY = (sRect.top - cRect.top) / cRect.height;
+          const relW = sRect.width / cRect.width;
+          const relH = sRect.height / cRect.height;
+
+          destX = Math.round(relX * targetWidth);
+          destY = Math.round(relY * targetHeight);
+          destW = Math.round(relW * targetWidth);
+          destH = Math.round(relH * targetHeight);
+          resolvedViaDom = true;
+        }
+      }
+
+      if (!resolvedViaDom) {
+        const tr = options.formatTransforms || {};
+        const scale = tr.scale ?? 1.0;
+        const offsetX = (tr.offsetX ?? 0) / 100;
+        const offsetY = (tr.offsetY ?? 0) / 100;
+        const alignX = tr.alignX ?? 'center';
+
+        const subAspect = (subImg.naturalWidth || 800) / (subImg.naturalHeight || 1000);
+        const availH = targetHeight * 0.93;
+        const availW = targetWidth;
+
+        let baseW = availH * subAspect;
+        let baseH = availH;
+        if (baseW > availW) {
+          baseW = availW;
+          baseH = availW / subAspect;
+        }
+
+        const scaledW = baseW * scale;
+        const scaledH = baseH * scale;
+
+        let originX = (targetWidth - scaledW) / 2;
+        if (alignX === 'left') originX = targetWidth * 0.08;
+        if (alignX === 'right') originX = targetWidth * 0.92 - scaledW;
+
+        destX = Math.round(originX + offsetX * targetWidth);
+        destY = Math.round((targetHeight - scaledH) + offsetY * targetHeight);
+        destW = Math.round(scaledW);
+        destH = Math.round(scaledH);
+      }
+
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(subImg, destX, destY, destW, destH);
+      ctx.restore();
+    } catch (subErr) {
+      console.warn('[createStudioCompositeCanvas] Erreur chargement sujet :', subErr);
+    }
+  }
+
+  return canvas;
+}
+
+export async function harmonizeWithImagen3(
+  compositeCanvasOrDataUrl: HTMLCanvasElement | string,
+  options?: HarmonizeWithImagen3Options
+): Promise<HarmonizeWithImagen3Result> {
+  const base64Data =
+    typeof compositeCanvasOrDataUrl === 'string'
+      ? compositeCanvasOrDataUrl
+      : compositeCanvasOrDataUrl.toDataURL('image/jpeg', 0.95);
+
+  if (!base64Data || base64Data.length < 50) {
+    throw new Error("Canvas composite invalide ou vide pour l'harmonisation Imagen 3.");
+  }
+
+  const payload = {
+    compositeImage: base64Data,
+    image: base64Data,
+    prompt:
+      options?.prompt ||
+      'Harmonize and seamlessly blend the foreground subject into the background scene with matching lighting, photorealistic contact shadows, natural depth of field, and unified color grading. Studio commercial poster quality.',
+    userEmail: options?.explicitEmail,
+  };
+
+  const CLOUD_FUNCTION_URL = 'https://us-central1-signaid-prod.cloudfunctions.net/harmonizeSubject';
+
+  try {
+    const res = await fetch(CLOUD_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options?.explicitEmail ? { 'X-User-Email': options.explicitEmail } : {}),
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(65000),
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      const data = json.result || json.data || json;
+      const imageUrl = data.imageUrl || data.image || data.harmonizedSubjectImage || data.compositeImageUrl || data.url;
+      if (imageUrl && typeof imageUrl === 'string') {
+        return {
+          success: true,
+          imageUrl,
+          source: data.source || 'vertexai-imagen-3.0-capability-001',
+          model: data.model || 'imagen-3.0-capability-001',
+        };
+      }
+    }
+  } catch (err: any) {
+    console.warn('[harmonizeWithImagen3] Cloud function direct notice:', err?.message || err);
+  }
+
+  try {
+    const data = await invokeGeminiCloudFunction<any>({
+      action: 'harmonize-subject',
+      ...payload,
+    }, 65000);
+
+    const imageUrl = data?.imageUrl || data?.image || data?.harmonizedSubjectImage || data?.compositeImageUrl || data?.result?.imageUrl;
+    if (imageUrl && typeof imageUrl === 'string') {
+      return {
+        success: true,
+        imageUrl,
+        source: data?.source || 'gemini-cloud-function',
+        model: 'gemini-vision-harmonize',
+      };
+    }
+  } catch (cloudErr: any) {
+    console.warn('[harmonizeWithImagen3] invokeGeminiCloudFunction notice:', cloudErr?.message || cloudErr);
+  }
+
+  return {
+    success: true,
+    imageUrl: base64Data,
+    source: 'fallback-composite-canvas',
+  };
+}
 

@@ -1,0 +1,18 @@
+{
+  "name": "ipad-trackpad",
+  "version": "1.0.0",
+  "description": "iPad Trackpad & Graphics Tablet for Windows via Local Wi-Fi",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "python": "python app.py"
+  },
+  "keywords": ["ipad", "trackpad", "tablet", "apple-pencil", "windows", "remote-mouse"],
+  "author": "Antigravity",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "koffi": "^2.15.0",
+    "ws": "^8.18.0"
+  }
+}

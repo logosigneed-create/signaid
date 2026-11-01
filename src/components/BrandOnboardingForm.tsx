@@ -54,7 +54,7 @@ export default function BrandOnboardingForm() {
   const [coverPreview, setCoverPreview] = useState<string | null>(BANNER_PRESETS[0].url);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('dark-studio');
   const [needsLogoCreation, setNeedsLogoCreation] = useState(false);
-  const [themeMode, setThemeMode] = useState<'dark' | 'light'>('dark');
+  const [themeMode, setThemeMode] = useState<'dark' | 'light' | 'auto'>('auto');
   const [accentColor, setAccentColor] = useState('#ff3366');
 
   // Step 3: Contact & Réseaux
@@ -1003,20 +1003,20 @@ export default function BrandOnboardingForm() {
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button
                       type="button"
-                      onClick={() => setThemeMode('dark')}
+                      onClick={() => setThemeMode('auto')}
                       style={{
                         flex: 1,
                         padding: '0.75rem',
                         borderRadius: '8px',
-                        background: themeMode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.3)',
-                        border: `1.5px solid ${themeMode === 'dark' ? accentColor : 'rgba(255,255,255,0.1)'}`,
+                        background: themeMode === 'auto' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.3)',
+                        border: `1.5px solid ${themeMode === 'auto' ? accentColor : 'rgba(255,255,255,0.1)'}`,
                         color: '#fff',
                         fontWeight: 700,
                         fontSize: '0.85rem',
                         cursor: 'pointer'
                       }}
                     >
-                      🌙 Dark Mode
+                      🔄 Auto (Jour/Nuit)
                     </button>
                     <button
                       type="button"
@@ -1033,7 +1033,24 @@ export default function BrandOnboardingForm() {
                         cursor: 'pointer'
                       }}
                     >
-                      ☀️ Light Mode
+                      ☀️ Clair
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setThemeMode('dark')}
+                      style={{
+                        flex: 1,
+                        padding: '0.75rem',
+                        borderRadius: '8px',
+                        background: themeMode === 'dark' ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.3)',
+                        border: `1.5px solid ${themeMode === 'dark' ? accentColor : 'rgba(255,255,255,0.1)'}`,
+                        color: '#fff',
+                        fontWeight: 700,
+                        fontSize: '0.85rem',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🌙 Sombre
                     </button>
                   </div>
                 </div>

@@ -1,12 +1,12 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth as _getAuth, Auth } from 'firebase/auth';
+import { getAuth as _getAuth, Auth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAnalytics as _getAnalytics } from 'firebase/analytics';
 
 export const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDTSKpVei8lCANIQJBZmuKcsjEDIubnvcs",
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "signaid-prod.firebaseapp.com",
+    authDomain: (typeof window !== "undefined" && window.location.hostname.endsWith("signaid.eu")) ? window.location.hostname : (import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "signaid-prod.firebaseapp.com"),
     projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "signaid-prod",
     storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "signaid-prod.firebasestorage.app",
     messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "244540314192",
@@ -41,6 +41,8 @@ export const auth = new Proxy({} as Auth, {
         return typeof value === 'function' ? value.bind(instance) : value;
     }
 });
+
+export const googleProvider = new GoogleAuthProvider();
 
 // Safe Analytics instance (only if measurementId exists in env and browser environment)
 let _analyticsInstance: any = null;

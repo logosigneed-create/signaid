@@ -29,36 +29,34 @@ export const GabaritCard: React.FC<GabaritCardProps> = React.memo(({
 
     return (
         <div className="space-y-3">
-            <div 
+            <div
                 onClick={() => onToggleSelect(index)}
                 className={`aspect-square overflow-hidden bg-zinc-950 border relative shadow-inner group cursor-pointer ${(isLightMode ? 'border-gray-100' : 'border-white/5')} ${(!item.selected ? 'opacity-40 grayscale' : '')}`}
             >
-                <img 
-                    src={gridDisplayImage} 
+                <img
+                    src={gridDisplayImage}
                     alt={item.title}
                     crossOrigin="anonymous"
-                    className="w-full h-full object-cover object-center" 
+                    className="w-full h-full object-cover object-center"
                 />
-                
+
                 {/* CHECKBOX */}
                 <div className={`absolute top-2 left-2 w-5 h-5 border flex items-center justify-center transition-all ${item.selected ? 'bg-orange-600 border-orange-600 text-black shadow-[0_0_10px_rgba(234,88,12,0.4)]' : 'bg-black/50 border-white/20 text-white/20'}`}>
                     {item.selected && <Check size={14} strokeWidth={4} />}
                 </div>
 
                 {/* VIEW BADGE (FACE / DOS) */}
-                <div className={`absolute top-2 right-2 px-1.5 py-0.5 font-black text-[7px] tracking-wider uppercase border ${
-                    item.view === 'back'
-                        ? 'bg-purple-950/90 text-purple-300 border-purple-500/50 shadow-sm'
-                        : 'bg-blue-950/90 text-blue-300 border-blue-500/50 shadow-sm'
-                }`}>
+                <div className={`absolute top-2 right-2 px-1.5 py-0.5 font-black text-[7px] tracking-wider uppercase border ${item.view === 'back'
+                    ? 'bg-purple-950/90 text-purple-300 border-purple-500/50 shadow-sm'
+                    : 'bg-blue-950/90 text-blue-300 border-blue-500/50 shadow-sm'
+                    }`}>
                     {item.view === 'back' ? 'DOS' : 'FACE'}
                 </div>
 
                 {/* MODEL TITLE */}
                 <div className="absolute bottom-2 left-2 right-2 flex items-center pointer-events-none">
-                    <span className={`px-2 py-0.5 font-black text-[7px] tracking-wider uppercase truncate ${
-                        isLightMode ? 'bg-white/95 text-gray-800 border border-gray-200' : 'bg-black/90 text-zinc-200 border border-white/10'
-                    }`}>
+                    <span className={`px-2 py-0.5 font-black text-[7px] tracking-wider uppercase truncate ${isLightMode ? 'bg-white/95 text-gray-800 border border-gray-200' : 'bg-black/90 text-zinc-200 border border-white/10'
+                        }`}>
                         {item.title}
                     </span>
                 </div>

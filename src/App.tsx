@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { auth } from './firebaseConfig';
@@ -10,6 +10,7 @@ import { ProjectManagerModal } from './components/ProjectManagerModal';
 import { AuthModal } from './components/AuthModal';
 import { StudioComposer } from './components/StudioComposer';
 import { FlyerPosterRenderer } from './components/FlyerPosterRenderer';
+import { MerchPreview } from './components/MerchPreview';
 import { PremiumChatWidget } from './components/PremiumChatWidget';
 import { CookieConsent } from './components/CookieConsent';
 import { RequirePremium } from './components/RequirePremium';
@@ -136,6 +137,31 @@ function StudioComposerRoute() {
     const [isProjectsOpen, setIsProjectsOpen] = useState<boolean>(false);
     const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
     const [activeTab, setActiveTab] = useState<'generator' | 'checkout' | 'workshop' | 'prospecting'>('generator');
+    const [activeSection, setActiveSection] = useState<any>('decor');
+
+    const [isDayMode, setIsDayMode] = useState<boolean>(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('signaid_studio_daymode') === 'true';
+        }
+        return false;
+    });
+
+    const handleToggleDayMode = useCallback(() => {
+        setIsDayMode((prev) => {
+            const next = !prev;
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('signaid_studio_daymode', String(next));
+                document.documentElement.classList.toggle('dark', !next);
+            }
+            return next;
+        });
+    }, []);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            document.documentElement.classList.toggle('dark', !isDayMode);
+        }
+    }, [isDayMode]);
 
     const getAspectRatio = (fmt: string): string => {
         switch (fmt) {
@@ -145,18 +171,69 @@ function StudioComposerRoute() {
                 return '16 / 9';
             case 'a3':
                 return '1 / 1.414';
+            case 'tshirt':
             case 'post':
             default:
                 return '1 / 1';
         }
     };
 
+    const handleUpdateTransform = useCallback((newScale: number, newOffsetY: number) => {
+        setInput((prev) => ({
+            ...prev,
+            djPhotoScale: newScale,
+            djPhotoOffsetY: newOffsetY,
+            formatTransforms: {
+                ...(prev.formatTransforms || {}),
+                [previewFormat]: {
+                    ...((prev.formatTransforms || {})[previewFormat] || {}),
+                    scale: newScale,
+                    offsetY: newOffsetY,
+                    isCustom: true,
+                },
+            },
+        }));
+    }, [previewFormat]);
+
+    const handleResetFormatToMaster = useCallback(() => {
+        setInput((prev) => resetLogoTransformForFormat(prev, previewFormat));
+    }, [previewFormat]);
+
+    const handleUpdateSubjectPosition = useCallback((pos: { x: number; y: number }) => {
+        setInput((prev) => {
+            const existing = prev.formatTransforms?.[previewFormat];
+            return {
+                ...prev,
+                djPhotoOffsetY: pos.y,
+                formatTransforms: {
+                    ...(prev.formatTransforms || {}),
+                    [previewFormat]: {
+                        ...(existing || {}),
+                        scale: existing?.scale ?? prev.djPhotoScale ?? 1.0,
+                        offsetX: pos.x,
+                        offsetY: pos.y,
+                        isCustom: true,
+                    },
+                },
+            };
+        });
+    }, [previewFormat]);
+
+    const FORMAT_OPTIONS = [
+        { key: 'post', label: 'Post (1:1)' },
+        { key: 'story', label: 'Story (9:16)' },
+        { key: 'banner', label: 'Bannière (16:9)' },
+        { key: 'a3', label: 'Flyer' },
+    ] as const;
+
     return (
-        <div className="h-screen w-full bg-zinc-950 text-white flex flex-col overflow-hidden">
+        <div className={`h-screen w-full ${isDayMode ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-950 text-white'} flex flex-col overflow-hidden`}>
             {/* 1. VRAIE BARRE DE NAVIGATION DU HAUT ORIGINALE */}
             <Header
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
+                isDayMode={isDayMode}
+                onToggleDayMode={handleToggleDayMode}
                 onOpenProjects={() => setIsProjectsOpen(true)}
                 onOpenAuthModal={() => setIsAuthOpen(true)}
             />
@@ -164,77 +241,98 @@ function StudioComposerRoute() {
             {/* 2. ESPACE DE TRAVAIL : GAUCHE = RÉGLAGES, DROITE = VISUEL */}
             <div className="flex-1 w-full flex flex-col min-[920px]:flex-row min-h-0 overflow-hidden">
                 {/* COLONNE GAUCHE : Panneau Accordéons & Réglages StudioComposer */}
-                <aside className="w-full min-[920px]:w-[440px] lg:w-[480px] xl:w-[520px] shrink-0 border-b min-[920px]:border-b-0 min-[920px]:border-r border-zinc-800/80 bg-zinc-900/40 min-h-0 overflow-y-auto p-4 sm:p-6 order-2 min-[920px]:order-1">
+                <aside className={`w-full min-[920px]:w-[440px] lg:w-[480px] xl:w-[520px] shrink-0 border-b min-[920px]:border-b-0 min-[920px]:border-r ${isDayMode ? 'border-zinc-300 bg-white/95 text-zinc-900' : 'border-zinc-800/80 bg-zinc-900/40 text-white'} min-h-0 overflow-y-auto p-4 sm:p-6 order-2 min-[920px]:order-1`}>
                     <StudioComposer
                         input={input}
                         setInput={setInput}
                         previewFormat={previewFormat}
                         onSelectFormat={setPreviewFormat}
-                        onUpdateTransform={(newScale: number, newOffsetY: number) => {
-                            setInput((prev) => ({
-                                ...prev,
-                                djPhotoScale: newScale,
-                                djPhotoOffsetY: newOffsetY,
-                                formatTransforms: {
-                                    ...(prev.formatTransforms || {}),
-                                    [previewFormat]: {
-                                        ...((prev.formatTransforms || {})[previewFormat] || {}),
-                                        scale: newScale,
-                                        offsetY: newOffsetY,
-                                        isCustom: true,
-                                    },
-                                },
-                            }));
-                        }}
-                        onResetFormatToMaster={() => {
-                            setInput((prev) => resetLogoTransformForFormat(prev, previewFormat));
-                        }}
+                        onUpdateTransform={handleUpdateTransform}
+                        onResetFormatToMaster={handleResetFormatToMaster}
                         isUnlocked={true}
+                        isDayMode={isDayMode}
+                        onActiveSectionChange={setActiveSection}
                         onTriggerPayment={() => { }}
                     />
                 </aside>
 
                 {/* COLONNE DROITE : Canvas Interactif Desktop */}
-                <main className="flex-1 flex flex-col items-center justify-center p-6 lg:p-8 bg-zinc-950/80 overflow-y-auto relative select-none order-1 min-[920px]:order-2">
+                <main className={`flex-1 flex flex-col items-center justify-center p-6 lg:p-8 ${isDayMode ? 'bg-zinc-200/60' : 'bg-zinc-950/80'} overflow-y-auto relative select-none order-1 min-[920px]:order-2`}>
                     <div className="w-full max-w-2xl flex flex-col items-center justify-center my-auto">
                         {/* Sélecteur de format rapide au-dessus du canvas */}
-                        <div className="mb-4 flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded-xl p-1 text-xs font-mono shadow-lg">
-                            {(['post', 'story', 'banner', 'a3'] as const).map((fmt) => (
+                        <div className={`mb-4 flex items-center gap-1 ${isDayMode ? 'bg-white border-zinc-300' : 'bg-zinc-950 border-zinc-800'} border rounded-xl p-1 text-xs font-mono shadow-lg`}>
+                            {FORMAT_OPTIONS.map((fmt) => (
                                 <button
-                                    key={fmt}
+                                    key={fmt.key}
                                     type="button"
-                                    onClick={() => setPreviewFormat(fmt)}
-                                    className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer uppercase ${previewFormat === fmt
-                                            ? 'bg-zinc-800 text-lime-400 shadow-sm'
-                                            : 'text-zinc-400 hover:text-white'
+                                    onClick={() => setPreviewFormat(fmt.key)}
+                                    className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer uppercase ${previewFormat === fmt.key
+                                            ? (isDayMode ? 'bg-zinc-900 text-lime-400 shadow-sm' : 'bg-zinc-800 text-lime-400 shadow-sm')
+                                            : (isDayMode ? 'text-zinc-600 hover:text-black' : 'text-zinc-400 hover:text-white')
                                         }`}
                                 >
-                                    {fmt === 'post' ? 'Post (1:1)' : fmt === 'story' ? 'Story (9:16)' : fmt === 'banner' ? 'Bannière' : 'A3 (Print)'}
+                                    {fmt.label}
                                 </button>
                             ))}
+                            {previewFormat === 'tshirt' && (
+                                <button
+                                    type="button"
+                                    onClick={() => setPreviewFormat('tshirt')}
+                                    className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer uppercase ${
+                                        isDayMode ? 'bg-zinc-900 text-lime-400 shadow-sm' : 'bg-zinc-800 text-lime-400 shadow-sm'
+                                    }`}
+                                >
+                                    Stand Merch
+                                </button>
+                            )}
                         </div>
 
                         {/* Conteneur d'affiche avec ratio d'aspect dynamique */}
                         <div
-                            className="relative w-full rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900 shadow-2xl flex items-center justify-center transition-all duration-300"
+                            className={`relative w-full rounded-2xl overflow-hidden border ${isDayMode ? 'border-zinc-300 bg-white' : 'border-zinc-800 bg-zinc-900'} shadow-2xl flex items-center justify-center transition-all duration-300`}
                             style={{
                                 aspectRatio: getAspectRatio(previewFormat),
                                 maxHeight: 'calc(100vh - 180px)',
                             }}
                         >
-                            <FlyerPosterRenderer
-                                projectData={input}
-                                setInput={setInput}
-                                format={previewFormat}
-                                isInteractive={true}
-                                layoutTemplate={input.layoutTemplate || 'duality_campaign'}
-                                templateData={input.templateData}
-                            />
+                            {previewFormat === 'tshirt' ? (
+                                <div className="w-full h-full p-2 flex items-center justify-center">
+                                    <MerchPreview
+                                        input={input}
+                                        interactive={true}
+                                        onPlacementChange={(placement, side) => {
+                                            setInput((prev) => ({
+                                                ...prev,
+                                                ...(side === 'back'
+                                                    ? { tshirtBackPlacement: placement, tshirtBackLogoScale: placement.scale }
+                                                    : { tshirtFrontPlacement: placement, tshirtLogoScale: placement.scale }
+                                                ),
+                                            }));
+                                        }}
+                                        showSideToggle={true}
+                                        showViewToggle={true}
+                                    />
+                                </div>
+                            ) : (
+                                <FlyerPosterRenderer
+                                    projectData={input}
+                                    setInput={setInput}
+                                    format={previewFormat}
+                                    isInteractive={true}
+                                    activeSection={activeSection}
+                                    onVisualElementClick={(section) => {
+                                        if (section) setActiveSection(section as any);
+                                    }}
+                                    onUpdateSubjectPosition={handleUpdateSubjectPosition}
+                                    layoutTemplate={input.layoutTemplate || 'duality_campaign'}
+                                    templateData={input.templateData}
+                                />
+                            )}
                         </div>
 
                         {/* Légende sous le canvas */}
-                        <div className="mt-4 flex items-center justify-between w-full px-2 text-xs font-mono text-zinc-500">
-                            <span>Format actif : <strong className="text-zinc-300 uppercase">{previewFormat}</strong></span>
+                        <div className={`mt-4 flex items-center justify-between w-full px-2 text-xs font-mono ${isDayMode ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                            <span>Format actif : <strong className={`${isDayMode ? 'text-zinc-900' : 'text-zinc-300'} uppercase`}>{previewFormat === 'a3' ? 'Flyer' : previewFormat}</strong></span>
                             <span>Aperçu interactif haute fidélité</span>
                         </div>
                     </div>

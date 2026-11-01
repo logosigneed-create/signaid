@@ -98,7 +98,7 @@ export function ShowcaseCard({
     <article
       data-carousel-item
       onClick={onCardClick}
-      className={`shrink-0 snap-always snap-center w-[280px] min-w-[280px] max-w-[280px] flex flex-col rounded-2xl overflow-hidden transition-all duration-300 border select-none group ${
+      className={`shrink-0 snap-always snap-center w-[280px] min-w-[280px] max-w-[280px] flex flex-col rounded-2xl overflow-hidden transition-all duration-300 border select-none group touch-manipulation ${
         isActive
           ? 'scale-100 opacity-100 shadow-2xl'
           : 'scale-95 opacity-60 cursor-pointer hover:opacity-85'
@@ -108,6 +108,7 @@ export function ShowcaseCard({
           : 'bg-[#0f0f12] border-zinc-800/80 shadow-black/60'
       }`}
       style={{
+        touchAction: 'pan-x pan-y',
         scrollSnapStop: 'always',
         boxShadow: isLightMode
           ? isActive ? '0 16px 36px -4px rgba(0, 0, 0, 0.15)' : '0 4px 12px -2px rgba(0, 0, 0, 0.05)'
@@ -116,9 +117,10 @@ export function ShowcaseCard({
     >
       {/* CADRE MOCKUP SMARTPHONE AVEC RATIO VERTICAL ÉLÉGANT */}
       <div 
-        className={`relative w-full h-[280px] sm:h-[300px] flex items-center justify-center overflow-hidden transition-colors ${
+        className={`relative w-full h-[280px] sm:h-[300px] flex items-center justify-center overflow-hidden transition-colors touch-manipulation ${
           isLightMode ? 'bg-slate-100/90' : 'bg-[#151518]'
         }`}
+        style={{ touchAction: 'pan-x pan-y' }}
       >
         {/* BADGE OFFICIEL DU PROFIL */}
         <div 
@@ -129,7 +131,7 @@ export function ShowcaseCard({
         </div>
 
         {/* IMAGE MOCKUP / CAPTURE D'ÉCRAN SMARTPHONE */}
-        <div className="relative w-full h-full flex items-center justify-center p-3">
+        <div className="relative w-full h-full flex items-center justify-center p-3 touch-manipulation" style={{ touchAction: 'pan-x pan-y' }}>
           {!imgError && profile.mockup ? (
             <img
               src={profile.mockup}
@@ -137,7 +139,8 @@ export function ShowcaseCard({
               loading="lazy"
               decoding="async"
               onError={() => setImgError(true)}
-              className="w-full h-full object-contain object-center transition-transform duration-300 group-hover:scale-105 drop-shadow-[0_10px_20px_rgba(0,0,0,0.6)]"
+              className="w-full h-full object-contain object-center transition-transform duration-300 group-hover:scale-105 drop-shadow-[0_10px_20px_rgba(0,0,0,0.6)] touch-manipulation"
+              style={{ touchAction: 'pan-x pan-y' }}
             />
           ) : (
             <div className={`w-full h-full rounded-xl border flex flex-col items-center justify-center p-4 text-center ${
@@ -518,8 +521,10 @@ export default function ShowcaseCarousel({
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="relative flex w-full overflow-x-auto scroll-smooth snap-x snap-mandatory gap-4 py-4 overscroll-x-contain touch-pan-x [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        className="relative flex w-full overflow-x-auto scroll-smooth snap-x snap-mandatory gap-4 py-4 overscroll-x-contain touch-manipulation [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
         style={{
+          touchAction: 'pan-x pan-y',
+          overscrollBehaviorX: 'contain',
           WebkitOverflowScrolling: 'touch',
           scrollSnapType: 'x mandatory',
           paddingLeft: 'calc(50% - 140px)',

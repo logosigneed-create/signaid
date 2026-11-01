@@ -1,7 +1,10 @@
 import fs from 'fs';
 import path from 'path';
+import { createRequire } from 'module';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+
+const nodeRequire = createRequire(import.meta.url);
 
 const syncFunctionsHtmlPlugin = () => ({
   name: 'sync-functions-html',
@@ -19,12 +22,45 @@ const syncFunctionsHtmlPlugin = () => ({
   }
 });
 
+const createProfileApiPlugin = () => ({
+  name: 'create-profile-api',
+  configureServer(server: any) {
+    server.middlewares.use('/api/create-profile', (req: any, res: any) => {
+      if (req.method === 'POST') {
+        let body = '';
+        req.on('data', (chunk: any) => { body += chunk; });
+        req.on('end', async () => {
+          try {
+            const data = JSON.parse(body || '{}');
+            const { createProfile } = nodeRequire('./scripts/profileCreatorService.cjs');
+            const result = await createProfile(data.url);
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 200;
+            res.end(JSON.stringify(result));
+          } catch (err: any) {
+            console.error('[Vite /api/create-profile] Erreur:', err);
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 500;
+            res.end(JSON.stringify({ success: false, error: err?.message || 'Erreur interne' }));
+          }
+        });
+      } else {
+        res.statusCode = 405;
+        res.end('Method Not Allowed');
+      }
+    });
+  }
+});
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
+    root: process.cwd(),
     base: '/',
     server: {
-      port: 3000,
+      port: 3847,
+      strictPort: true,
+      cors: true,
       host: '0.0.0.0',
       watch: {
         ignored: [
@@ -45,14 +81,30 @@ export default defineConfig(({ mode }) => {
         ]
       },
       proxy: {
+        '/api/firebase-storage': {
+          target: 'https://firebasestorage.googleapis.com',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/firebase-storage/, ''),
+        },
         '/api/gemini-proxy': {
           target: 'https://us-central1-signaid-prod.cloudfunctions.net/generateTryOnImageProxy',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api\/gemini-proxy/, ''),
         },
+        // API locale : create-profile, prospects, health → Express server port 3848
+        '/api': {
+          target: 'http://127.0.0.1:3848',
+          changeOrigin: true,
+          // Pas de rewrite : /api/create-profile reste /api/create-profile côté serveur
+        },
       },
     },
+    preview: {
+      port: 3847,
+      strictPort: true,
+    },
     optimizeDeps: {
+      exclude: ['@imgly/background-removal', 'onnxruntime-web'],
       include: [
         'react',
         'react-dom',
@@ -67,7 +119,8 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
-      syncFunctionsHtmlPlugin()
+      syncFunctionsHtmlPlugin(),
+      createProfileApiPlugin()
     ],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY || ''),
@@ -76,21 +129,42 @@ export default defineConfig(({ mode }) => {
       'process.env.VITE_GOOGLE_GENAI_API_KEY': JSON.stringify(env.VITE_GOOGLE_GENAI_API_KEY || env.VITE_GEMINI_API_KEY || '')
     },
     resolve: {
+      preserveSymlinks: true,
       alias: {
         '@': path.resolve(__dirname, '.'),
       }
     },
     build: {
       rollupOptions: {
+        input: path.resolve(process.cwd(), 'index.html'),
+        external: [
+          'onnxruntime-web',
+          'onnxruntime-web/webgpu',
+          /^onnxruntime-web(\/.*)?$/
+        ],
+        onwarn(warning: any, defaultHandler: any) {
+          if (warning?.code === 'UNRESOLVED_IMPORT' && warning?.source?.includes('onnxruntime-web')) {
+            return;
+          }
+          defaultHandler(warning);
+        },
         output: {
           manualChunks(id) {
-            // dtfMasterService et ses dépendances lourdes (PDF, canvas) → chunk isolé, jamais chargé sur landing/profils
-            if (id.includes('dtfMasterService') || id.includes('jspdf') || id.includes('pdf-lib')) {
-              return 'dtfMaster';
-            }
-            // CustomizerApp core (hors vendor) → chunk dédié admin/customizer
-            if (id.includes('CustomizerApp') || id.includes('CustomizerView') || id.includes('FlyerEditor') || id.includes('LayoutEditor') || id.includes('LayoutAdjuster') || id.includes('CreationToolbar') || id.includes('DraggableElement') || id.includes('MobileToolBar')) {
-              return 'customizer';
+            // Customizer & DTF Master (regroupés en un chunk unique pour éliminer la dépendance circulaire)
+            if (
+              id.includes('dtfMasterService') ||
+              id.includes('jspdf') ||
+              id.includes('pdf-lib') ||
+              id.includes('CustomizerApp') ||
+              id.includes('CustomizerView') ||
+              id.includes('FlyerEditor') ||
+              id.includes('LayoutEditor') ||
+              id.includes('LayoutAdjuster') ||
+              id.includes('CreationToolbar') ||
+              id.includes('DraggableElement') ||
+              id.includes('MobileToolBar')
+            ) {
+              return 'customizer-dtf';
             }
             // Firebase split par sous-package pour tree-shaking optimal
             if (id.includes('firebase/auth') || id.includes('@firebase/auth')) {

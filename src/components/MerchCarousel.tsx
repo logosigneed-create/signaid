@@ -1,4 +1,34 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { CLUBVISION_MOCKUP_ASSETS, withCacheBust } from '../lib/localProfiles';
+
+/**
+ * Optimise les URLs d'images servies dans le carrousel :
+ * - Force l'utilisation des variantes web optimisées (/web/) plutôt que les gabarits lourds d'impression (/print/).
+ * - Écarte les fichiers mécaniques purs au profit du visuel final.
+ */
+export const optimizeMerchImage = (url?: string | null): string => {
+  if (!url || typeof url !== 'string') return '';
+  let clean = url.trim();
+  if (!clean) return '';
+
+  // Forcer les variantes web optimisées de Firebase Storage
+  if (clean.includes('/print/')) {
+    clean = clean.replace('/print/', '/web/');
+  } else if (clean.includes('%2Fprint%2F')) {
+    clean = clean.replace('%2Fprint%2F', '%2Fweb%2F');
+  }
+
+  // Éviter les rendus mécaniques bruts pour le rendu LCP carrousel
+  if (clean.includes('_mech.png') && !clean.includes('logo_')) {
+    clean = clean.replace('_mech.png', '.png');
+  } else if (clean.includes('%2FE3520_front_mech.png')) {
+    clean = clean.replace('%2FE3520_front_mech.png', '%2FE3520_front.png');
+  } else if (clean.includes('%2FE3520_back_mech.png')) {
+    clean = clean.replace('%2FE3520_back_mech.png', '%2FE3520_back.png');
+  }
+
+  return clean;
+};
 
 export interface MerchItem {
   id: string;
@@ -45,25 +75,25 @@ export const VISION_ROOM_BASIC_TANK: MerchItem = {
   colors: ['Noir', 'Blanc'],
   price: 27.99,
   currency: '€',
-  imageUrl: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront_1788698451810.png?alt=media&token=32465cf4-7a0c-48aa-a010-08c999a7d0d1',
-  frontImageUrl: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront_1788698451810.png?alt=media&token=32465cf4-7a0c-48aa-a010-08c999a7d0d1',
-  backImageUrl: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankBack_1788693827691.png?alt=media&token=042abb56-7970-4a26-92dc-2de88698e7a6',
-  imageFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront_1788698451810.png?alt=media&token=32465cf4-7a0c-48aa-a010-08c999a7d0d1',
-  imageBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankBack_1788693827691.png?alt=media&token=042abb56-7970-4a26-92dc-2de88698e7a6',
+  imageUrl: CLUBVISION_MOCKUP_ASSETS.tankFront,
+  frontImageUrl: CLUBVISION_MOCKUP_ASSETS.tankFront,
+  backImageUrl: CLUBVISION_MOCKUP_ASSETS.tankBack,
+  imageFront: CLUBVISION_MOCKUP_ASSETS.tankFront,
+  imageBack: CLUBVISION_MOCKUP_ASSETS.tankBack,
   images: {
-    front: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront_1788698451810.png?alt=media&token=32465cf4-7a0c-48aa-a010-08c999a7d0d1',
-    back: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankBack_1788693827691.png?alt=media&token=042abb56-7970-4a26-92dc-2de88698e7a6',
-    face: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront_1788698451810.png?alt=media&token=32465cf4-7a0c-48aa-a010-08c999a7d0d1',
-    dos: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankBack_1788693827691.png?alt=media&token=042abb56-7970-4a26-92dc-2de88698e7a6',
-    black_front: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront_1788698451810.png?alt=media&token=32465cf4-7a0c-48aa-a010-08c999a7d0d1',
-    black_back: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankBack_1788693827691.png?alt=media&token=042abb56-7970-4a26-92dc-2de88698e7a6',
-    white_front: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteFront_1788693827692.png?alt=media&token=3602273b-ef06-4dbd-8dae-809894d7e147',
-    white_back: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteBack_1788693827694.png?alt=media&token=0e6b5a90-6ffe-499d-9a91-71043c6cb636',
+    front: CLUBVISION_MOCKUP_ASSETS.tankFront,
+    back: CLUBVISION_MOCKUP_ASSETS.tankBack,
+    face: CLUBVISION_MOCKUP_ASSETS.tankFront,
+    dos: CLUBVISION_MOCKUP_ASSETS.tankBack,
+    black_front: CLUBVISION_MOCKUP_ASSETS.tankFront,
+    black_back: CLUBVISION_MOCKUP_ASSETS.tankBack,
+    white_front: CLUBVISION_MOCKUP_ASSETS.tankWhiteFront,
+    white_back: CLUBVISION_MOCKUP_ASSETS.tankWhiteBack,
   },
-  ai: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront_1788698451810.png?alt=media&token=32465cf4-7a0c-48aa-a010-08c999a7d0d1',
-  aiRemastered: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront_1788698451810.png?alt=media&token=32465cf4-7a0c-48aa-a010-08c999a7d0d1',
-  aiBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankBack_1788693827691.png?alt=media&token=042abb56-7970-4a26-92dc-2de88698e7a6',
-  aiRemasteredBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankBack_1788693827691.png?alt=media&token=042abb56-7970-4a26-92dc-2de88698e7a6',
+  ai: CLUBVISION_MOCKUP_ASSETS.tankFront,
+  aiRemastered: CLUBVISION_MOCKUP_ASSETS.tankFront,
+  aiBack: CLUBVISION_MOCKUP_ASSETS.tankBack,
+  aiRemasteredBack: CLUBVISION_MOCKUP_ASSETS.tankBack,
   garment: 'tank_top',
   description: 'Débardeur Build Your Brand Basic Tank (BYBB011) en jersey simple 100% coton, 140 g/m², coupe standard col rond sans étiquette au col.',
   badge: 'Capsule Officielle',
@@ -82,29 +112,34 @@ export const VISION_ROOM_HEAVYWEIGHT_TEE: MerchItem = {
   supplierRef: 'NX7200',
   sizes: ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'],
   color: 'Noir',
-  colors: ['Noir'],
+  colors: ['Noir', 'Blanc'],
   price: 34.99,
   currency: '€',
-  imageUrl: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront_1788693827695.png?alt=media&token=65d0698f-0070-4fc8-a827-0861153b2113',
-  frontImageUrl: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront_1788693827695.png?alt=media&token=65d0698f-0070-4fc8-a827-0861153b2113',
-  backImageUrl: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyBack_1788693827696.png?alt=media&token=5645a2aa-48ba-43ba-ad68-1916f9d238e3',
-  imageFront: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront_1788693827695.png?alt=media&token=65d0698f-0070-4fc8-a827-0861153b2113',
-  imageBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyBack_1788693827696.png?alt=media&token=5645a2aa-48ba-43ba-ad68-1916f9d238e3',
+  imageUrl: CLUBVISION_MOCKUP_ASSETS.heavyFront,
+  frontImageUrl: CLUBVISION_MOCKUP_ASSETS.heavyFront,
+  backImageUrl: CLUBVISION_MOCKUP_ASSETS.heavyBack,
+  imageFront: CLUBVISION_MOCKUP_ASSETS.heavyFront,
+  imageBack: CLUBVISION_MOCKUP_ASSETS.heavyBack,
   images: {
-    front: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront_1788693827695.png?alt=media&token=65d0698f-0070-4fc8-a827-0861153b2113',
-    back: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyBack_1788693827696.png?alt=media&token=5645a2aa-48ba-43ba-ad68-1916f9d238e3',
-    face: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront_1788693827695.png?alt=media&token=65d0698f-0070-4fc8-a827-0861153b2113',
-    dos: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyBack_1788693827696.png?alt=media&token=5645a2aa-48ba-43ba-ad68-1916f9d238e3',
+    front: CLUBVISION_MOCKUP_ASSETS.heavyFront,
+    back: CLUBVISION_MOCKUP_ASSETS.heavyBack,
+    black_front: CLUBVISION_MOCKUP_ASSETS.heavyFront,
+    black_back: CLUBVISION_MOCKUP_ASSETS.heavyBack,
+    white_front: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront,
+    white_back: CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack,
+    face: CLUBVISION_MOCKUP_ASSETS.heavyFront,
+    dos: CLUBVISION_MOCKUP_ASSETS.heavyBack,
   },
-  ai: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront_1788693827695.png?alt=media&token=65d0698f-0070-4fc8-a827-0861153b2113',
-  aiRemastered: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront_1788693827695.png?alt=media&token=65d0698f-0070-4fc8-a827-0861153b2113',
-  aiBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyBack_1788693827696.png?alt=media&token=5645a2aa-48ba-43ba-ad68-1916f9d238e3',
-  aiRemasteredBack: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyBack_1788693827696.png?alt=media&token=5645a2aa-48ba-43ba-ad68-1916f9d238e3',
+  ai: CLUBVISION_MOCKUP_ASSETS.heavyFront,
+  aiRemastered: CLUBVISION_MOCKUP_ASSETS.heavyFront,
+  aiBack: CLUBVISION_MOCKUP_ASSETS.heavyBack,
+  aiRemasteredBack: CLUBVISION_MOCKUP_ASSETS.heavyBack,
   garment: 'tshirt_oversize',
   description: 'T-Shirt Unisexe Heavyweight Next Level Apparel (NX7200) en 100% coton peigné ringspun 230 g/m², coupe oversize streetwear avec épaules tombantes et col épais.',
   badge: 'Premium Streetwear',
   isAvailable: true,
 };
+
 
 /**
  * Collection Merchandising Complète Vision Room
@@ -129,7 +164,77 @@ export interface MerchCarouselProps {
   artistName?: string;
   className?: string;
   showIndicators?: boolean;
+  enabledProductIds?: string[];
+  isPbsProfile?: boolean;
 }
+
+export const isProductEnabled = (product: any, enabledList?: string[] | null, isPbs?: boolean): boolean => {
+  if (!product) return false;
+  const pId = (product.id || '').toLowerCase();
+  const pGarment = (product.garment || product.category || '').toLowerCase();
+  const pSku = (product.sku || '').toLowerCase();
+  const pProductId = (product.productId || '').toLowerCase();
+  const pName = (product.name || product.title || '').toLowerCase();
+
+  // Strict guard for PBS: ONLY E3520 (sport t-shirt) is enabled
+  if (isPbs) {
+    return pId.includes('e3520') || pGarment === 'sport_tshirt' || pSku.includes('e3520') || product.isSport === true || pName.includes('sport') || pId.includes('sport');
+  }
+
+  if (!enabledList || enabledList.length === 0) return true;
+  if (enabledList.includes('__none__')) return false;
+
+  const lowerList = enabledList.map(id => String(id).toLowerCase());
+
+  // Direct match
+  if (lowerList.includes(pId) || (pSku && lowerList.includes(pSku)) || (pProductId && lowerList.includes(pProductId))) {
+    return true;
+  }
+
+  // Sport T-Shirt / E3520
+  if (pGarment === 'sport_tshirt' || pId === 'e3520' || product.isSport) {
+    return lowerList.some(id => 
+      id.includes('e3520') || 
+      id.includes('sportt') || 
+      id.includes('sport_tshirt') ||
+      id === 'prod_signaid_sportt_poly_mtzmb4zr'
+    );
+  }
+
+  // Standard T-Shirt
+  if (pGarment === 'tshirt' || pGarment === 'tshirt_basic') {
+    return lowerList.some(id => 
+      (id === 'tshirt' || id === 'tfront' || id === 'tback' || id === 'tshirt_front' || id === 'tshirt_back' || id.includes('tshirt_cotton') || id.includes('tshirt_basic') || id.includes('jhk170') || id === 'prod_tshirt') &&
+      !id.includes('sport') && !id.includes('e3520')
+    );
+  }
+
+  if (pGarment === 'polo') {
+    return lowerList.some(id => id === 'polo' || id === 'pfront' || id === 'pback' || id.includes('polo') || id.includes('jhk510'));
+  }
+
+  if (pGarment === 'sweat' || pGarment === 'hoodie') {
+    return lowerList.some(id => id === 'hoodie' || id === 'sweat' || id === 'hfront' || id === 'hback' || id.includes('hoodie') || id.includes('sweat') || id.includes('jhk421'));
+  }
+
+  if (pGarment === 'tank_top') {
+    const isWhite = product.color === 'Blanc' || pId.includes('white');
+    if (isWhite) {
+      return lowerList.some(id => id === 'tank_top_white' || id === 'tankwhitefront' || id === 'tankwhiteback' || (id.includes('tank') && (id.includes('white') || id.includes('blanc'))));
+    }
+    return lowerList.some(id => (id === 'tank_top' || id === 'tankfront' || id === 'tankback' || id.includes('tank')) && !id.includes('white') && !id.includes('blanc'));
+  }
+
+  if (pGarment === 'tshirt_oversize') {
+    const isWhite = product.color === 'Blanc' || pId.includes('white');
+    if (isWhite) {
+      return lowerList.some(id => id === 'tshirt_oversize_white' || id === 'heavywhitefront' || id === 'heavywhiteback' || ((id.includes('oversize') || id.includes('heavy')) && (id.includes('white') || id.includes('blanc'))));
+    }
+    return lowerList.some(id => (id === 'tshirt_oversize' || id === 'heavyfront' || id === 'heavyback' || id.includes('oversize') || id.includes('heavy')) && !id.includes('white') && !id.includes('blanc'));
+  }
+
+  return lowerList.includes(pGarment);
+};
 
 /**
  * Placeholder SVG de secours élégant pour éviter tout affichage brisé si une image échoue au chargement.
@@ -198,7 +303,9 @@ export function MerchProductCard({
   const [selectedColor, setSelectedColor] = useState<string>(product.color || product.colors?.[0] || 'Noir');
   const [currentView, setCurrentView] = useState<'front' | 'back'>('front');
   const [imgError, setImgError] = useState<boolean>(false);
+  const [imageLoaded, setImageLoaded] = useState<boolean>(false);
   const [isAddedRecently, setIsAddedRecently] = useState<boolean>(false);
+  const imgRef = useRef<HTMLImageElement | null>(null);
 
   const isCard = product.garment?.includes('card');
   const isPolo = product.garment?.includes('polo');
@@ -210,7 +317,9 @@ export function MerchProductCard({
     product.color?.toLowerCase().includes('white') ||
     product.id?.toLowerCase().includes('white') ||
     product.name?.toLowerCase().includes('blanc') ||
-    product.title?.toLowerCase().includes('blanc')
+    product.title?.toLowerCase().includes('blanc') ||
+    selectedColor?.toLowerCase().includes('blanc') ||
+    selectedColor?.toLowerCase().includes('white')
   );
 
   const defaultFrontUrl = isPolo
@@ -220,9 +329,9 @@ export function MerchProductCard({
       : isCard
         ? '/assets/card-base.svg'
         : isTank
-          ? '/assets/tank-black-BYBB011.png'
+          ? (isWhite ? '/merch/visionroom/tank-white-front.png' : '/assets/tank-black-BYBB011.png')
           : isOversize
-            ? '/assets/tshirt-black-NX7200.png'
+            ? (isWhite ? '/assets/tshirt-white-NX7200.png' : '/assets/tshirt-black-NX7200.png')
             : '/assets/models/male_tshirt_front.png';
 
   const defaultBackUrl = isPolo
@@ -230,15 +339,20 @@ export function MerchProductCard({
     : isHoodie
       ? '/assets/models/male_hoodie_back.png'
       : isTank
-        ? '/assets/tank-black-BYBB011-dos.png'
+        ? (isWhite ? '/merch/visionroom/tank-white-back.png' : '/assets/tank-black-BYBB011-dos.png')
         : isOversize
-          ? '/assets/tshirt-black-NX7200-dos.png'
+          ? (isWhite ? '/assets/tshirt-white-NX7200-dos.png' : '/assets/tshirt-black-NX7200-dos.png')
           : '/assets/models/male_tshirt_back.png';
+
+  const item = product as any;
 
   const isBatSnapshot = (url?: string | null) => {
     if (!url || typeof url !== 'string') return false;
     const l = url.toLowerCase();
-    return l.includes('_snapshot_') || l.includes('/snapshot') || l.includes('clubvision_tshirt_front') || l.includes('clubvision_polo_front') || l.includes('clubvision_hoodie_front') || l.includes('clubvision_tshirt_back') || l.includes('clubvision_polo_back') || l.includes('clubvision_hoodie_back');
+    return l.includes('_snapshot_') || l.includes('/snapshot') ||
+      l.includes('clubvision_tshirt_front') || l.includes('clubvision_polo_front') || l.includes('clubvision_hoodie_front') ||
+      l.includes('clubvision_tshirt_back') || l.includes('clubvision_polo_back') || l.includes('clubvision_hoodie_back') ||
+      l.startsWith('/assets/polo-') || l.startsWith('/assets/tshirt-') || l.startsWith('/assets/hoodie-');
   };
 
   const isVision = Boolean(
@@ -247,87 +361,80 @@ export function MerchProductCard({
     product.name?.toLowerCase().includes('vision')
   );
 
-  const clubVisionStudioFront = isVision
-    ? (isPolo
-      ? 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FpFront_1788693827686.png?alt=media&token=c94713f8-4ca2-4cdb-b959-82d5ae6d2c4b'
-      : (isHoodie
-        ? 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FhFront_1788693827689.png?alt=media&token=f1affb8b-0f66-4f8e-899b-b1da4c825f8c'
-        : (isTank
-          ? (isWhite ? 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteFront_1788693827692.png?alt=media&token=3602273b-ef06-4dbd-8dae-809894d7e147' : 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront_1788698451810.png?alt=media&token=32465cf4-7a0c-48aa-a010-08c999a7d0d1')
-          : (isOversize
-            ? 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront_1788693827695.png?alt=media&token=65d0698f-0070-4fc8-a827-0861153b2113'
-            : 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtFront_1788693827681.png?alt=media&token=351044ba-98e5-4139-b194-e182b80fb846'))))
-    : null;
-
-  const clubVisionStudioBack = isVision
-    ? (isPolo
-      ? 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FpBack_1788693827687.png?alt=media&token=cdc6ba8f-418a-4ea7-9629-523e3f607012'
-      : (isHoodie
-        ? 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FhBack_1788693827690.png?alt=media&token=ee00ba8d-0a66-45c6-856c-fe6a4b122320'
-        : (isTank
-          ? (isWhite ? 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteBack_1788693827694.png?alt=media&token=0e6b5a90-6ffe-499d-9a91-71043c6cb636' : 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankBack_1788693827691.png?alt=media&token=042abb56-7970-4a26-92dc-2de88698e7a6')
-          : (isOversize
-            ? 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyBack_1788693827696.png?alt=media&token=5645a2aa-48ba-43ba-ad68-1916f9d238e3'
-            : 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtBack_1788693827685.png?alt=media&token=43c3717a-2294-4098-9b61-24dfb79df8c0'))))
-    : null;
+  const isBlackUrlForWhite = (url?: string | null) => {
+    if (!isWhite || !url || typeof url !== 'string') return false;
+    const l = url.toLowerCase();
+    // Do not flag white variants that happen to contain the letters
+    if (l.includes('white') || l.includes('-wht') || l.includes('blanc')) return false;
+    return l.includes('heavyfront') || l.includes('heavyback') ||
+      l.includes('pfront') || l.includes('pback') ||
+      l.includes('tfront') || l.includes('tback') ||
+      l.includes('hfront') || l.includes('hback') ||
+      l.includes('tankfront') || l.includes('tankback') ||
+      l.includes('nx7200-blk') || l.includes('jhk510-blk') || l.includes('jhk170-blk') || l.includes('jhk421-blk') || l.includes('bybb011-blk');
+  };
 
   // Résolution prioritaire absolue de l'image (stricte conformité audit : Studio > AI > Front > ImageUrl > Mechanical > Base > Static Fallback)
-  const item = product as any;
   const safeUrl = (v: any): string | null => (typeof v === 'string' && v.trim() !== '') ? v : null;
   const isValidUrl = (v: any): string | null => {
     const s = safeUrl(v);
-    return (s && !isBatSnapshot(s)) ? s : null;
+    if (!s) return null;
+    if (isBatSnapshot(s)) return null;
+    if (isBlackUrlForWhite(s)) return null;
+    return s;
   };
 
   const rawFrontCandidate = (
     safeUrl(item.imageStudio) ||
+    (isWhite ? (isValidUrl(item.images?.white_front) || isValidUrl(item.white_front) || isValidUrl(item.heavyWhiteFront) || isValidUrl(item.heavy_white_front) || isValidUrl(item.pWhiteFront) || isValidUrl(item.tWhiteFront)) : null) ||
     isValidUrl(item.aiRemastered) ||
     isValidUrl(item.ai) ||
+    isValidUrl(item.frontImage) ||
     isValidUrl(item.frontImageUrl) ||
     isValidUrl(item.imageFront) ||
     isValidUrl(item.imageUrl) ||
     safeUrl(item.realAiSnapshotUrl) ||
+    (isWhite ? (safeUrl(item.images?.white_front) || safeUrl(item.white_front) || safeUrl(item.heavyWhiteFront) || safeUrl(item.heavy_white_front)) : null) ||
     safeUrl(item.images?.front) ||
     safeUrl(item.images?.face) ||
     safeUrl(item.images?.recto) ||
     safeUrl(item.aiRemastered) ||
     safeUrl(item.ai) ||
+    safeUrl(item.frontImage) ||
     safeUrl(item.frontImageUrl) ||
     safeUrl(item.imageFront) ||
     safeUrl(item.imageUrl) ||
-    clubVisionStudioFront ||
     safeUrl(item.mechanical) ||
     safeUrl(item.base)
   );
-  const frontImageCandidate = (isBatSnapshot(rawFrontCandidate) && clubVisionStudioFront)
-    ? clubVisionStudioFront
-    : (isBatSnapshot(rawFrontCandidate) ? null : rawFrontCandidate);
+  const frontImageCandidate = isBatSnapshot(rawFrontCandidate) ? null : rawFrontCandidate;
 
   const rawBackCandidate = (
     safeUrl(item.imageStudioBack) ||
+    (isWhite ? (isValidUrl(item.images?.white_back) || isValidUrl(item.white_back) || isValidUrl(item.heavyWhiteBack) || isValidUrl(item.heavy_white_back) || isValidUrl(item.pWhiteBack) || isValidUrl(item.tWhiteBack)) : null) ||
     isValidUrl(item.aiRemasteredBack) ||
     isValidUrl(item.aiBack) ||
     (currentView === 'back' ? isValidUrl(item.aiRemastered) : null) ||
     (currentView === 'back' ? isValidUrl(item.ai) : null) ||
+    isValidUrl(item.backImage) ||
     isValidUrl(item.backImageUrl) ||
     isValidUrl(item.imageBack) ||
+    (isWhite ? (safeUrl(item.images?.white_back) || safeUrl(item.white_back) || safeUrl(item.heavyWhiteBack) || safeUrl(item.heavy_white_back)) : null) ||
     safeUrl(item.images?.back) ||
     safeUrl(item.images?.dos) ||
     safeUrl(item.images?.verso) ||
     safeUrl(item.aiRemasteredBack) ||
     safeUrl(item.aiBack) ||
+    safeUrl(item.backImage) ||
     safeUrl(item.backImageUrl) ||
     safeUrl(item.imageBack) ||
     safeUrl(item.imageUrl) ||
-    clubVisionStudioBack ||
     safeUrl(item.mechanicalBack) ||
     safeUrl(item.baseBack) ||
     safeUrl(item.mechanical) ||
     safeUrl(item.base)
   );
-  const backImageCandidate = (isBatSnapshot(rawBackCandidate) && clubVisionStudioBack)
-    ? clubVisionStudioBack
-    : (isBatSnapshot(rawBackCandidate) ? null : rawBackCandidate);
+  const backImageCandidate = isBatSnapshot(rawBackCandidate) ? null : rawBackCandidate;
 
   const hasBackImage = !isCard && Boolean(
     (typeof backImageCandidate === 'string' && backImageCandidate.trim() !== '') ||
@@ -338,6 +445,18 @@ export function MerchProductCard({
   const currentImg = activeView === 'back'
     ? (typeof backImageCandidate === 'string' && backImageCandidate.trim() ? backImageCandidate : defaultBackUrl)
     : (typeof frontImageCandidate === 'string' && frontImageCandidate.trim() ? frontImageCandidate : defaultFrontUrl);
+
+  const effectiveImg = useMemo(() => optimizeMerchImage(currentImg), [currentImg]);
+
+  useEffect(() => {
+    if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+      setImageLoaded(true);
+      setImgError(false);
+    } else {
+      setImageLoaded(false);
+      setImgError(false);
+    }
+  }, [effectiveImg]);
 
   const isAiRender = activeView === 'back'
     ? Boolean(typeof backImageCandidate === 'string' && !isBatSnapshot(backImageCandidate) && (backImageCandidate.includes('_ai_') || backImageCandidate.includes('studio') || backImageCandidate.includes('firebasestorage') || backImageCandidate.includes('btp_mockups') || (typeof item.aiRemasteredBack === 'string') || (typeof item.aiBack === 'string')))
@@ -383,7 +502,7 @@ export function MerchProductCard({
     <article
       data-carousel-item
       onClick={onCardClick}
-      className={`shrink-0 snap-always snap-center w-[280px] min-w-[280px] max-w-[280px] flex flex-col rounded-2xl overflow-hidden transition-all duration-300 border select-none group ${isActive
+      className={`shrink-0 snap-always snap-center w-[280px] min-w-[280px] max-w-[280px] flex flex-col rounded-2xl overflow-hidden transition-all duration-300 border select-none group touch-manipulation ${isActive
           ? 'scale-100 opacity-100 shadow-xl'
           : 'scale-95 opacity-70 cursor-pointer hover:opacity-90'
         } ${isLightMode
@@ -391,6 +510,7 @@ export function MerchProductCard({
           : 'bg-[#0f0f12] border-white/10'
         }`}
       style={{
+        touchAction: 'pan-x pan-y',
         scrollSnapStop: 'always',
         boxShadow: isLightMode
           ? isActive ? '0 12px 32px -4px rgba(0, 0, 0, 0.12)' : '0 4px 12px -2px rgba(0, 0, 0, 0.05)'
@@ -399,16 +519,17 @@ export function MerchProductCard({
     >
       {/* CADRE IMAGE AVEC RATIO CARRÉ PARFAIT & FOND STUDIO */}
       <div
-        className={`relative w-full aspect-square flex items-center justify-center overflow-hidden transition-colors ${isLightMode ? 'bg-slate-100/80' : 'bg-[#16161a]'
+        className={`relative w-full aspect-square flex items-center justify-center overflow-hidden transition-colors touch-manipulation ${isLightMode ? 'bg-slate-100/80' : 'bg-[#16161a]'
           }`}
+        style={{ touchAction: 'pan-x pan-y' }}
       >
         {/* BADGE OFFICIEL / CATÉGORIE SI DISPONIBLE */}
-        {product.badge && (
+        {product.badge && product.badge.trim().toUpperCase() !== 'PACK' && (
           <div
             className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider text-white shadow-md backdrop-blur-md"
             style={{ backgroundColor: accentColor }}
           >
-            {product.badge}
+            {product.badge.replace(/\bpack\b/gi, '').trim()}
           </div>
         )}
 
@@ -450,16 +571,37 @@ export function MerchProductCard({
           </div>
         )}
 
-        {/* CONTENEUR DE L'IMAGE AVEC GESTION FALLBACK ONERROR */}
-        <div className="relative w-full h-full flex items-center justify-center">
-          {!imgError && currentImg ? (
+        {/* CONTENEUR DE L'IMAGE AVEC GESTION FALLBACK ONERROR & SQUELETTE IMMÉDIAT */}
+        <div className="relative w-full h-full flex items-center justify-center touch-manipulation" style={{ touchAction: 'pan-x pan-y' }}>
+          {/* SQUELETTE PLACEHOLDER CSS IMMÉDIAT (FOND GRIS AVEC ANIMATION PULSE) DÈS LE 1ER MILLIÈME DE SECONDE */}
+          {!imageLoaded && !imgError && (
+            <div
+              className={`absolute inset-0 z-0 flex items-center justify-center animate-pulse transition-opacity duration-300 ${
+                isLightMode ? 'bg-slate-200/90' : 'bg-[#18181f]'
+              }`}
+              aria-hidden="true"
+            >
+              <div className={`w-14 h-14 rounded-2xl ${isLightMode ? 'bg-slate-300/80' : 'bg-white/5'} animate-pulse`} />
+            </div>
+          )}
+
+          {!imgError && effectiveImg ? (
             <img
-              src={currentImg}
+              ref={(node) => {
+                imgRef.current = node;
+                if (node && node.complete && node.naturalWidth > 0 && !imageLoaded) {
+                  setImageLoaded(true);
+                }
+              }}
+              src={withCacheBust(effectiveImg)}
               alt={`${product.name} - ${artistName || 'Merchandising'}`}
-              loading="lazy"
+              loading={isActive ? "eager" : "lazy"}
               decoding="async"
+              {...({ fetchpriority: isActive ? "high" : undefined } as any)}
+              onLoad={() => setImageLoaded(true)}
               onError={() => setImgError(true)}
-              className="w-full h-full object-cover object-center transition-transform duration-300 group-hover:scale-105"
+              className="w-full h-full object-cover object-center transition-all duration-300 group-hover:scale-105 touch-manipulation relative z-10"
+              style={{ touchAction: 'pan-x pan-y' }}
             />
           ) : (
             <FallbackProductImage
@@ -613,13 +755,33 @@ export default function MerchCarousel({
   artistName,
   className = '',
   showIndicators = true,
+  enabledProductIds,
+  isPbsProfile,
 }: MerchCarouselProps) {
+  const isPbs = isPbsProfile || (artistName || '').toLowerCase().trim() === 'pbs';
+  const isVision = (artistName || '').toLowerCase().includes('vision');
+
+  const visibleItems = useMemo(() => {
+    let result = items || [];
+    if (isPbs || (enabledProductIds && enabledProductIds.length > 0)) {
+      result = result.filter(item => isProductEnabled(item, enabledProductIds, isPbs));
+    }
+    // Anti-contamination safeguard: Drop foreign Club Vision Room assets on other brands
+    if (!isVision) {
+      result = result.filter(item => {
+        const s = ((item.name || '') + ' ' + (item.title || '') + ' ' + (item.imageUrl || '') + ' ' + (item.frontImageUrl || '') + ' ' + (item.id || '')).toLowerCase();
+        return !s.includes('clubvision') && !s.includes('1787803061043') && !s.includes('heavyfront_fixed');
+      });
+    }
+    return result;
+  }, [items, enabledProductIds, isPbs, isVision]);
+
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isJumpingRef = useRef<boolean>(false);
   const snapLockTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const itemCount = items.length;
+  const itemCount = visibleItems.length;
 
-  const [activeVirtualIndex, setActiveVirtualIndex] = useState<number>(itemCount);
+  const [activeVirtualIndex, setActiveVirtualIndex] = useState<number>(itemCount > 1 ? itemCount : 0);
   const [activeIndex, setActiveIndex] = useState<number>(0);
 
   // Duplication virtuelle pour boucle infinie : 3 ensembles de cartes (gauche, milieu, droite)
@@ -631,20 +793,20 @@ export default function MerchCarousel({
   const virtualItems = useMemo(() => {
     if (itemCount === 0) return [];
     if (itemCount === 1) {
-      return [{ item: items[0], virtualKey: `single-${items[0].id}`, originalIndex: 0 }];
+      return [{ item: visibleItems[0], virtualKey: `single-${visibleItems[0].id}`, originalIndex: 0 }];
     }
     const list = [];
     for (let r = 0; r < repeatCount; r++) {
       for (let i = 0; i < itemCount; i++) {
         list.push({
-          item: items[i],
-          virtualKey: `rep-${r}-${items[i].id}-${i}`,
+          item: visibleItems[i],
+          virtualKey: `rep-${r}-${visibleItems[i].id}-${i}`,
           originalIndex: i,
         });
       }
     }
     return list;
-  }, [items, itemCount, repeatCount]);
+  }, [visibleItems, itemCount, repeatCount]);
 
   // Initialisation du scroll au centre exact (premier élément de l'ensemble central)
   const initScrollPosition = useCallback(() => {
@@ -850,7 +1012,7 @@ export default function MerchCarousel({
     }
   };
 
-  if (!items || items.length === 0) {
+  if (!visibleItems || visibleItems.length === 0) {
     return null;
   }
 
@@ -939,8 +1101,10 @@ export default function MerchCarousel({
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="relative flex w-full overflow-x-auto scroll-smooth snap-x snap-mandatory gap-4 py-2 overscroll-x-contain touch-pan-x [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+        className="relative flex w-full overflow-x-auto scroll-smooth snap-x snap-mandatory gap-4 py-2 overscroll-x-contain touch-manipulation [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
         style={{
+          touchAction: 'pan-x pan-y',
+          overscrollBehaviorX: 'contain',
           WebkitOverflowScrolling: 'touch',
           scrollSnapType: 'x mandatory',
           paddingLeft: 'calc(50% - 140px)',
@@ -969,7 +1133,7 @@ export default function MerchCarousel({
       {/* INDICATEURS DE POSITION (PAGES/DOTS COMPACTS) */}
       {showIndicators && itemCount > 1 && (
         <div className="flex sm:hidden items-center justify-center gap-1.5 mt-3 px-4">
-          {items.map((_, idx) => (
+          {visibleItems.map((_, idx) => (
             <button
               key={idx}
               type="button"

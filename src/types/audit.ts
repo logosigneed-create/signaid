@@ -25,7 +25,8 @@ export interface MockupItem {
     aiRemastered: string | null;
     isGenerating: boolean;
     view: 'front' | 'back';
-    garment: 'tshirt' | 'tshirt_basic' | 'polo' | 'sweat' | 'tank_top' | 'tshirt_oversize' | 'tshirt_bicolore' | 'veste' | 'business_card' | 'banner';
+    garment: 'tshirt' | 'tshirt_basic' | 'polo' | 'sweat' | 'hoodie' | 'tank_top' | 'tshirt_oversize' | 'tshirt_bicolore' | 'veste' | 'business_card' | 'banner';
+    placement?: 'chest_left' | 'center' | 'back' | string;
     mechanical?: string | null;
     model?: string;
     selected: boolean;
@@ -41,6 +42,9 @@ export interface MockupItem {
 export interface BtpLogo {
     id: 'A' | 'B';
     original: string | null;
+    rawOriginal?: string | null;
+    noBg?: string | null;
+    isBgRemoved?: boolean;
     adapted: string | null;
     remastered: string | null;
     activeUrl?: string | null;

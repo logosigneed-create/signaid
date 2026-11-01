@@ -264,7 +264,7 @@ export default function PreviewPage() {
                 packs.push({
                     id: 'tshirt_basic',
                     garment: 'tshirt_basic',
-                    name: 'Pack T-shirt Basic',
+                    name: 'T-shirt Basic',
                     description: 'T-shirt JHK 150 - Coupe Standard',
                     unitPrice: 25,
                     isCard: false,
@@ -280,7 +280,7 @@ export default function PreviewPage() {
                 packs.push({
                     id: 'polo',
                     garment: 'polo',
-                    name: 'Pack Polo Premium',
+                    name: 'Polo Premium',
                     description: 'Polo JHK 510 Premium - Coupe Ajustée Professionnelle',
                     unitPrice: 35,
                     isCard: false,
@@ -296,7 +296,7 @@ export default function PreviewPage() {
                 packs.push({
                     id: 'sweat',
                     garment: 'sweat',
-                    name: 'Pack Hoodie Protection',
+                    name: 'Hoodie Protection',
                     description: 'Hoodie Premium Renforcé - Doublure Thermique Active',
                     unitPrice: 45,
                     isCard: false,
@@ -312,7 +312,7 @@ export default function PreviewPage() {
                 packs.push({
                     id: 'tshirt',
                     garment: 'tshirt',
-                    name: 'Pack T-shirt Premium',
+                    name: 'T-shirt Premium',
                     description: 'T-shirt JHK 170 Premium - Coupe Moderne',
                     unitPrice: 30,
                     isCard: false,
@@ -585,14 +585,14 @@ export default function PreviewPage() {
                                 const hasBack = !!(pack.backStudio || pack.backBat);
 
                                 return (
-                                    <div key={pack.id} className={`border ${isLightMode ? 'bg-white border-gray-200 shadow-lg' : 'bg-zinc-900/40 border-zinc-800'} overflow-hidden flex flex-col group transition-all duration-300 hover:border-orange-600/50 rounded-2xl`}>
-                                        <div className="relative aspect-square bg-zinc-950/20 border-b border-zinc-800/20 p-4 flex items-center justify-center overflow-hidden">
-                                            <img src={itemImg} className="max-w-full max-h-full object-contain transition-transform duration-500 group-hover:scale-105" alt={pack.name} />
+                                    <div key={pack.id} className={`border ${isLightMode ? 'bg-white border-gray-200 shadow-lg' : 'bg-zinc-900/40 border-zinc-800'} overflow-hidden flex flex-col group transition-all duration-300 hover:border-orange-600/50 rounded-2xl touch-pan-y`} style={{ touchAction: 'pan-y' }}>
+                                        <div className="relative aspect-square bg-zinc-950/20 border-b border-zinc-800/20 p-4 flex items-center justify-center overflow-hidden touch-pan-y" style={{ touchAction: 'pan-y' }}>
+                                            <img src={itemImg} className="max-w-full max-h-full object-contain transition-transform duration-500 group-hover:scale-105 touch-pan-y" style={{ touchAction: 'pan-y' }} alt={pack.name} />
                                             
-                                            {/* Controls (Studio vs BAT & View) */}
-                                            <div className="absolute bottom-3 right-3 flex flex-wrap gap-2 justify-end z-10">
-                                                {/* FACE / DOS TOGGLE */}
-                                                {hasBack && (
+                                            {/* Controls (View) */}
+                                            {hasBack && (
+                                                <div className="absolute bottom-3 right-3 flex flex-wrap gap-2 justify-end z-10">
+                                                    {/* FACE / DOS TOGGLE */}
                                                     <button 
                                                         type="button"
                                                         onClick={() => setCardViews(prev => ({ ...prev, [pack.id]: view === 'front' ? 'back' : 'front' }))}
@@ -601,31 +601,14 @@ export default function PreviewPage() {
                                                         <RefreshCw size={10} className={view === 'back' ? 'rotate-180 transition-transform' : ''} />
                                                         {view === 'front' ? 'Verso' : 'Face'}
                                                     </button>
-                                                )}
-
-                                                {/* STUDIO / BAT TOGGLE */}
-                                                <button 
-                                                    type="button"
-                                                    onClick={() => setDisplayModes(prev => ({ ...prev, [pack.id]: mode === 'studio' ? 'bat' : 'studio' }))}
-                                                    className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest border transition-all flex items-center gap-1.5 backdrop-blur-md ${mode === 'bat' ? 'bg-orange-600 text-black border-orange-500 shadow-lg font-extrabold' : 'bg-black/80 text-white border-white/20 hover:border-white'}`}
-                                                >
-                                                    {mode === 'studio' ? (
-                                                        <>
-                                                            <Shield size={10} /> Voir BAT
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <Sparkles size={10} /> Mode Studio
-                                                        </>
-                                                    )}
-                                                </button>
-                                            </div>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="p-6 flex-1 flex flex-col justify-between space-y-6">
                                             <div>
                                                 <div className="flex justify-between items-start gap-2">
-                                                    <h3 className="text-xl font-black italic tracking-tight uppercase leading-none">{pack.name}</h3>
+                                                    <h3 className="text-xl font-black italic tracking-tight uppercase leading-none">{pack.name.replace(/^pack\s+/i, '')}</h3>
                                                     <span className="text-orange-500 font-mono font-black text-sm whitespace-nowrap">
                                                         {pack.isCard ? 'Prix au volume' : `${pack.unitPrice} € HT/u`}
                                                     </span>
@@ -703,7 +686,7 @@ export default function PreviewPage() {
                                     return (
                                         <div key={pack.id} className="flex justify-between items-start text-xs border-b border-zinc-800/10 pb-3">
                                             <div className="text-left space-y-1">
-                                                <p className="font-black uppercase">{pack.name}</p>
+                                                <p className="font-black uppercase">{pack.name.replace(/^pack\s+/i, '')}</p>
                                                 <p className="text-[10px] text-zinc-500 font-mono font-bold leading-none">{qtyStr}</p>
                                             </div>
                                             <span className="font-mono font-black text-orange-500">{calculatePackTotal(pack).toFixed(2)} €</span>

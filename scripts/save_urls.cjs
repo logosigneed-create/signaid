@@ -1,0 +1,12 @@
+﻿const fs = require('fs');
+const urls = {
+  "btp_mockups/2000theparty/web/tFront.png": "https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FtFront.png?alt=media&token=e61c81aa-e34e-4d0e-a6f9-f9c9cf820d60",
+  "btp_mockups/2000theparty/web/tBack.png": "https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FtBack.png?alt=media&token=e1ed941d-2919-4599-aa93-1cb08eee05e1",
+  "btp_mockups/2000theparty/web/pFront.png": "https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FpFront.png?alt=media&token=5d211d11-85e0-464d-85ed-1c787d17de25",
+  "btp_mockups/2000theparty/web/pBack.png": "https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FpBack.png?alt=media&token=991a8e51-cdd5-4d78-8c1e-677d27fb8af9",
+  "btp_mockups/2000theparty/web/hFront.png": "https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FhFront.png?alt=media&token=14255116-e180-4c3a-80b3-e445b021fff4",
+  "btp_mockups/2000theparty/web/hBack.png": "https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2FhBack.png?alt=media&token=7126610f-3f0b-4d55-8a6f-3c149a3a5ba7",
+  "btp_mockups/2000theparty/web/logo_A_active.png": "https://firebasestorage.googleapis.com/v0/b/signaid-prod.firebasestorage.app/o/btp_mockups%2F2000theparty%2Fweb%2Flogo_A_active.png?alt=media&token=33bc2147-0ae9-4e03-9de3-f6118e31376e"
+};
+fs.writeFileSync('scripts/uploaded_2000theparty_urls.json', JSON.stringify(urls, null, 2));
+console.log('Saved uploaded URLs to scripts/uploaded_2000theparty_urls.json');

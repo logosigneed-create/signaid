@@ -15,7 +15,7 @@ const AdminStylist = (() => {
     let aspectRatio = 1;
 
     const config = {
-        serverUrl: 'http://localhost:3000/update-style',
+        serverUrl: 'http://localhost:3847/update-style',
         mobileBreakpoint: 768
     };
 

@@ -1,10 +1,43 @@
 import { useEffect, useState } from "react";
 import { auth, db } from "../firebaseConfig";
-import { deleteDoc, doc } from "firebase/firestore";
+import { deleteDoc, doc, updateDoc } from "firebase/firestore";
 
-export default function AdminQuickBar({ uid, companyName }: { uid?: string; companyName?: string }) {
+export default function AdminQuickBar({ 
+  uid, 
+  companyName,
+  currentTheme = 'auto',
+  onThemeChange
+}: { 
+  uid?: string; 
+  companyName?: string;
+  currentTheme?: 'dark' | 'light' | 'auto';
+  onThemeChange?: (newTheme: 'dark' | 'light' | 'auto') => void;
+}) {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [hasAdminContext, setHasAdminContext] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [activeTheme, setActiveTheme] = useState<'dark' | 'light' | 'auto'>(currentTheme || 'auto');
+  const [isUpdatingTheme, setIsUpdatingTheme] = useState(false);
+
+  useEffect(() => {
+    if (currentTheme) setActiveTheme(currentTheme);
+  }, [currentTheme]);
+
+  useEffect(() => {
+    const checkContext = () => {
+      if (typeof window === 'undefined') return false;
+      const params = new URLSearchParams(window.location.search);
+      const hasPreviewParam = params.get('preview') === 'admin' || params.has('admin') || params.get('mode') === 'admin';
+      const isFromVitrineAdmin = typeof document !== 'undefined' && (
+        document.referrer.includes('/vitrine-admin') ||
+        document.referrer.includes('/admin') ||
+        window.location.pathname.startsWith('/vitrine-admin')
+      );
+      return Boolean(hasPreviewParam || isFromVitrineAdmin);
+    };
+
+    setHasAdminContext(checkContext());
+  }, []);
 
   useEffect(() => {
     const checkIsAdmin = (user: any) => {
@@ -21,7 +54,32 @@ export default function AdminQuickBar({ uid, companyName }: { uid?: string; comp
     return () => unsub();
   }, []);
 
-  if (!isAdmin || !uid) return null;
+  // La barre ne s'affiche JAMAIS sur les URLs publiques directes pour les visiteurs ou prospects.
+  // Elle ne doit s'afficher QUE si :
+  // 1. L'utilisateur est authentifié avec des droits admin
+  // ET
+  // 2. L'URL contient explicitement '?preview=admin' OU provient de '/vitrine-admin'.
+  if (!isAdmin || !hasAdminContext || !uid) return null;
+
+  const handleToggleTheme = async () => {
+    const nextTheme: 'dark' | 'light' | 'auto' = 
+      activeTheme === 'auto' ? 'light' : (activeTheme === 'light' ? 'dark' : 'auto');
+    
+    setActiveTheme(nextTheme);
+    onThemeChange?.(nextTheme);
+    setIsUpdatingTheme(true);
+    try {
+      await updateDoc(doc(db, "SiteConfigs", uid), { theme: nextTheme });
+      try {
+        sessionStorage.setItem(`signaid_theme_${uid}`, nextTheme);
+        localStorage.setItem(`signaid_theme_${uid}`, nextTheme);
+      } catch {}
+    } catch (e) {
+      console.warn("Could not save theme change to Firestore:", e);
+    } finally {
+      setIsUpdatingTheme(false);
+    }
+  };
 
   const handleDelete = async () => {
     if (window.confirm(`⚠️ SUPPRESSION ADMINISTRATEUR\n\nVoulez-vous vraiment supprimer définitivement le profil prospect "${companyName || uid}" (${uid}) ?\nCette action est irréversible.`)) {
@@ -72,6 +130,28 @@ export default function AdminQuickBar({ uid, companyName }: { uid?: string; comp
         <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444' }} />
         <span>ADMIN : {companyName || uid}</span>
       </span>
+
+      <button
+        onClick={handleToggleTheme}
+        disabled={isUpdatingTheme}
+        title="Basculez le thème du profil : Auto (Jour/Nuit selon l'heure de Paris), Clair ou Sombre permanent."
+        style={{
+          background: activeTheme === 'light' ? 'rgba(234, 179, 8, 0.25)' : (activeTheme === 'dark' ? 'rgba(99, 102, 241, 0.25)' : 'rgba(255, 255, 255, 0.12)'),
+          border: activeTheme === 'light' ? '1px solid rgba(234, 179, 8, 0.6)' : (activeTheme === 'dark' ? '1px solid rgba(99, 102, 241, 0.6)' : '1px solid rgba(255, 255, 255, 0.25)'),
+          color: activeTheme === 'light' ? '#fde047' : (activeTheme === 'dark' ? '#a5b4fc' : '#ffffff'),
+          padding: '0.4rem 0.9rem',
+          borderRadius: '100px',
+          fontWeight: 800,
+          cursor: 'pointer',
+          fontSize: '0.78rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.35rem',
+          transition: 'all 0.2s ease'
+        }}
+      >
+        <span>{activeTheme === 'light' ? '☀️ Mode Clair' : (activeTheme === 'dark' ? '🌙 Mode Sombre' : '🔄 Thème Auto')}</span>
+      </button>
 
       <button
         onClick={() => window.location.href = `/vitrine-admin?uid=${uid}`}

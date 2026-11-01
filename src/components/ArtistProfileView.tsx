@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs, limit } from 'firebase/firestore';
 import { db, auth } from '../firebaseConfig';
 import AdminQuickBar from './AdminQuickBar';
 import { processLogoImage } from '../utils/logoProcessor';
-import MerchCarousel, { VISION_ROOM_MERCH_COLLECTION, VISION_ROOM_BASIC_TANK, VISION_ROOM_HEAVYWEIGHT_TEE } from './MerchCarousel';
-import { SEED_PROFILES } from '../lib/localProfiles';
+import { sanitizeHtml, stripHtmlTags } from '../utils/helpers';
+import MerchCarousel, { VISION_ROOM_MERCH_COLLECTION, VISION_ROOM_BASIC_TANK, VISION_ROOM_HEAVYWEIGHT_TEE, isProductEnabled } from './MerchCarousel';
+import { SEED_PROFILES, CLUBVISION_MOCKUP_ASSETS, PBS_MOCKUP_ASSETS, ensureLocalProfileSeeded, withCacheBust } from '../lib/localProfiles';
 
 export interface ProfileLink {
   id: string;
@@ -25,6 +26,9 @@ export interface ArtistProfile {
   activitySector?: string;
   slug: string;
   logoUrl?: string;
+  avatarUrl?: string;
+  logo?: string;
+  imageUrl?: string;
   logoAdaptedUrl?: string;
   logoA?: string;
   logoB?: string;
@@ -32,6 +36,8 @@ export interface ArtistProfile {
   logoPlacements?: Record<string, 'A' | 'B'>;
   livePhotoUrl?: string;
   livePhotoUrls?: string[];
+  coverUrl?: string | null;
+  bannerUrl?: string | null;
   presentation?: string;
   photoDescription?: string;
   contactEmail?: string;
@@ -52,6 +58,7 @@ export interface ArtistProfile {
   coverPositionX?: number;
   enableLiveWidget?: boolean;
   liveWidgetStatus?: string;
+  enabledProductIds?: string[];
 }
 
 export const getEffectiveTheme = (cfgTheme?: 'dark' | 'light' | 'auto' | string): 'dark' | 'light' => {
@@ -76,6 +83,9 @@ export const getEffectiveTheme = (cfgTheme?: 'dark' | 'light' | 'auto' | string)
 
 export interface ProductItem {
   id: string;
+  sku?: string;
+  productId?: string;
+  isSport?: boolean;
   name: string;
   title?: string;
   price: number;
@@ -97,8 +107,10 @@ export interface ProductItem {
   category?: string;
   garment?: string;
   mechanical?: string | null;
+  mechanicalBack?: string | null;
   base?: string | null;
   isAvailable?: boolean;
+  badge?: string;
 }
 
 export const isBackViewUrl = (u?: string | null) => {
@@ -116,20 +128,35 @@ export const isAiRenderUrl = (u?: string | null) => {
 };
 
 export const VISION_CLOUD_MOCKUPS = [
-  { id: 'tFront', garment: 'tshirt', color: 'Noir', view: 'front', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtFront_1788693827681.png?alt=media&token=351044ba-98e5-4139-b194-e182b80fb846' },
-  { id: 'tBack', garment: 'tshirt', color: 'Noir', view: 'back', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtBack_1788693827685.png?alt=media&token=43c3717a-2294-4098-9b61-24dfb79df8c0' },
-  { id: 'pFront', garment: 'polo', color: 'Noir', view: 'front', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FpFront_1788693827686.png?alt=media&token=c94713f8-4ca2-4cdb-b959-82d5ae6d2c4b' },
-  { id: 'pBack', garment: 'polo', color: 'Noir', view: 'back', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FpBack_1788693827687.png?alt=media&token=cdc6ba8f-418a-4ea7-9629-523e3f607012' },
-  { id: 'hFront', garment: 'sweat', color: 'Noir', view: 'front', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FhFront_1788693827689.png?alt=media&token=f1affb8b-0f66-4f8e-899b-b1da4c825f8c' },
-  { id: 'hBack', garment: 'sweat', color: 'Noir', view: 'back', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FhBack_1788693827690.png?alt=media&token=ee00ba8d-0a66-45c6-856c-fe6a4b122320' },
-  { id: 'tankFront', garment: 'tank_top', color: 'Noir', view: 'front', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankFront_1788698451810.png?alt=media&token=32465cf4-7a0c-48aa-a010-08c999a7d0d1' },
-  { id: 'tankBack', garment: 'tank_top', color: 'Noir', view: 'back', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankBack_1788693827691.png?alt=media&token=042abb56-7970-4a26-92dc-2de88698e7a6' },
-  { id: 'heavyFront', garment: 'tshirt_oversize', color: 'Noir', view: 'front', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyFront_1788693827695.png?alt=media&token=65d0698f-0070-4fc8-a827-0861153b2113' },
-  { id: 'heavyBack', garment: 'tshirt_oversize', color: 'Noir', view: 'back', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FheavyBack_1788693827696.png?alt=media&token=5645a2aa-48ba-43ba-ad68-1916f9d238e3' },
-  { id: 'tankWhiteFront', garment: 'tank_top', color: 'Blanc', view: 'front', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteFront_1788693827692.png?alt=media&token=3602273b-ef06-4dbd-8dae-809894d7e147' },
-  { id: 'tankWhiteBack', garment: 'tank_top', color: 'Blanc', view: 'back', url: 'https://firebasestorage.googleapis.com/v0/b/signaid-d2d08.firebasestorage.app/o/btp_mockups%2Fclubvisionroom%2Fweb%2FtankWhiteBack_1788693827694.png?alt=media&token=0e6b5a90-6ffe-499d-9a91-71043c6cb636' },
-  { id: 'heavyWhiteFront', garment: 'tshirt_oversize', color: 'Blanc', view: 'front', url: '/assets/tshirt-white-NX7200.png' },
-  { id: 'heavyWhiteBack', garment: 'tshirt_oversize', color: 'Blanc', view: 'back', url: '/assets/tshirt-white-NX7200-dos.png' }
+  { id: 'tFront', garment: 'tshirt', color: 'Noir', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.tFront },
+  { id: 'tBack', garment: 'tshirt', color: 'Noir', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.tBack },
+  { id: 'tWhiteFront', garment: 'tshirt', color: 'Blanc', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.tWhiteFront },
+  { id: 'tWhiteBack', garment: 'tshirt', color: 'Blanc', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.tWhiteBack },
+  { id: 'JHK170-WHT_front', garment: 'tshirt', color: 'Blanc', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.tWhiteFront },
+  { id: 'JHK170-WHT_back', garment: 'tshirt', color: 'Blanc', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.tWhiteBack },
+  { id: 'pFront', garment: 'polo', color: 'Noir', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.pFront },
+  { id: 'pBack', garment: 'polo', color: 'Noir', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.pBack },
+  { id: 'pWhiteFront', garment: 'polo', color: 'Blanc', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.pWhiteFront },
+  { id: 'pWhiteBack', garment: 'polo', color: 'Blanc', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.pWhiteBack },
+  { id: 'JHK510-WHT_front', garment: 'polo', color: 'Blanc', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.pWhiteFront },
+  { id: 'JHK510-WHT_back', garment: 'polo', color: 'Blanc', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.pWhiteBack },
+  { id: 'hFront', garment: 'sweat', color: 'Noir', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.hFront },
+  { id: 'hBack', garment: 'sweat', color: 'Noir', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.hBack },
+  { id: 'hWhiteFront', garment: 'sweat', color: 'Blanc', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.hWhiteFront },
+  { id: 'hWhiteBack', garment: 'sweat', color: 'Blanc', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.hWhiteBack },
+  { id: 'JHK421-WHT_front', garment: 'sweat', color: 'Blanc', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.hWhiteFront },
+  { id: 'JHK421-WHT_back', garment: 'sweat', color: 'Blanc', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.hWhiteBack },
+  { id: 'tankFront', garment: 'tank_top', color: 'Noir', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.tankFront },
+  { id: 'tankBack', garment: 'tank_top', color: 'Noir', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.tankBack },
+  { id: 'heavyFront', garment: 'tshirt_oversize', color: 'Noir', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.heavyFront },
+  { id: 'heavyBack', garment: 'tshirt_oversize', color: 'Noir', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.heavyBack },
+  { id: 'tankWhiteFront', garment: 'tank_top', color: 'Blanc', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.tankWhiteFront },
+  { id: 'tankWhiteBack', garment: 'tank_top', color: 'Blanc', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.tankWhiteBack },
+  { id: 'heavyWhiteFront', garment: 'tshirt_oversize', color: 'Blanc', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront },
+  { id: 'heavyWhiteBack', garment: 'tshirt_oversize', color: 'Blanc', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack },
+  { id: 'NX7200-WHT', garment: 'tshirt_oversize', color: 'Blanc', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront },
+  { id: 'NX7200-WHT_front', garment: 'tshirt_oversize', color: 'Blanc', view: 'front', url: CLUBVISION_MOCKUP_ASSETS.heavyWhiteFront },
+  { id: 'NX7200-WHT_back', garment: 'tshirt_oversize', color: 'Blanc', view: 'back', url: CLUBVISION_MOCKUP_ASSETS.heavyWhiteBack }
 ];
 export const extractSessionMockups = (targetId: string) => {
   const isVision = targetId === 'clubvisionroom' || targetId === 'visionroom' || targetId === '13ansvr' || targetId.toLowerCase().includes('vision');
@@ -138,36 +165,66 @@ export const extractSessionMockups = (targetId: string) => {
 
   const seedData = (SEED_PROFILES as any)?.[cleanSlug] || (SEED_PROFILES as any)?.[targetId];
   if (seedData && Array.isArray(seedData.previewUrls)) {
-    seedData.previewUrls.forEach((url: string, idx: number) => {
+    seedData.previewUrls.forEach((url: string) => {
       const isTW = url.includes('tankWhiteFront') || url.includes('tankWhiteBack');
-      const isHW = url.includes('heavyWhiteFront') || url.includes('heavyWhiteBack');
-      const isT = !isTW && (url.includes('tankFront') || url.includes('tankBack') || url.includes('tank'));
-      const isH = !isHW && (url.includes('heavyFront') || url.includes('heavyBack') || url.includes('heavy'));
+      const isHW = url.includes('heavyWhiteFront') || url.includes('heavyWhiteBack') || url.includes('NX7200-WHT');
+      const isPW = url.includes('pWhiteFront') || url.includes('pWhiteBack') || url.includes('JHK510-WHT');
+      const isTWhite = url.includes('tWhiteFront') || url.includes('tWhiteBack') || url.includes('JHK170-WHT');
+      const isHWht = url.includes('hWhiteFront') || url.includes('hWhiteBack') || url.includes('JHK421-WHT');
+      const isT = !isTW && !isTWhite && (url.includes('tankFront') || url.includes('tankBack') || url.includes('tank'));
+      const isH = !isHW && !isHWht && (url.includes('heavyFront') || url.includes('heavyBack') || url.includes('heavy'));
       const isB = isBackViewUrl(url);
-      const id = isTW ? (isB ? 'tankWhiteBack' : 'tankWhiteFront') : (isHW ? (isB ? 'heavyWhiteBack' : 'heavyWhiteFront') : (isT ? (isB ? 'tankBack' : 'tankFront') : (isH ? (isB ? 'heavyBack' : 'heavyFront') : (url.includes('hFront') || url.includes('hBack') ? (isB ? 'hBack' : 'hFront') : (url.includes('pFront') || url.includes('pBack') ? (isB ? 'pBack' : 'pFront') : (isB ? 'tBack' : 'tFront'))))));
-      const garment = (isTW || isT) ? 'tank_top' : ((isHW || isH) ? 'tshirt_oversize' : (url.includes('hFront') || url.includes('hBack') ? 'sweat' : (url.includes('pFront') || url.includes('pBack') ? 'polo' : 'tshirt')));
+      const isSport = url.includes('E3520') || url.includes('sport');
+      const isWhitePreview = isTW || isHW || isPW || isTWhite || isHWht;
+      const id = isSport 
+        ? (isB ? 'E3520_back' : 'E3520_front')
+        : (isTW ? (isB ? 'tankWhiteBack' : 'tankWhiteFront')
+        : (isHW ? (isB ? 'heavyWhiteBack' : 'heavyWhiteFront')
+        : (isPW ? (isB ? 'pWhiteBack' : 'pWhiteFront')
+        : (isTWhite ? (isB ? 'tWhiteBack' : 'tWhiteFront')
+        : (isHWht ? (isB ? 'hWhiteBack' : 'hWhiteFront')
+        : (isT ? (isB ? 'tankBack' : 'tankFront')
+        : (isH ? (isB ? 'heavyBack' : 'heavyFront')
+        : (url.includes('hFront') || url.includes('hBack') ? (isB ? 'hBack' : 'hFront')
+        : (url.includes('pFront') || url.includes('pBack') ? (isB ? 'pBack' : 'pFront')
+        : (isB ? 'tBack' : 'tFront'))))))))));
+      const garment = isSport
+        ? 'sport_tshirt'
+        : ((isTW || isT) ? 'tank_top'
+        : ((isHW || isH) ? 'tshirt_oversize'
+        : ((isPW || url.includes('pFront') || url.includes('pBack')) ? 'polo'
+        : ((isHWht || url.includes('hFront') || url.includes('hBack')) ? 'sweat' : 'tshirt'))));
       sessionMockups.push({
-        id, garment, color: (isTW || isHW) ? 'Blanc' : 'Noir', view: isB ? 'back' : 'front',
+        id, garment, color: isSport ? '#00b5e2' : (isWhitePreview ? 'Blanc' : 'Noir'), view: isB ? 'back' : 'front',
         frontImageUrl: !isB ? url : undefined, backImageUrl: isB ? url : undefined,
-        imageUrl: url, ai: url, aiRemastered: url, hasAi: true
+        imageUrl: url, ai: url, aiRemastered: url, hasAi: true,
+        sku: isSport ? 'E3520' : (isPW ? 'JHK510-WHT' : (isHW ? 'NX7200-WHT' : (isTWhite ? 'JHK170-WHT' : (isHWht ? 'JHK421-WHT' : undefined)))),
+        productId: isSport ? 'prod_signaid_sportt_poly_mtzmb4zr' : undefined
       });
     });
   }
 
   if (typeof window !== 'undefined') {
     const keys = [
-      'session_obj_clubvisionroom', 'btp_session_clubvisionroom', 'audit_session_clubvisionroom',
       `session_obj_${targetId}`, `btp_session_${targetId}`, `audit_session_${targetId}`,
-      `session_obj_${cleanSlug}`, `btp_session_${cleanSlug}`, 'btp_active_session_data', 'auditSession'
+      `session_obj_${cleanSlug}`, `btp_session_${cleanSlug}`
     ];
     for (const k of keys) {
       try {
         const raw = localStorage.getItem(k) || sessionStorage.getItem(k);
         if (!raw) continue;
         const sData = JSON.parse(raw);
+        // Anti-contamination guard: Never pull foreign clubvisionroom data for other brands
+        const sSlug = (sData.slug || sData.companySlug || sData.sessionId || '').toLowerCase().trim().replace(/^audit-/, '');
+        const sComp = (sData.companyName || sData.userData?.company || '').toLowerCase().trim();
+        if (!isVision && (sSlug.includes('vision') || sComp.includes('vision'))) continue;
+
         const rawList = Array.isArray(sData.mockups) ? sData.mockups : (Array.isArray(sData.items) ? sData.items : []);
         rawList.forEach((m: any, idx: number) => {
           if (!m || typeof m !== 'object') return;
+          const mStr = JSON.stringify(m).toLowerCase();
+          if (!isVision && (mStr.includes('clubvision') || mStr.includes('1787803061043'))) return;
+
           const isB = m.view === 'back' || isBackViewUrl(m.id) || isBackViewUrl(m.title) || isBackViewUrl(m.imageUrl) || isBackViewUrl(m.url);
           const mAi = m.aiRemastered || m.ai || m.aiImageUrl || m.realAiSnapshotUrl || (isAiRenderUrl(m.frontImageUrl || m.imageUrl || m.url) ? (m.frontImageUrl || m.imageUrl || m.url) : null);
           const mAiB = m.aiRemasteredBack || m.aiBack || (isAiRenderUrl(m.backImageUrl || m.imageBack) ? (m.backImageUrl || m.imageBack) : null);
@@ -175,11 +232,13 @@ export const extractSessionMockups = (targetId: string) => {
           if (g === 'sweatshirt' || g === 'hoodie') g = 'sweat';
           if (!g) {
             const mId = (m.id || '').toLowerCase();
-            g = mId.includes('tank') ? 'tank_top' : (mId.includes('heavy') ? 'tshirt_oversize' : (mId.includes('polo') ? 'polo' : (mId.includes('hoodie') || mId.includes('sweat') ? 'sweat' : (mId.includes('cap') ? 'cap' : (mId.includes('tote') ? 'tote_bag' : 'tshirt')))));
+            g = (mId.includes('e3520') || mId.includes('sport')) ? 'sport_tshirt' : (mId.includes('tank') ? 'tank_top' : (mId.includes('heavy') ? 'tshirt_oversize' : (mId.includes('polo') ? 'polo' : (mId.includes('hoodie') || mId.includes('sweat') ? 'sweat' : (mId.includes('cap') ? 'cap' : (mId.includes('tote') ? 'tote_bag' : 'tshirt'))))));
           }
           const isW = m.color === 'Blanc' || m.color === 'white' || (typeof m.id === 'string' && m.id.toLowerCase().includes('white')) || (typeof m.title === 'string' && m.title.toLowerCase().includes('blanc'));
           sessionMockups.push({
             id: m.id || `session_mock_${idx}`,
+            sku: m.sku || (g === 'sport_tshirt' ? 'E3520' : undefined),
+            productId: m.productId || (g === 'sport_tshirt' ? 'prod_signaid_sportt_poly_mtzmb4zr' : undefined),
             title: m.title || m.name, name: m.name || m.title, garment: g,
             view: isB ? 'back' : 'front', color: isW ? 'Blanc' : (m.color || 'Noir'), price: m.price,
             ai: mAi, aiRemastered: mAi, aiBack: mAiB, aiRemasteredBack: mAiB,
@@ -190,13 +249,19 @@ export const extractSessionMockups = (targetId: string) => {
         if (sData.products && typeof sData.products === 'object') {
           Object.entries(sData.products).forEach(([gKey, p]: [string, any]) => {
             if (!p || typeof p !== 'object') return;
+            const pStr = JSON.stringify(p).toLowerCase();
+            if (!isVision && (pStr.includes('clubvision') || pStr.includes('1787803061043'))) return;
+
             const isW = p.color === 'Blanc' || p.color === 'white' || (typeof p.id === 'string' && p.id.toLowerCase().includes('white'));
             let g = (p.garment || gKey || '').toLowerCase();
             if (g === 'sweatshirt' || g === 'hoodie') g = 'sweat';
             const pAiF = p.aiRemastered || p.ai || p.aiImageUrl || (isAiRenderUrl(p.frontImageUrl || p.imageUrl) ? (p.frontImageUrl || p.imageUrl) : null);
             const pAiB = p.aiRemasteredBack || p.aiBack || (isAiRenderUrl(p.backImageUrl || p.imageBack) ? (p.backImageUrl || p.imageBack) : null);
             sessionMockups.push({
-              id: p.id || `${g}Front`, title: p.name || p.title, name: p.name || p.title, garment: g,
+              id: p.id || `${g}Front`,
+              sku: p.sku || (g === 'sport_tshirt' ? 'E3520' : undefined),
+              productId: p.productId || (g === 'sport_tshirt' ? 'prod_signaid_sportt_poly_mtzmb4zr' : undefined),
+              title: p.name || p.title, name: p.name || p.title, garment: g,
               view: 'front', color: isW ? 'Blanc' : (p.color || 'Noir'), price: p.price,
               ai: pAiF, aiRemastered: pAiF, aiBack: pAiB, aiRemasteredBack: pAiB,
               frontImageUrl: pAiF || p.frontImageUrl || p.imageFront || p.imageUrl,
@@ -208,12 +273,24 @@ export const extractSessionMockups = (targetId: string) => {
     }
   }
 
-  if (isVision) {
-    VISION_CLOUD_MOCKUPS.forEach(m => sessionMockups.push({
-      id: m.id, garment: m.garment, color: m.color, view: m.view,
-      frontImageUrl: m.view === 'front' ? m.url : undefined, backImageUrl: m.view === 'back' ? m.url : undefined,
-      imageUrl: m.url, ai: m.url, aiRemastered: m.url, hasAi: true
-    }));
+  if (cleanSlug === 'pbs') {
+    const hasE3520 = sessionMockups.some(m => m.id?.includes('E3520') || m.sku === 'E3520');
+    if (!hasE3520) {
+      sessionMockups.push(
+        {
+          id: 'E3520_front', garment: 'sport_tshirt', color: '#00b5e2', view: 'front',
+          frontImageUrl: PBS_MOCKUP_ASSETS.e3520Front, imageUrl: PBS_MOCKUP_ASSETS.e3520Front,
+          ai: PBS_MOCKUP_ASSETS.e3520Front, aiRemastered: PBS_MOCKUP_ASSETS.e3520Front, hasAi: true,
+          sku: 'E3520', productId: 'prod_signaid_sportt_poly_mtzmb4zr', title: 'T-Shirt Sport Respirant (E3520)'
+        },
+        {
+          id: 'E3520_back', garment: 'sport_tshirt', color: '#00b5e2', view: 'back',
+          backImageUrl: PBS_MOCKUP_ASSETS.e3520Back, imageUrl: PBS_MOCKUP_ASSETS.e3520Back,
+          ai: PBS_MOCKUP_ASSETS.e3520Back, aiRemastered: PBS_MOCKUP_ASSETS.e3520Back, hasAi: true,
+          sku: 'E3520', productId: 'prod_signaid_sportt_poly_mtzmb4zr', title: 'T-Shirt Sport Respirant (E3520)'
+        }
+      );
+    }
   }
 
   return sessionMockups;
@@ -258,13 +335,19 @@ export const getMerchSlotCandidates = (pId: string, garment: string, color: stri
       backCandidates.push('tankBack', 'tankBlackBack', 'mockup_7');
     }
   } else if (g === 'tshirt_oversize') {
-    frontCandidates.push('heavyFront', 'heavyBlackFront', 'tshirt_oversize', 'visionroom-heavyweight-tee', 'heavy', 'NX7200', 'mockup_8');
-    backCandidates.push('heavyBack', 'heavyBlackBack', 'mockup_9');
+    if (isWhite) {
+      frontCandidates.push('heavyWhiteFront', 'heavyWhite', 'tshirt_oversize_white', 'NX7200-WHT', 'oversize_white_front');
+      backCandidates.push('heavyWhiteBack', 'tshirt_oversize_white_back', 'NX7200-WHT_back', 'oversize_white_back');
+    } else {
+      frontCandidates.push('heavyFront', 'heavyBlackFront', 'tshirt_oversize', 'visionroom-heavyweight-tee', 'heavy', 'NX7200', 'mockup_8');
+      backCandidates.push('heavyBack', 'heavyBlackBack', 'mockup_9');
+    }
   } else if (g === 'cap') {
     frontCandidates.push('capFront', 'cap', 'casquette');
   } else if (g === 'tote_bag') {
     frontCandidates.push('toteBagFront', 'tote_bag', 'totebag');
   }
+
   return { frontCandidates, backCandidates };
 };
 
@@ -302,53 +385,64 @@ export const createDynamicMerchProduct = (m: any, mBack: any, brandName: string)
       || m.base
       || m.url);
 
-  let defaultName = mGarment === 'tank_top'
-    ? (isWhite ? 'Débardeur Blanc' : 'Débardeur')
-    : mGarment === 'tshirt_oversize'
-      ? 'T-Shirt Heavyweight Oversize'
-      : mGarment === 'cap'
-        ? 'Casquette Officielle'
-        : mGarment === 'tote_bag'
-          ? 'Tote Bag Officiel'
-          : mGarment === 'sweat' || mGarment === 'hoodie'
-            ? (isWhite ? 'Hoodie Blanc' : 'Hoodie Premium')
-            : mGarment === 'polo'
-              ? (isWhite ? 'Polo Blanc' : 'Polo Premium')
-              : (isWhite ? 'T-Shirt Blanc' : 'T-Shirt Premium');
+  let defaultName = mGarment === 'sport_tshirt'
+    ? 'T-Shirt Sport Respirant (E3520)'
+    : mGarment === 'tank_top'
+      ? (isWhite ? 'Débardeur Blanc' : 'Débardeur')
+      : mGarment === 'tshirt_oversize'
+        ? 'T-Shirt Heavyweight Oversize'
+        : mGarment === 'cap'
+          ? 'Casquette Officielle'
+          : mGarment === 'tote_bag'
+            ? 'Tote Bag Officiel'
+            : mGarment === 'sweat' || mGarment === 'hoodie'
+              ? (isWhite ? 'Hoodie Blanc' : 'Hoodie Premium')
+              : mGarment === 'polo'
+                ? (isWhite ? 'Polo Blanc' : 'Polo Premium')
+                : (isWhite ? 'T-Shirt Blanc' : 'T-Shirt Premium');
 
   let prodName = m.title || m.name;
   if (!prodName || prodName.toUpperCase().includes('FACE') || prodName.toUpperCase().includes('DOS')) {
     prodName = `${brandName} ${defaultName}`.trim();
   }
 
-  const categoryName = mGarment === 'tank_top'
-    ? 'Textile / Sans Manches'
-    : mGarment === 'tshirt_oversize'
-      ? 'Streetwear / Boxy Cut'
-      : mGarment === 'cap' || mGarment === 'tote_bag'
-        ? 'Accessoires'
-        : mGarment === 'sweat' || mGarment === 'hoodie'
-          ? 'Streetwear / Warm'
-          : mGarment === 'polo'
-            ? 'Textile / Business'
-            : 'Textile / Coton Peigné';
-
-  const defaultPrice = (mGarment === 'sweat' || mGarment === 'hoodie')
-    ? 49.00
-    : mGarment === 'polo'
-      ? 39.00
+  const categoryName = mGarment === 'sport_tshirt'
+    ? 'Sportswear / Respirant'
+    : mGarment === 'tank_top'
+      ? 'Textile / Sans Manches'
       : mGarment === 'tshirt_oversize'
-        ? 34.99
-        : mGarment === 'tank_top'
-          ? 27.99
-          : mGarment === 'cap'
-            ? 24.99
-            : mGarment === 'tote_bag'
-              ? 19.99
-              : 29.99;
+        ? 'Streetwear / Boxy Cut'
+        : mGarment === 'cap' || mGarment === 'tote_bag'
+          ? 'Accessoires'
+          : mGarment === 'sweat' || mGarment === 'hoodie'
+            ? 'Streetwear / Warm'
+            : mGarment === 'polo'
+              ? 'Textile / Business'
+              : 'Textile / Coton Peigné';
+
+  const defaultPrice = mGarment === 'sport_tshirt'
+    ? 30.00
+    : (mGarment === 'sweat' || mGarment === 'hoodie')
+      ? 49.00
+      : mGarment === 'polo'
+        ? 39.00
+        : mGarment === 'tshirt_oversize'
+          ? 34.99
+          : mGarment === 'tank_top'
+            ? 27.99
+            : mGarment === 'cap'
+              ? 24.99
+              : mGarment === 'tote_bag'
+                ? 19.99
+                : 29.99;
+
+  const isE3520 = (m.id && (m.id.includes('E3520') || m.id.includes('e3520'))) || m.sku === 'E3520' || mGarment === 'sport_tshirt';
 
   return {
-    id: `${mGarment}-${isWhite ? 'white' : 'black'}-${m.id || Date.now()}`,
+    id: isE3520 ? 'E3520' : `${mGarment}-${isWhite ? 'white' : 'black'}-${m.id || Date.now()}`,
+    sku: isE3520 ? 'E3520' : m.sku,
+    productId: isE3520 ? 'prod_signaid_sportt_poly_mtzmb4zr' : m.productId,
+    isSport: isE3520,
     name: prodName,
     title: prodName,
     price: m.price && m.price <= 60 ? m.price : defaultPrice,
@@ -423,7 +517,10 @@ export function getOptimizedImageUrl(url?: string, _width = 400): string {
   if (!url || typeof url !== 'string') return '';
   const cleanUrl = url.trim();
   if (!cleanUrl) return '';
-  return cleanUrl;
+  if (cleanUrl.includes('1789483691723_logo_nobg')) {
+    return withCacheBust('/assets/pbs_logo_A.png');
+  }
+  return withCacheBust(cleanUrl);
 }
 
 const SocialIcon = ({ platform, color, size = 22 }: { platform: string; color?: string; size?: number }) => {
@@ -882,6 +979,7 @@ export interface ProfileMeta {
   displayName: string;
   logoUrl?: string;
   avatarUrl?: string;
+  logo?: string;
   primaryColor?: string;
   theme?: 'dark' | 'light' | 'auto';
   initials: string;
@@ -896,25 +994,43 @@ export const getInitialProfileMeta = (identifier: string): ProfileMeta => {
   const defaultMeta: ProfileMeta = {
     displayName: formattedName,
     logoUrl: undefined,
+    avatarUrl: undefined,
+    logo: undefined,
     primaryColor: '#dc2626',
-    theme: 'dark',
+    theme: 'auto',
     initials,
     isReady: false
   };
 
   if (typeof window === 'undefined') return defaultMeta;
 
+  const isPbs = clean.toLowerCase().includes('pbs') || identifier.toLowerCase().includes('pbs');
+  if (isPbs) {
+    return {
+      displayName: 'PBS',
+      logoUrl: '/assets/pbs_logo_A.png',
+      avatarUrl: '/assets/pbs_logo_A.png',
+      logo: '/assets/pbs_logo_A.png',
+      primaryColor: '#00b5e2',
+      theme: 'dark',
+      initials: 'PBS',
+      isReady: true
+    };
+  }
+
   // Tier 1 Fast Path A: Dedicated SessionStorage / LocalStorage metadata (0 ms)
   try {
     const metaStr = sessionStorage.getItem(`signaid_meta_${identifier}`) || localStorage.getItem(`signaid_meta_${identifier}`);
     if (metaStr) {
       const parsed = JSON.parse(metaStr);
-      if (parsed && (parsed.displayName || parsed.logoUrl)) {
+      if (parsed && (parsed.displayName || parsed.logoUrl || parsed.avatarUrl || parsed.logo)) {
         return {
           displayName: parsed.displayName || formattedName,
-          logoUrl: parsed.logoUrl,
+          logoUrl: parsed.logoUrl || parsed.avatarUrl || parsed.logo,
+          avatarUrl: parsed.avatarUrl || parsed.logoUrl || parsed.logo,
+          logo: parsed.logo || parsed.logoUrl || parsed.avatarUrl,
           primaryColor: parsed.primaryColor || '#dc2626',
-          theme: parsed.theme || 'dark',
+          theme: parsed.theme || 'auto',
           initials: parsed.initials || initials,
           isReady: true
         };
@@ -924,20 +1040,24 @@ export const getInitialProfileMeta = (identifier: string): ProfileMeta => {
 
   // Tier 1 Fast Path B: Full SWR cache if present (0 ms)
   try {
-    const fullStr = localStorage.getItem(`fast_artist_cache_v92_${identifier}`) || localStorage.getItem(`fast_artist_cache_${identifier}`);
-    if (fullStr) {
+    const fullStr = localStorage.getItem(`fast_artist_cache_v99_${identifier}`) || localStorage.getItem(`fast_artist_cache_${identifier}`);
+    if (fullStr && !fullStr.includes('1789579603133')) {
       const parsed = JSON.parse(fullStr);
       if (parsed && parsed.artist) {
         const rawA = typeof parsed.artist.logoA === 'string' ? parsed.artist.logoA : (parsed.artist.logoA?.adaptedRemastered || parsed.artist.logoA?.adapted || parsed.artist.logoA?.original);
-        const effectiveLogo = parsed.artist.logoUrl || parsed.artist.auditLogoUrl || parsed.artist.logoAdaptedUrl || rawA || (parsed.artist as any).avatar;
-        return {
-          displayName: parsed.artist.companyName || formattedName,
-          logoUrl: effectiveLogo,
-          primaryColor: parsed.artist.accentColor || '#dc2626',
-          theme: parsed.artist.theme || 'dark',
-          initials,
-          isReady: true
-        };
+        const effectiveLogo = parsed.artist.avatarUrl || parsed.artist.logoUrl || parsed.artist.logo || parsed.artist.auditLogoUrl || parsed.artist.logoAdaptedUrl || rawA || (parsed.artist as any).avatar;
+        if (effectiveLogo && !effectiveLogo.includes('1789579603133')) {
+          return {
+            displayName: parsed.artist.companyName || formattedName,
+            logoUrl: effectiveLogo,
+            avatarUrl: effectiveLogo,
+            logo: effectiveLogo,
+            primaryColor: parsed.artist.accentColor || '#dc2626',
+            theme: parsed.artist.theme || 'auto',
+            initials,
+            isReady: true
+          };
+        }
       }
     }
   } catch { }
@@ -945,22 +1065,42 @@ export const getInitialProfileMeta = (identifier: string): ProfileMeta => {
   // Tier 1 Fast Path B2: artist_${identifier} cache
   try {
     const artistStr = localStorage.getItem(`artist_${identifier}`);
-    if (artistStr) {
+    if (artistStr && !artistStr.includes('1789579603133')) {
       const parsed = JSON.parse(artistStr);
       if (parsed) {
         const rawA = typeof parsed.logoA === 'string' ? parsed.logoA : (parsed.logoA?.adaptedRemastered || parsed.logoA?.adapted || parsed.logoA?.original);
-        const effectiveLogo = parsed.logoUrl || parsed.auditLogoUrl || parsed.logoAdaptedUrl || rawA || (parsed as any).avatar;
-        return {
-          displayName: parsed.companyName || formattedName,
-          logoUrl: effectiveLogo,
-          primaryColor: parsed.accentColor || '#dc2626',
-          theme: parsed.theme || 'dark',
-          initials,
-          isReady: true
-        };
+        const effectiveLogo = parsed.avatarUrl || parsed.logoUrl || parsed.logo || parsed.auditLogoUrl || parsed.logoAdaptedUrl || rawA || (parsed as any).avatar;
+        if (effectiveLogo && !effectiveLogo.includes('1789579603133')) {
+          return {
+            displayName: parsed.companyName || formattedName,
+            logoUrl: effectiveLogo,
+            avatarUrl: effectiveLogo,
+            logo: effectiveLogo,
+            primaryColor: parsed.accentColor || '#dc2626',
+            theme: parsed.theme || 'auto',
+            initials,
+            isReady: true
+          };
+        }
       }
     }
   } catch { }
+
+  // Tier 1 Fast Path B3: Universal Seed Profile check
+  const seedProfile = SEED_PROFILES[clean] || SEED_PROFILES[identifier];
+  if (seedProfile && (seedProfile.logoUrl || seedProfile.avatarUrl)) {
+    const sLogo = seedProfile.logoUrl || seedProfile.avatarUrl;
+    return {
+      displayName: seedProfile.companyName || formattedName,
+      logoUrl: sLogo,
+      avatarUrl: sLogo,
+      logo: sLogo,
+      primaryColor: seedProfile.accentColor || '#dc2626',
+      theme: seedProfile.theme || 'auto',
+      initials: (seedProfile.companyName || '').slice(0, 2).toUpperCase() || initials,
+      isReady: true
+    };
+  }
 
   // Tier 1 Fast Path C: Known static assets mapping
   const isAaron = clean.toLowerCase().includes('aaron');
@@ -983,13 +1123,155 @@ export const getInitialProfileMeta = (identifier: string): ProfileMeta => {
     displayName: formattedName,
     logoUrl: fallbackLogo,
     primaryColor: '#dc2626',
-    theme: 'dark',
+    theme: 'auto',
     initials,
     isReady: !!fallbackLogo
   };
 };
 
-export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: string }) {
+/**
+ * Hydratation synchrone immédiate dès la première frame (0 ms) :
+ * - Vérifie le cache de session sessionStorage
+ * - Vérifie le cache SWR localStorage
+ * - Pour le profil 'pbs', fournit instantanément la configuration et le produit E3520 pré-résolus
+ * éliminant 100% du délai de chargement et des requêtes réseau redondantes.
+ */
+export const getInitialProfileData = (identifier: string): { artist: ArtistProfile | null; products: ProductItem[] } => {
+  if (typeof window === 'undefined') return { artist: null, products: [] };
+  const cleanId = (identifier || '').toLowerCase().trim();
+  const isPbs = cleanId === 'pbs' || cleanId.includes('pbs');
+
+  // 1. Profil PBS : Résolution synchrone immédiate (0 ms) garantie sans logo corrompu
+  if (isPbs) {
+    const pbsArtist: ArtistProfile = {
+      id: 'pbs',
+      companyName: 'PBS',
+      activitySector: 'Club de tennis de table',
+      slug: 'pbs',
+      logoUrl: '/assets/pbs_logo_A.png',
+      avatarUrl: '/assets/pbs_logo_A.png',
+      logo: '/assets/pbs_logo_A.png',
+      imageUrl: '/assets/pbs_logo_A.png',
+      logoA: '/assets/pbs_logo_A.png',
+      logoB: '/assets/pbs_logo_B.png',
+      logoAdaptedUrl: '/assets/pbs_logo_A.png',
+      accentColor: '#00b5e2',
+      theme: 'dark',
+      enabledProductIds: ['prod_signaid_sportt_poly_mtzmb4zr', 'E3520_front', 'E3520_back', 'E3520'],
+      livePhotoUrl: '/assets/pbs_banner.png',
+      livePhotoUrls: ['/assets/pbs_banner.png'],
+      presentation: '',
+      contactEmail: 'contact@pbs.com',
+      whatsapp: '',
+      socials: [],
+      logoOverlayColor: 'original',
+      logoScale: 100,
+      coverHeight: 280,
+      coverZoom: 100,
+      coverPositionY: 50,
+      coverPositionX: 50,
+      enableLiveWidget: false
+    };
+
+    const pbsProducts: ProductItem[] = [
+      {
+        id: 'E3520',
+        name: 'T-Shirt Sport Respirant (E3520)',
+        title: 'T-Shirt Sport Respirant (E3520)',
+        price: 30.00,
+        garment: 'sport_tshirt',
+        frontImageUrl: PBS_MOCKUP_ASSETS.e3520Front,
+        backImageUrl: PBS_MOCKUP_ASSETS.e3520Back,
+        imageFront: PBS_MOCKUP_ASSETS.e3520Front,
+        imageBack: PBS_MOCKUP_ASSETS.e3520Back,
+        imageUrl: PBS_MOCKUP_ASSETS.e3520Front,
+        ai: PBS_MOCKUP_ASSETS.e3520Front,
+        aiRemastered: PBS_MOCKUP_ASSETS.e3520Front,
+        aiBack: PBS_MOCKUP_ASSETS.e3520Back,
+        aiRemasteredBack: PBS_MOCKUP_ASSETS.e3520Back,
+        sizes: ['S', 'M', 'L', 'XL'],
+        colors: ['Bleu'],
+        color: 'Bleu',
+        mechanical: PBS_MOCKUP_ASSETS.e3520FrontMech,
+        mechanicalBack: PBS_MOCKUP_ASSETS.e3520BackMech,
+        isAvailable: true,
+        badge: 'Capsule Officielle'
+      }
+    ];
+
+    try {
+      sessionStorage.setItem(`signaid_profile_cache_${cleanId}`, JSON.stringify({ artist: pbsArtist, products: pbsProducts }));
+      localStorage.setItem(`fast_artist_cache_v99_${cleanId}`, JSON.stringify({ artist: pbsArtist, products: pbsProducts }));
+    } catch {}
+
+    return { artist: pbsArtist, products: pbsProducts };
+  }
+
+  // 2. SessionStorage rapide pour les autres profils
+  try {
+    const sessionStr = sessionStorage.getItem(`signaid_profile_cache_${cleanId}`);
+    if (sessionStr && !sessionStr.includes('1789579603133')) {
+      const parsed = JSON.parse(sessionStr);
+      if (parsed && parsed.artist && Array.isArray(parsed.products) && parsed.products.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+
+  // 3. Cache local SWR pour les autres profils
+  try {
+    const fullStr = localStorage.getItem(`fast_artist_cache_v99_${cleanId}`) || localStorage.getItem(`fast_artist_cache_${cleanId}`);
+    if (fullStr && !fullStr.includes('1789579603133')) {
+      const parsed = JSON.parse(fullStr);
+      if (parsed && parsed.artist && Array.isArray(parsed.products) && parsed.products.length > 0) {
+        return parsed;
+      }
+    }
+  } catch {}
+
+  // 4. Fallback profil seed universel
+  const seed = SEED_PROFILES[cleanId] || SEED_PROFILES[identifier];
+  if (seed) {
+    const seedArtist: ArtistProfile = {
+      id: identifier,
+      companyName: seed.companyName,
+      slug: seed.slug,
+      logoUrl: seed.logoUrl,
+      avatarUrl: seed.avatarUrl || seed.logoUrl,
+      logo: seed.logo || seed.logoUrl,
+      imageUrl: seed.logoUrl,
+      logoA: seed.logoA || seed.logoUrl,
+      logoB: seed.logoB || seed.logoUrl,
+      logoAdaptedUrl: seed.logoAdaptedUrl || seed.logoUrl,
+      accentColor: seed.accentColor || '#9333ea',
+      theme: seed.theme || 'dark',
+      presentation: seed.presentation || '',
+      contactEmail: seed.userData?.email || '',
+      whatsapp: '',
+      socials: [],
+      logoOverlayColor: 'auto',
+      logoScale: 100,
+      coverHeight: 300,
+      coverZoom: 100,
+      coverPositionY: 50,
+      coverPositionX: 50,
+      enableLiveWidget: false
+    };
+    return { artist: seedArtist, products: [] };
+  }
+
+  return { artist: null, products: [] };
+};
+
+export interface ArtistProfileViewProps {
+  overrideSlug?: string;
+  slug?: string;
+  data?: any;
+  isInteractive?: boolean;
+  [key: string]: any;
+}
+
+export function ArtistProfileView({ overrideSlug, slug: propSlug }: ArtistProfileViewProps) {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
 
@@ -997,32 +1279,131 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
   const domainSlug = hostname.includes('djdfazz') ? 'fabrizio' : undefined;
 
   const uidParam = searchParams.get('uid') || searchParams.get('id') || searchParams.get('audit') || searchParams.get('slug');
-  const targetIdentifier = overrideSlug || domainSlug || slug || uidParam || 'fabrizio';
+  const targetIdentifier = overrideSlug || propSlug || domainSlug || slug || uidParam || 'fabrizio';
 
-  const [artist, setArtist] = useState<ArtistProfile | null>(null);
-  const [products, setProducts] = useState<ProductItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  // HYDRATATION SYNCHRONE DÈS LA PREMIÈRE FRAME (0 MS)
+  const initialProfile = useMemo(() => getInitialProfileData(targetIdentifier), [targetIdentifier]);
+  const [artist, setArtist] = useState<ArtistProfile | null>(() => initialProfile.artist);
+  const [products, setProducts] = useState<ProductItem[]>(() => initialProfile.products);
+  const [loading, setLoading] = useState<boolean>(() => !initialProfile.artist || initialProfile.products.length === 0);
   const [error, setError] = useState<string | null>(null);
 
   // TIER 1 : Metadata Fast-Path State (Nom, Logo, Couleurs < 50ms)
   const [profileMeta, setProfileMeta] = useState<ProfileMeta>(() => getInitialProfileMeta(targetIdentifier));
 
-  const effectiveTheme = getEffectiveTheme(artist?.theme);
+  const [themeOverride, setThemeOverride] = useState<'dark' | 'light' | null>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem(`signaid_theme_${targetIdentifier}`) || localStorage.getItem(`signaid_theme_${targetIdentifier}`);
+      if (stored === 'light' || stored === 'dark') return stored;
+    }
+    return null;
+  });
+
+  const effectiveTheme = themeOverride || getEffectiveTheme(artist?.theme || profileMeta.theme || 'auto');
   const isLight = effectiveTheme === 'light';
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', effectiveTheme);
   }, [effectiveTheme]);
 
-  const [processedAvatarUrl, setProcessedAvatarUrl] = useState<string>('');
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const purgeObsoleteKeys = (storage: Storage) => {
+          for (let i = storage.length - 1; i >= 0; i--) {
+            const k = storage.key(i);
+            if (!k) continue;
+            const v = storage.getItem(k);
+            if (v && (v.includes('1789579603133') || v.includes('1789483691723_logo_nobg'))) {
+              storage.removeItem(k);
+            }
+          }
+        };
+        purgeObsoleteKeys(localStorage);
+        purgeObsoleteKeys(sessionStorage);
+      }
+    } catch {}
+  }, []);
+
+  const toggleTheme = (manualTheme?: 'dark' | 'light' | 'auto') => {
+    const nextTheme: 'dark' | 'light' | 'auto' = manualTheme !== undefined 
+      ? manualTheme 
+      : (isLight ? 'dark' : 'light');
+
+    if (nextTheme === 'auto') {
+      setThemeOverride(null);
+      try {
+        sessionStorage.removeItem(`signaid_theme_${targetIdentifier}`);
+        localStorage.removeItem(`signaid_theme_${targetIdentifier}`);
+      } catch {}
+    } else {
+      setThemeOverride(nextTheme);
+      try {
+        sessionStorage.setItem(`signaid_theme_${targetIdentifier}`, nextTheme);
+        localStorage.setItem(`signaid_theme_${targetIdentifier}`, nextTheme);
+      } catch {}
+    }
+
+    if (artist) {
+      setArtist(prev => prev ? { ...prev, theme: nextTheme } : prev);
+    }
+    setProfileMeta(prev => ({ ...prev, theme: nextTheme }));
+  };
+
+  const resolveSyncAvatarUrl = (art: ArtistProfile | null, meta: ProfileMeta): string => {
+    const isPbsProfile = targetIdentifier.toLowerCase().includes('pbs') ||
+                         (art?.slug || '').toLowerCase().includes('pbs') ||
+                         (art?.companyName || '').toLowerCase().includes('pbs');
+
+    const rawA = typeof art?.logoA === 'string' ? art.logoA : ((art?.logoA as any)?.adaptedRemastered || (art?.logoA as any)?.adapted || (art?.logoA as any)?.original);
+
+    const isBadLogo = (u?: string) => !u || u.includes('1789483691723_logo_nobg') || u.includes('1789579603133');
+
+    // Fallback direct et synchrone (règle 1) :
+    const candidates = [
+      art?.avatarUrl,
+      art?.logoUrl,
+      art?.logo,
+      (art as any)?.imageUrl,
+      art?.auditLogoUrl,
+      art?.logoAdaptedUrl,
+      rawA,
+      meta?.avatarUrl,
+      meta?.logoUrl,
+      meta?.logo
+    ];
+
+    for (const c of candidates) {
+      if (typeof c === 'string' && c.trim()) {
+        if (isBadLogo(c)) continue;
+        return c;
+      }
+    }
+
+    return isPbsProfile ? '/assets/pbs_logo_A.png' : (SEED_PROFILES[targetIdentifier.toLowerCase().trim()]?.logoUrl || '');
+  };
+
+  const [processedAvatarUrl, setProcessedAvatarUrl] = useState<string>(() => resolveSyncAvatarUrl(initialProfile.artist, profileMeta));
 
   useEffect(() => {
-    // Le logo a déjà été traité (fond supprimé) lors de l'upload via le dashboard ou l'audit.
-    // On l'utilise directement sans re-passer par Canvas (qui pose des problèmes CORS sur les URLs Storage).
-    const rawA = typeof artist?.logoA === 'string' ? artist.logoA : ((artist?.logoA as any)?.adaptedRemastered || (artist?.logoA as any)?.adapted || (artist?.logoA as any)?.original);
-    const effLogo = artist?.logoUrl || artist?.auditLogoUrl || artist?.logoAdaptedUrl || rawA || '';
-    setProcessedAvatarUrl(effLogo);
-  }, [artist?.logoUrl, artist?.auditLogoUrl, artist?.logoAdaptedUrl, artist?.logoA]);
+    // Le logo est résolu de façon synchrone et optimisé
+    const effLogo = resolveSyncAvatarUrl(artist, profileMeta);
+    if (effLogo) {
+      setProcessedAvatarUrl(effLogo);
+    }
+  }, [
+    artist?.avatarUrl,
+    artist?.logoUrl,
+    artist?.logo,
+    (artist as any)?.imageUrl,
+    artist?.auditLogoUrl,
+    artist?.logoAdaptedUrl,
+    artist?.logoA,
+    profileMeta.avatarUrl,
+    profileMeta.logoUrl,
+    profileMeta.logo,
+    targetIdentifier
+  ]);
 
   const [cart, setCart] = useState<CartLine[]>([]);
   const [customerName, setCustomerName] = useState('');
@@ -1052,6 +1433,7 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
   const loadDirectFromFirestore = async (identifier: string) => {
     try {
       const isDfazz = identifier === 'fabrizio' || identifier === 'djdfazz' || identifier === 'dfazz' || identifier === 'audit-8f198p5' || identifier === 'guest_ms3ijgnco2xnid' || identifier.toLowerCase().includes('dfazz');
+      const isPbs = identifier === 'pbs' || identifier.toLowerCase().includes('pbs');
       const cleanId = identifier.replace(/^audit-/, '');
       const normId = identifier.toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -1229,9 +1611,47 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
       }
 
       if (hasRealData) {
-        let rawLivePhotos: string[] = siteData?.livePhotoUrls || previewData?.livePhotoUrls || (siteData?.livePhotoUrl ? [siteData.livePhotoUrl] : (previewData?.livePhotoUrl ? [previewData.livePhotoUrl] : []));
-        if (isDfazz && rawLivePhotos.length === 0) {
+        const isDfazzUser = isDfazz;
+        const isPbsUser = isPbs;
+        const isVisionUser = cleanId.includes('vision') || identifier.includes('vision');
+        const isSanctuary = isDfazzUser || isPbsUser || isVisionUser;
+
+        const isBannerRemoved = 
+          siteData?.livePhotoUrl === null || siteData?.livePhotoUrl === '' ||
+          siteData?.coverUrl === null || siteData?.coverUrl === '' ||
+          siteData?.bannerUrl === null || siteData?.bannerUrl === '' ||
+          (siteData && !siteData.livePhotoUrl && !siteData.coverUrl && !siteData.bannerUrl && (!siteData.livePhotoUrls || siteData.livePhotoUrls.length === 0));
+
+        let rawLivePhotos: string[] = [];
+        if (isDfazzUser) {
           rawLivePhotos = ['/assets/dfazz_hero.jpg'];
+        } else if (isPbsUser) {
+          rawLivePhotos = ['/assets/pbs_banner.png'];
+        } else if (isVisionUser) {
+          rawLivePhotos = ['https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg'];
+        } else if (!isBannerRemoved) {
+          rawLivePhotos = (siteData?.livePhotoUrls && siteData.livePhotoUrls.length > 0)
+            ? siteData.livePhotoUrls
+            : (siteData?.livePhotoUrl
+              ? [siteData.livePhotoUrl]
+              : (siteData?.coverUrl
+                ? [siteData.coverUrl]
+                : (siteData?.bannerUrl
+                  ? [siteData.bannerUrl]
+                  : (!siteData && previewData?.livePhotoUrls && previewData.livePhotoUrls.length > 0
+                    ? previewData.livePhotoUrls
+                    : (!siteData && previewData?.livePhotoUrl
+                      ? [previewData.livePhotoUrl]
+                      : (!siteData && previewData?.coverUrl
+                        ? [previewData.coverUrl]
+                        : (!siteData && previewData?.bannerUrl
+                          ? [previewData.bannerUrl]
+                          : [])))))));
+        }
+
+        rawLivePhotos = (rawLivePhotos || []).filter((u: any) => typeof u === 'string' && u.trim().length > 10 && u !== 'none');
+        if (!isDfazzUser) {
+          rawLivePhotos = rawLivePhotos.filter(u => !u.toLowerCase().includes('dfazz'));
         }
 
         const isDokiin = cleanId.includes('dokiin') || cleanId.includes('audit-mt4cimp4luio');
@@ -1248,40 +1668,33 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
 
         const rawSiteA = typeof siteData?.logoA === 'string' ? siteData.logoA : (siteData?.logoA?.adaptedRemastered || siteData?.logoA?.adapted || siteData?.logoA?.original);
         const rawPrevA = typeof previewData?.logoA === 'string' ? previewData.logoA : (previewData?.logoA?.adaptedRemastered || previewData?.logoA?.adapted || previewData?.logoA?.original);
-        let finalLogo = siteData?.logoUrl || siteData?.auditLogoUrl || siteData?.logoAdaptedUrl || rawSiteA || previewData?.logoUrl || previewData?.auditLogoUrl || previewData?.logoAdaptedUrl || rawPrevA || (isDfazz ? '/logo_dfazz_avatar_clean.png' : (isDokiin ? '/dokiin_logo_white.png' : (isAaron ? '/aaronh_logo_transparent.png' : (isMentalist ? 'https://storage.googleapis.com/signaid-prod-assets/users/audit-msx4a4h6crjy/logos/1787516508472_logo.png' : (isElox ? '/elox_logo.png' : '')))));
+        let finalLogo = siteData?.avatarUrl || siteData?.logoUrl || siteData?.logo || siteData?.auditLogoUrl || siteData?.logoAdaptedUrl || rawSiteA || previewData?.avatarUrl || previewData?.logoUrl || previewData?.logo || previewData?.auditLogoUrl || previewData?.logoAdaptedUrl || rawPrevA || (isPbs ? '/assets/pbs_logo_A.png' : (isDfazz ? '/logo_dfazz_avatar_clean.png' : (isDokiin ? '/dokiin_logo_white.png' : (isAaron ? '/aaronh_logo_transparent.png' : (isMentalist ? 'https://storage.googleapis.com/signaid-prod-assets/users/audit-msx4a4h6crjy/logos/1787516508472_logo.png' : (isElox ? '/elox_logo.png' : ''))))));
+        if (isPbs && (!finalLogo || finalLogo.includes('1789483691723_logo_nobg'))) {
+          finalLogo = '/assets/pbs_logo_A.png';
+        }
+        if (finalLogo && finalLogo.includes('1789579603133')) {
+          finalLogo = siteData?.logoUrl || SEED_PROFILES[cleanId]?.logoUrl || '';
+        }
         if (!isDfazz && (finalLogo.toLowerCase().includes('dfazz') || finalLogo.includes('audit-8f198p5') || finalLogo.includes('guest_ms3ijgnco2xnid'))) {
-          finalLogo = isDokiin ? '/dokiin_logo_white.png' : (isAaron ? '/aaronh_logo_transparent.png' : (isMentalist ? 'https://storage.googleapis.com/signaid-prod-assets/users/audit-msx4a4h6crjy/logos/1787516508472_logo.png' : (isElox ? '/elox_logo.png' : '')));
+          finalLogo = isPbs ? '/assets/pbs_logo_A.png' : (isDokiin ? '/dokiin_logo_white.png' : (isAaron ? '/aaronh_logo_transparent.png' : (isMentalist ? 'https://storage.googleapis.com/signaid-prod-assets/users/audit-msx4a4h6crjy/logos/1787516508472_logo.png' : (isElox ? '/elox_logo.png' : ''))));
         }
 
-        const aaronHero = 'https://storage.googleapis.com/signaid-prod-assets/users/aaronh/gallery/1787509987223_cover.jpg';
-        let finalLivePhoto = siteData?.livePhotoUrl || previewData?.livePhotoUrl || (rawLivePhotos.length > 0 ? rawLivePhotos[rawLivePhotos.length - 1] : (isDfazz ? '/assets/dfazz_hero.jpg' : (isDokiin ? '/assets/previews/dokiin_mockup.webp' : (isElox ? '/elox_hero.jpg' : (isAaron ? aaronHero : '')))));
-        if (isAaron && !finalLivePhoto) {
-          finalLivePhoto = aaronHero;
-        }
-        if (isDfazz && !finalLivePhoto) {
+        let finalLivePhoto = '';
+        if (isDfazzUser) {
           finalLivePhoto = '/assets/dfazz_hero.jpg';
-        }
-        if (isDokiin && !finalLivePhoto) {
-          finalLivePhoto = '/assets/previews/dokiin_mockup.webp';
-        }
-        if (isElox && !finalLivePhoto) {
-          finalLivePhoto = '/elox_hero.jpg';
-        }
-        if (!isDfazz && (finalLivePhoto.toLowerCase().includes('dfazz') || finalLivePhoto.includes('audit-8f198p5') || finalLivePhoto.includes('guest_ms3ijgnco2xnid'))) {
-          finalLivePhoto = isDokiin ? '/assets/previews/dokiin_mockup.webp' : (isElox ? '/elox_hero.jpg' : (isAaron ? aaronHero : ''));
+        } else if (isPbsUser) {
+          finalLivePhoto = '/assets/pbs_banner.png';
+        } else if (isVisionUser) {
+          finalLivePhoto = 'https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg';
+        } else if (rawLivePhotos.length > 0) {
+          finalLivePhoto = rawLivePhotos[rawLivePhotos.length - 1];
         }
 
-        const finalLivePhotoUrls = isDfazz && rawLivePhotos.length === 0
-          ? ['/assets/dfazz_hero.jpg']
-          : (isDokiin && rawLivePhotos.length === 0
-            ? ['/assets/previews/dokiin_mockup.webp']
-            : (isElox && rawLivePhotos.length === 0
-              ? ['/elox_hero.jpg']
-              : (isAaron && rawLivePhotos.length === 0
-                ? [aaronHero]
-                : (isDfazz ? rawLivePhotos : rawLivePhotos.filter(u => !u.toLowerCase().includes('dfazz'))))));
+        const finalLivePhotoUrls = isSanctuary
+          ? rawLivePhotos
+          : (rawLivePhotos.length > 0 ? rawLivePhotos : []);
 
-        let finalEmail = siteData?.contactEmail || (isDfazz ? 'Fabriziomagistro89@gmail.com' : (isElox ? 'contact@djelox.be' : ''));
+        let finalEmail = siteData?.contactEmail || (isPbs ? 'contact@pbs.com' : (isDfazz ? 'Fabriziomagistro89@gmail.com' : (isElox ? 'contact@djelox.be' : '')));
         if (!isDfazz && finalEmail === 'Fabriziomagistro89@gmail.com') finalEmail = '';
 
         let finalWhatsapp = siteData?.whatsappNumber || (isDfazz ? '+32492104603' : '');
@@ -1290,16 +1703,21 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         const artistProfile: ArtistProfile = {
           id: identifier,
           companyName: finalName,
-          activitySector: siteData?.activitySector || previewData?.activitySector || '',
+          activitySector: siteData?.activitySector || previewData?.activitySector || (isPbs ? 'Club de tennis de table' : ''),
           slug: siteData?.slug || cleanId,
           logoUrl: finalLogo,
-          logoA: siteData?.logoA || previewData?.logoA || finalLogo || '',
-          logoB: siteData?.logoB || previewData?.logoB || siteData?.logoAdaptedUrl || previewData?.logoAdaptedUrl || finalLogo || '',
-          logoAdaptedUrl: siteData?.logoAdaptedUrl || previewData?.logoAdaptedUrl || siteData?.logoB || previewData?.logoB || finalLogo || '',
+          avatarUrl: siteData?.avatarUrl || previewData?.avatarUrl || finalLogo || (isPbs ? '/assets/pbs_logo_A.png' : ''),
+          logo: siteData?.logo || previewData?.logo || finalLogo || (isPbs ? '/assets/pbs_logo_A.png' : ''),
+          imageUrl: (siteData as any)?.imageUrl || (previewData as any)?.imageUrl || finalLogo || (isPbs ? '/assets/pbs_logo_A.png' : ''),
+          logoA: siteData?.logoA || previewData?.logoA || finalLogo || (isPbs ? '/assets/pbs_logo_A.png' : ''),
+          logoB: siteData?.logoB || previewData?.logoB || siteData?.logoAdaptedUrl || previewData?.logoAdaptedUrl || finalLogo || (isPbs ? '/assets/pbs_logo_B.png' : ''),
+          logoAdaptedUrl: siteData?.logoAdaptedUrl || previewData?.logoAdaptedUrl || siteData?.logoB || previewData?.logoB || finalLogo || (isPbs ? '/assets/pbs_logo_A.png' : ''),
           logoPlacements: siteData?.logoPlacements || previewData?.logoPlacements || undefined,
           livePhotoUrl: finalLivePhoto,
           livePhotoUrls: finalLivePhotoUrls,
-          presentation: siteData?.presentation || previewData?.presentation || (isElox ? 'DJ officiel, sets électroniques en clubs et festivals (Liège, Bruxelles, Dinant). Merchandising officiel et textile exclusif imprimé à la demande.' : ''),
+          coverUrl: isBannerRemoved ? null : (siteData?.coverUrl || previewData?.coverUrl || null),
+          bannerUrl: isBannerRemoved ? null : (siteData?.bannerUrl || previewData?.bannerUrl || null),
+          presentation: siteData?.presentation || previewData?.presentation || siteData?.description || previewData?.description || siteData?.bio || previewData?.bio || (isPbs ? '' : (isElox ? 'DJ officiel, sets électroniques en clubs et festivals (Liège, Bruxelles, Dinant). Merchandising officiel et textile exclusif imprimé à la demande.' : '')),
           contactEmail: finalEmail,
           whatsapp: finalWhatsapp,
           socials: (() => {
@@ -1340,7 +1758,8 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
           coverPositionX: siteData?.coverPositionX !== undefined ? siteData.coverPositionX : 50,
           enableLiveWidget: siteData?.enableLiveWidget !== undefined ? siteData.enableLiveWidget : (isDfazz || isElox),
           liveWidgetStatus: siteData?.liveWidgetStatus || (isDfazz ? '🟢 En Live au Bar Le Club VIP' : (isElox ? '🟢 En Tournée / Liège • Bruxelles • Dinant' : '')),
-          customLinks: siteData?.customLinks || previewData?.customLinks || undefined
+          customLinks: siteData?.customLinks || previewData?.customLinks || undefined,
+          enabledProductIds: siteData?.enabledProductIds || previewData?.enabledProductIds || (isPbs ? ['prod_signaid_sportt_poly_mtzmb4zr', 'E3520_front', 'E3520_back', 'E3520'] : undefined)
         };
 
         const defaultFrontMap: Record<string, string> = {
@@ -1410,10 +1829,27 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
             const defaultName = g === 'polo' ? (isWhite ? 'Polo Blanc' : 'Polo Premium') : (g === 'sweat' ? (isWhite ? 'Hoodie Blanc' : 'Hoodie Premium') : (g === 'tank_top' ? (isWhite ? 'Débardeur Blanc' : 'Débardeur') : (g === 'tshirt_oversize' ? 'T-Shirt Heavyweight' : (g === 'cap' ? 'Casquette Officielle' : (g === 'tote_bag' ? 'Tote Bag Officiel' : (g === 'tshirt_basic' ? 'T-Shirt Léger' : (isWhite ? 'T-Shirt Blanc' : 'T-Shirt Premium')))))));
 
             const rawFront = safeStr(it.aiRemastered) || safeStr(it.ai) || safeStr(it.frontImageUrl) || safeStr(it.imageFront) || safeStr(it.imageUrl) || safeStr(it.realAiSnapshotUrl) || safeStr(it.imageStudio) || (idbImages[it.id] && !isBackUrl(idbImages[it.id]) ? idbImages[it.id] : null) || safeStr(it.mechanical) || safeStr(it.base);
-            const candidateFront = (rawFront && !isBackUrl(rawFront)) ? rawFront : (idbImages[g === 'polo' ? 'pFront' : (g === 'sweat' ? 'hFront' : (g === 'tank_top' ? 'tankFront' : (g === 'tshirt_oversize' ? 'heavyFront' : 'tFront')))] || defaultFrontMap[g]);
+            const candidateFront = (rawFront && !isBackUrl(rawFront)) ? rawFront : (idbImages[
+              g === 'polo' ? (isWhite ? 'pWhiteFront' : 'pFront') :
+              (g === 'sweat' ? (isWhite ? 'hWhiteFront' : 'hFront') :
+              (g === 'tank_top' ? (isWhite ? 'tankWhiteFront' : 'tankFront') :
+              (g === 'tshirt_oversize' ? (isWhite ? 'heavyWhiteFront' : 'heavyFront') :
+              (isWhite ? 'tWhiteFront' : 'tFront'))))]
+              || (isWhite && g === 'tshirt_oversize' ? '/assets/tshirt-white-NX7200.png' :
+                  isWhite && g === 'polo' ? '/assets/polo-white-JHK510.png' :
+                  defaultFrontMap[g]));
 
-            const rawBack = safeStr(it.aiRemasteredBack) || safeStr(it.aiBack) || safeStr(it.backImageUrl) || safeStr(it.imageBack) || (isBack ? (safeStr(it.aiRemastered) || safeStr(it.ai)) : null) || safeStr(it.realAiSnapshotUrl) || safeStr(it.imageUrl) || (idbImages[it.id] && !isFrontUrl(idbImages[it.id]) ? idbImages[it.id] : null) || safeStr(it.mechanicalBack) || safeStr(it.baseBack) || safeStr(it.mechanical) || safeStr(it.base);
-            const candidateBack = (rawBack && !isFrontUrl(rawBack)) ? rawBack : (idbImages[g === 'polo' ? 'pBack' : (g === 'sweat' ? 'hBack' : (g === 'tank_top' ? 'tankBack' : (g === 'tshirt_oversize' ? 'heavyBack' : 'tBack')))] || defaultBackMap[g]);
+            const rawBack = safeStr(it.aiRemasteredBack) || safeStr(it.aiBack) || safeStr(it.backImageUrl) || safeStr(it.imageBack) || safeStr(it.backImage) || (isBack ? (safeStr(it.aiRemastered) || safeStr(it.ai)) : null) || safeStr(it.realAiSnapshotUrl) || safeStr(it.imageUrl) || (idbImages[it.id] && !isFrontUrl(idbImages[it.id]) ? idbImages[it.id] : null) || safeStr(it.mechanicalBack) || safeStr(it.baseBack) || safeStr(it.mechanical) || safeStr(it.base);
+            const candidateBack = (rawBack && !isFrontUrl(rawBack)) ? rawBack : (idbImages[
+              g === 'polo' ? (isWhite ? 'pWhiteBack' : 'pBack') :
+              (g === 'sweat' ? (isWhite ? 'hWhiteBack' : 'hBack') :
+              (g === 'tank_top' ? (isWhite ? 'tankWhiteBack' : 'tankBack') :
+              (g === 'tshirt_oversize' ? (isWhite ? 'heavyWhiteBack' : 'heavyBack') :
+              (isWhite ? 'tWhiteBack' : 'tBack'))))]
+              || (isWhite && g === 'tshirt_oversize' ? '/assets/tshirt-white-NX7200-dos.png' :
+                  isWhite && g === 'polo' ? '/assets/polo-white-JHK510-dos.png' :
+                  defaultBackMap[g]));
+
 
             if (!grouped[itemKey]) {
               grouped[itemKey] = {
@@ -1507,39 +1943,66 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
           });
         }
 
+        if (isPbs) {
+          parsedProducts = parsedProducts.filter(p => isProductEnabled(p, ['prod_signaid_sportt_poly_mtzmb4zr', 'E3520_front', 'E3520_back', 'E3520'], true));
+        }
+
+
+
         if (parsedProducts.length === 0) {
-          parsedProducts = [
-            {
-              id: 'tshirt-pack',
-              name: `${artistProfile.companyName} T-Shirt Premium`,
-              price: 29.99,
-              garment: 'tshirt',
-              frontImageUrl: isDfazz ? '/dfazz_tshirt_front.jpg' : (idbImages['tFront'] || defaultFrontMap.tshirt),
-              backImageUrl: isDfazz ? '/dfazz_tshirt_back.jpg' : (idbImages['tBack'] || defaultBackMap.tshirt),
-              sizes: ['S', 'M', 'L', 'XL'],
-              colors: ['Noir', 'Blanc']
-            },
-            {
-              id: 'polo-pack',
-              name: `${artistProfile.companyName} Polo Premium`,
-              price: 35.00,
-              garment: 'polo',
-              frontImageUrl: isDfazz ? '/dfazz_polo_front.jpg' : (idbImages['pFront'] || defaultFrontMap.polo),
-              backImageUrl: isDfazz ? '/dfazz_polo_back.jpg' : (idbImages['pBack'] || defaultBackMap.polo),
-              sizes: ['S', 'M', 'L', 'XL'],
-              colors: ['Noir', 'Blanc']
-            },
-            {
-              id: 'hoodie-pack',
-              name: `${artistProfile.companyName} Hoodie Premium`,
-              price: 45.00,
-              garment: 'sweat',
-              frontImageUrl: isDfazz ? '/dfazz_hoodie_front.jpg' : (idbImages['hFront'] || defaultFrontMap.hoodie),
-              backImageUrl: isDfazz ? '/dfazz_hoodie_back.jpg' : (idbImages['hBack'] || defaultBackMap.hoodie),
-              sizes: ['S', 'M', 'L', 'XL'],
-              colors: ['Noir', 'Blanc']
-            }
-          ];
+          if (isPbs) {
+            parsedProducts = [
+              {
+                id: 'E3520',
+                name: 'T-Shirt Sport Respirant (E3520)',
+                price: 30.00,
+                garment: 'sport_tshirt',
+                frontImageUrl: PBS_MOCKUP_ASSETS.e3520Front,
+                backImageUrl: PBS_MOCKUP_ASSETS.e3520Back,
+                ai: PBS_MOCKUP_ASSETS.e3520Front,
+                aiRemastered: PBS_MOCKUP_ASSETS.e3520Front,
+                aiBack: PBS_MOCKUP_ASSETS.e3520Back,
+                aiRemasteredBack: PBS_MOCKUP_ASSETS.e3520Back,
+                sizes: ['S', 'M', 'L', 'XL'],
+                colors: ['Bleu'],
+                mechanical: PBS_MOCKUP_ASSETS.e3520FrontMech,
+                mechanicalBack: PBS_MOCKUP_ASSETS.e3520BackMech
+              }
+            ];
+          } else {
+            parsedProducts = [
+              {
+                id: 'tshirt-pack',
+                name: `${artistProfile.companyName} T-Shirt Premium`,
+                price: 29.99,
+                garment: 'tshirt',
+                frontImageUrl: isDfazz ? '/dfazz_tshirt_front.jpg' : (idbImages['tFront'] || defaultFrontMap.tshirt),
+                backImageUrl: isDfazz ? '/dfazz_tshirt_back.jpg' : (idbImages['tBack'] || defaultBackMap.tshirt),
+                sizes: ['S', 'M', 'L', 'XL'],
+                colors: ['Noir', 'Blanc']
+              },
+              {
+                id: 'polo-pack',
+                name: `${artistProfile.companyName} Polo Premium`,
+                price: 35.00,
+                garment: 'polo',
+                frontImageUrl: isDfazz ? '/dfazz_polo_front.jpg' : (idbImages['pFront'] || defaultFrontMap.polo),
+                backImageUrl: isDfazz ? '/dfazz_polo_back.jpg' : (idbImages['pBack'] || defaultBackMap.polo),
+                sizes: ['S', 'M', 'L', 'XL'],
+                colors: ['Noir', 'Blanc']
+              },
+              {
+                id: 'hoodie-pack',
+                name: `${artistProfile.companyName} Hoodie Premium`,
+                price: 45.00,
+                garment: 'sweat',
+                frontImageUrl: isDfazz ? '/dfazz_hoodie_front.jpg' : (idbImages['hFront'] || defaultFrontMap.hoodie),
+                backImageUrl: isDfazz ? '/dfazz_hoodie_back.jpg' : (idbImages['hBack'] || defaultBackMap.hoodie),
+                sizes: ['S', 'M', 'L', 'XL'],
+                colors: ['Noir', 'Blanc']
+              }
+            ];
+          }
         }
 
         return { artist: artistProfile, products: parsedProducts };
@@ -1550,7 +2013,7 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
     return null;
   };
 
-  const resolveUniversalAiProducts = (currentList: any[], targetId: string, companyName?: string) => {
+  const resolveUniversalAiProducts = (currentList: any[], targetId: string, companyName?: string, enabledProductIds?: string[]) => {
     const sessionMockups = extractSessionMockups(targetId);
 
     let updatedList = (currentList || []).map((p: any) => {
@@ -1575,19 +2038,21 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
       const mFront = sessionMockups.find(m => {
         if (!m || m.view === 'back' || isBackViewUrl(m.id)) return false;
         const mId = (m.id || '').toLowerCase();
-        if (frontCandidates.some(c => mId === c.toLowerCase() || mId.includes(c.toLowerCase()))) return true;
         const mGarment = (m.garment || '').toLowerCase();
         const mColor = m.color || (mId.includes('white') ? 'Blanc' : 'Noir');
-        return mGarment === pGarment && mColor === pColor;
+        if (mColor !== pColor) return false;
+        if (frontCandidates.some(c => mId === c.toLowerCase() || mId.includes(c.toLowerCase()))) return true;
+        return mGarment === pGarment;
       });
 
-      const mBack = sessionMockups.find(m => {
-        if (!m || (m.view !== 'back' && !isBackViewUrl(m.id))) return false;
-        const mId = (m.id || '').toLowerCase();
+      const mBack = sessionMockups.find(mb => {
+        if (!mb || (mb.view !== 'back' && !isBackViewUrl(mb.id))) return false;
+        const mId = (mb.id || '').toLowerCase();
+        const mbGarment = (mb.garment || '').toLowerCase();
+        const mbColor = mb.color || (mb.id?.toLowerCase().includes('white') ? 'Blanc' : 'Noir');
+        if (mbColor !== pColor) return false;
         if (backCandidates.some(c => mId === c.toLowerCase() || mId.includes(c.toLowerCase()))) return true;
-        const mGarment = (m.garment || '').toLowerCase();
-        const mColor = m.color || (mId.includes('white') ? 'Blanc' : 'Noir');
-        return mGarment === pGarment && mColor === pColor;
+        return mbGarment === pGarment;
       });
 
       const safeStr = (v: any): string | null => (typeof v === 'string' && v.trim() !== '') ? v : null;
@@ -1595,15 +2060,34 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
       const mFrontCandidate = safeStr(mFront?.aiRemastered) || safeStr(mFront?.ai) || (isAiRenderUrl(mFront?.frontImageUrl || mFront?.imageUrl || mFront?.url) ? (mFront?.frontImageUrl || mFront?.imageUrl || mFront?.url) : null) || safeStr(mFront?.frontImageUrl) || safeStr(mFront?.imageFront) || safeStr(mFront?.imageUrl) || safeStr(mFront?.url) || safeStr(mFront?.mechanical) || safeStr(mFront?.base);
       const mBackCandidate = safeStr(mBack?.aiRemasteredBack) || safeStr(mBack?.aiBack) || safeStr(mBack?.aiRemastered) || safeStr(mBack?.ai) || (isAiRenderUrl(mBack?.backImageUrl || mBack?.imageUrl || mBack?.url) ? (mBack?.backImageUrl || mBack?.imageUrl || mBack?.url) : null) || safeStr(mBack?.backImageUrl) || safeStr(mBack?.imageBack) || safeStr(mBack?.imageUrl) || safeStr(mBack?.url) || safeStr(mFront?.aiRemasteredBack) || safeStr(mFront?.aiBack) || safeStr(mBack?.mechanicalBack) || safeStr(mBack?.baseBack) || safeStr(mBack?.mechanical) || safeStr(mBack?.base);
 
-      let aiFront = mFrontCandidate || safeStr(p.aiRemastered) || safeStr(p.ai) || safeStr(p.frontImageUrl) || safeStr(p.imageUrl) || safeStr(p.mechanical) || safeStr(p.base);
-      let aiBack = mBackCandidate || safeStr(p.aiRemasteredBack) || safeStr(p.aiBack) || safeStr(p.backImageUrl) || safeStr(p.mechanicalBack) || safeStr(p.baseBack) || safeStr(p.mechanical) || safeStr(p.base);
+      const isGenericFlat = (u?: string | null) => {
+        if (!u || typeof u !== 'string') return false;
+        const l = u.toLowerCase();
+        return l.startsWith('/assets/') || l.includes('snapshot') || l.includes('clubvision_tshirt') || l.includes('clubvision_polo') || l.includes('clubvision_hoodie') || l.includes('card-base') || l.includes('neutral');
+      };
 
-      if (aiFront && typeof aiFront === 'string' && (aiFront.includes('snapshot') || aiFront.includes('jhk') || aiFront.includes('clubvision_tshirt_front') || aiFront.includes('clubvision_polo_front') || aiFront.includes('clubvision_hoodie_front'))) {
-        aiFront = mFrontCandidate || null;
+      let aiFront = mFrontCandidate;
+      if (!aiFront || isGenericFlat(aiFront)) {
+        aiFront = (!isGenericFlat(p.aiRemastered) ? safeStr(p.aiRemastered) : null)
+          || (!isGenericFlat(p.ai) ? safeStr(p.ai) : null)
+          || (!isGenericFlat(p.frontImageUrl) ? safeStr(p.frontImageUrl) : null)
+          || (!isGenericFlat(p.imageFront) ? safeStr(p.imageFront) : null)
+          || (!isGenericFlat(p.imageUrl) ? safeStr(p.imageUrl) : null)
+          || mFrontCandidate
+          || safeStr(p.frontImageUrl)
+          || safeStr(p.imageUrl);
       }
-      if (aiBack && typeof aiBack === 'string' && (aiBack.includes('snapshot') || aiBack.includes('jhk') || aiBack.includes('clubvision_tshirt_back') || aiBack.includes('clubvision_polo_back') || aiBack.includes('clubvision_hoodie_back'))) {
-        aiBack = mBackCandidate || null;
+
+      let aiBack = mBackCandidate;
+      if (!aiBack || isGenericFlat(aiBack)) {
+        aiBack = (!isGenericFlat(p.aiRemasteredBack) ? safeStr(p.aiRemasteredBack) : null)
+          || (!isGenericFlat(p.aiBack) ? safeStr(p.aiBack) : null)
+          || (!isGenericFlat(p.backImageUrl) ? safeStr(p.backImageUrl) : null)
+          || (!isGenericFlat(p.imageBack) ? safeStr(p.imageBack) : null)
+          || mBackCandidate
+          || safeStr(p.backImageUrl);
       }
+
 
       const updated = { ...p, garment: pGarment, color: pColor };
       if (aiFront) {
@@ -1659,6 +2143,22 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
       }
     });
 
+    const isPbs = targetId === 'pbs' || targetId.toLowerCase().includes('pbs');
+    const effEnabled = enabledProductIds || (isPbs ? ['prod_signaid_sportt_poly_mtzmb4zr', 'E3520_front', 'E3520_back', 'E3520'] : undefined);
+
+    if (effEnabled && effEnabled.length > 0) {
+      updatedList = updatedList.filter((p: any) => isProductEnabled(p, effEnabled, isPbs));
+    }
+
+    if (isPbs) {
+      updatedList = updatedList.filter((p: any) => {
+        const id = (p.id || '').toLowerCase();
+        const g = (p.garment || '').toLowerCase();
+        const name = (p.name || p.title || '').toLowerCase();
+        return id.includes('e3520') || id.includes('sportt') || g === 'sport_tshirt' || name.includes('sport') || name.includes('e3520');
+      });
+    }
+
     return updatedList;
   };
 
@@ -1667,7 +2167,11 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
     async function fetchArtistData() {
       if (!targetIdentifier) return;
 
-      const swrKey = `fast_artist_cache_v95_${targetIdentifier}`;
+      const cleanId = targetIdentifier.replace(/^audit-/, '');
+      ensureLocalProfileSeeded(cleanId);
+      ensureLocalProfileSeeded(targetIdentifier);
+
+      const swrKey = `fast_artist_cache_v99_${targetIdentifier}`;
       try {
         // Clear all previous artist cache versions to remove any stale references
         const keysToRemove: string[] = [];
@@ -1682,8 +2186,69 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
 
       const isDfazz = targetIdentifier === 'fabrizio' || targetIdentifier === 'djdfazz' || targetIdentifier === 'dfazz' || targetIdentifier === 'audit-8f198p5' || targetIdentifier === 'guest_ms3ijgnco2xnid' || targetIdentifier.toLowerCase().includes('dfazz');
       const isVision = targetIdentifier === 'clubvisionroom' || targetIdentifier === 'visionroom' || targetIdentifier === '13ansvr' || targetIdentifier.toLowerCase().includes('vision');
+      const isPbs = targetIdentifier === 'pbs' || targetIdentifier.toLowerCase().includes('pbs');
 
-      const sanitizeProductList = (rawList: any[]) => {
+      const safeCacheSave = (key: string, val: any) => {
+        try {
+          localStorage.setItem(key, JSON.stringify(val));
+          if (cleanId) {
+            sessionStorage.setItem(`signaid_profile_cache_${cleanId}`, JSON.stringify(val));
+          }
+        } catch (storageErr) {
+          try {
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const k = localStorage.key(i);
+              if (k && k.startsWith('fast_artist_cache_')) {
+                keysToRemove.push(k);
+              }
+            }
+            keysToRemove.forEach(k => localStorage.removeItem(k));
+            localStorage.setItem(key, JSON.stringify(val));
+          } catch (e2) { }
+        }
+      };
+
+      // FAST-PATH ABSOLU POUR PBS : Élimine les appels réseau Firestore et Cloud Functions
+      if (isPbs) {
+        const pbsData = getInitialProfileData('pbs');
+        if (pbsData.artist && pbsData.products.length > 0) {
+          setArtist(pbsData.artist);
+          setProducts(pbsData.products);
+          setProfileMeta({
+            displayName: pbsData.artist.companyName,
+            logoUrl: pbsData.artist.logoUrl || '/assets/pbs_logo_A.png',
+            avatarUrl: pbsData.artist.avatarUrl || '/assets/pbs_logo_A.png',
+            logo: pbsData.artist.logo || '/assets/pbs_logo_A.png',
+            primaryColor: pbsData.artist.accentColor || '#00b5e2',
+            theme: pbsData.artist.theme || 'dark',
+            initials: 'PBS',
+            isReady: true
+          });
+          setLoading(false);
+          safeCacheSave(swrKey, pbsData);
+          try {
+            sessionStorage.setItem('signaid_profile_cache_pbs', JSON.stringify(pbsData));
+          } catch {}
+          return; // Zéro latence réseau, élimination des requêtes redondantes
+        }
+      }
+
+      // Réhydratation instantanée si déjà en cache de session
+      try {
+        const sessionCached = sessionStorage.getItem(`signaid_profile_cache_${cleanId}`);
+        if (sessionCached) {
+          const parsed = JSON.parse(sessionCached);
+          if (parsed && parsed.artist && Array.isArray(parsed.products) && parsed.products.length > 0) {
+            setArtist(parsed.artist);
+            setProducts(parsed.products);
+            setLoading(false);
+            return;
+          }
+        }
+      } catch {}
+
+      const sanitizeProductList = (rawList: any[], enabledIds?: string[]) => {
         let list = (rawList || []).map((p: any) => {
           let pPrice = p.price;
           const isHoodieProd = p.garment === 'sweat' || p.garment === 'hoodie' || (p.title && p.title.toLowerCase().includes('hoodie')) || (p.name && p.name.toLowerCase().includes('hoodie')) || (typeof p.id === 'string' && (p.id.includes('hoodie') || p.id.includes('hFront')));
@@ -1694,7 +2259,21 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         });
 
         const activeBrandName = profileMeta.displayName || artist?.companyName || targetIdentifier;
-        list = resolveUniversalAiProducts(list, targetIdentifier, activeBrandName);
+        const effEnabled = enabledIds || (isPbs ? ['prod_signaid_sportt_poly_mtzmb4zr', 'E3520_front', 'E3520_back', 'E3520'] : undefined);
+        list = resolveUniversalAiProducts(list, targetIdentifier, activeBrandName, effEnabled);
+
+        if (effEnabled && effEnabled.length > 0) {
+          list = list.filter((p: any) => isProductEnabled(p, effEnabled, isPbs));
+        }
+
+        if (isPbs) {
+          list = list.filter((p: any) => {
+            const id = (p.id || '').toLowerCase();
+            const g = (p.garment || '').toLowerCase();
+            const name = (p.name || p.title || '').toLowerCase();
+            return id.includes('e3520') || id.includes('sportt') || g === 'sport_tshirt' || name.includes('sport') || name.includes('e3520');
+          });
+        }
 
         return list.map((product: any) => {
           const safeStr = (v: any): string | null => (typeof v === 'string' && v.trim() !== '') ? v : null;
@@ -1752,7 +2331,7 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
             const rawA = typeof d.logoA === 'string' ? d.logoA : (d.logoA?.adaptedRemastered || d.logoA?.adapted || d.logoA?.original);
             const logoUrl = d.logoUrl || d.auditLogoUrl || d.logoAdaptedUrl || rawA || d.avatar || undefined;
             const primaryColor = d.accentColor || '#dc2626';
-            const theme = d.theme || 'dark';
+            const theme = d.theme || 'auto';
             const initials = displayName.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || 'P';
 
             const resolvedMeta: ProfileMeta = {
@@ -1788,16 +2367,20 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
             if (!isDfazz && (parsed.artist.companyName?.toUpperCase().includes('D-FAZZ') || parsed.artist.logoUrl?.toLowerCase().includes('dfazz'))) {
               localStorage.removeItem(swrKey);
               setLoading(true);
+            } else if (isPbs && parsed.products && parsed.products.length > 1) {
+              localStorage.removeItem(swrKey);
+              setLoading(true);
             } else {
               const rawA = typeof parsed.artist.logoA === 'string' ? parsed.artist.logoA : (parsed.artist.logoA?.adaptedRemastered || parsed.artist.logoA?.adapted || parsed.artist.logoA?.original);
               const effLogo = parsed.artist.logoUrl || parsed.artist.auditLogoUrl || parsed.artist.logoAdaptedUrl || rawA || (parsed.artist as any).avatar;
-              setArtist(parsed.artist);
-              setProducts(sanitizeProductList(parsed.products || []));
+              const effEnabled = parsed.artist.enabledProductIds || (isPbs ? ['prod_signaid_sportt_poly_mtzmb4zr', 'E3520_front', 'E3520_back', 'E3520'] : undefined);
+              setArtist({ ...parsed.artist, enabledProductIds: effEnabled });
+              setProducts(sanitizeProductList(parsed.products || [], effEnabled));
               setProfileMeta({
                 displayName: parsed.artist.companyName || profileMeta.displayName,
                 logoUrl: effLogo,
                 primaryColor: parsed.artist.accentColor || profileMeta.primaryColor,
-                theme: parsed.artist.theme || profileMeta.theme,
+                theme: parsed.artist.theme || profileMeta.theme || 'auto',
                 initials: profileMeta.initials,
                 isReady: true
               });
@@ -1824,24 +2407,6 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
       };
 
       try {
-        const safeCacheSave = (key: string, val: any) => {
-          try {
-            localStorage.setItem(key, JSON.stringify(val));
-          } catch (storageErr) {
-            try {
-              const keysToRemove: string[] = [];
-              for (let i = 0; i < localStorage.length; i++) {
-                const k = localStorage.key(i);
-                if (k && k.startsWith('fast_artist_cache_')) {
-                  keysToRemove.push(k);
-                }
-              }
-              keysToRemove.forEach(k => localStorage.removeItem(k));
-              localStorage.setItem(key, JSON.stringify(val));
-            } catch (e2) { }
-          }
-        };
-
         const timestamp = Date.now();
         const primaryUrl = `https://us-central1-signaid-prod.cloudfunctions.net/getUserBySlug?slug=${encodeURIComponent(targetIdentifier)}&_t=${timestamp}`;
         const secondaryUrl = `https://getuserbyslug-r5zxdnaotq-uc.a.run.app?slug=${encodeURIComponent(targetIdentifier)}&_t=${timestamp}`;
@@ -1858,11 +2423,27 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         if (response && response.ok) {
           const data = await response.json();
           if (data.success && data.artist) {
+            const effEnabled = data.artist.enabledProductIds || data.enabledProductIds || (isPbs ? ['prod_signaid_sportt_poly_mtzmb4zr', 'E3520_front', 'E3520_back', 'E3520'] : undefined);
+            const isSanctuarySlug = isPbs || isDfazz || targetIdentifier.toLowerCase().includes('vision');
+            const apiLivePhoto = data.artist.livePhotoUrl;
+            const hasValidLivePhoto = typeof apiLivePhoto === 'string' && apiLivePhoto.trim().length > 10 && apiLivePhoto !== 'none' && !apiLivePhoto.includes('dfazz_hero');
+            const apiLiveUrls = Array.isArray(data.artist.livePhotoUrls)
+              ? data.artist.livePhotoUrls.filter((u: string) => typeof u === 'string' && u.trim().length > 10 && u !== 'none')
+              : (hasValidLivePhoto ? [apiLivePhoto] : []);
+
             const mergedArtist = {
               ...data.artist,
-              livePhotoUrls: data.artist.livePhotoUrls || (data.artist.livePhotoUrl ? [data.artist.livePhotoUrl] : [])
+              enabledProductIds: effEnabled,
+              livePhotoUrl: isSanctuarySlug
+                ? (data.artist.livePhotoUrl || (isPbs ? '/assets/pbs_banner.png' : (isDfazz ? '/assets/dfazz_hero.jpg' : '')))
+                : (hasValidLivePhoto ? apiLivePhoto : ''),
+              livePhotoUrls: isSanctuarySlug
+                ? (apiLiveUrls.length > 0 ? apiLiveUrls : [data.artist.livePhotoUrl || ''])
+                : apiLiveUrls,
+              coverUrl: hasValidLivePhoto ? data.artist.coverUrl : null,
+              bannerUrl: hasValidLivePhoto ? data.artist.bannerUrl : null
             };
-            const cleanProds = sanitizeProductList(data.products || []);
+            const cleanProds = sanitizeProductList(data.products || [], effEnabled);
             const rawA = typeof mergedArtist.logoA === 'string' ? mergedArtist.logoA : (mergedArtist.logoA?.adaptedRemastered || mergedArtist.logoA?.adapted || mergedArtist.logoA?.original);
             const effLogo = mergedArtist.logoUrl || mergedArtist.auditLogoUrl || mergedArtist.logoAdaptedUrl || rawA || (mergedArtist as any).avatar;
             setArtist(mergedArtist);
@@ -1871,7 +2452,7 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
               displayName: mergedArtist.companyName || profileMeta.displayName,
               logoUrl: effLogo,
               primaryColor: mergedArtist.accentColor || profileMeta.primaryColor,
-              theme: mergedArtist.theme || profileMeta.theme,
+              theme: mergedArtist.theme || profileMeta.theme || 'auto',
               initials: profileMeta.initials,
               isReady: true
             });
@@ -1887,20 +2468,21 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         const directResult = await Promise.race([directPromise, directTimeout]);
 
         if (directResult) {
-          const cleanProds = sanitizeProductList(directResult.products);
+          const effEnabled = directResult.artist.enabledProductIds || (isPbs ? ['prod_signaid_sportt_poly_mtzmb4zr', 'E3520_front', 'E3520_back', 'E3520'] : undefined);
+          const cleanProds = sanitizeProductList(directResult.products, effEnabled);
           const rawA = typeof directResult.artist.logoA === 'string' ? directResult.artist.logoA : ((directResult.artist.logoA as any)?.adaptedRemastered || (directResult.artist.logoA as any)?.adapted || (directResult.artist.logoA as any)?.original);
           const effLogo = directResult.artist.logoUrl || directResult.artist.auditLogoUrl || directResult.artist.logoAdaptedUrl || rawA || (directResult.artist as any).avatar;
-          setArtist(directResult.artist);
+          setArtist({ ...directResult.artist, enabledProductIds: effEnabled });
           setProducts(cleanProds);
           setProfileMeta({
             displayName: directResult.artist.companyName || profileMeta.displayName,
             logoUrl: effLogo,
             primaryColor: directResult.artist.accentColor || profileMeta.primaryColor,
-            theme: directResult.artist.theme || profileMeta.theme,
+            theme: directResult.artist.theme || profileMeta.theme || 'auto',
             initials: profileMeta.initials,
             isReady: true
           });
-          safeCacheSave(swrKey, { artist: directResult.artist, products: cleanProds });
+          safeCacheSave(swrKey, { artist: { ...directResult.artist, enabledProductIds: effEnabled }, products: cleanProds });
           setLoading(false);
           return;
         }
@@ -2083,7 +2665,8 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
     const pageTitle = `${artistName} — Portail & Merchandising`;
     document.title = pageTitle;
 
-    const desc = artist.presentation || `${artistName} — Portail officiel, liens directs et collection merchandising.`;
+    const rawDesc = artist.presentation || `${artistName} — Portail officiel, liens directs et collection merchandising.`;
+    const desc = stripHtmlTags(rawDesc) || `${artistName} — Portail officiel, liens directs et collection merchandising.`;
     const rawLogoA = typeof artist.logoA === 'string' ? artist.logoA : ((artist.logoA as any)?.adaptedRemastered || (artist.logoA as any)?.adapted || (artist.logoA as any)?.original);
     const effLogoForMeta = artist.logoUrl || artist.auditLogoUrl || artist.logoAdaptedUrl || rawLogoA || '';
     const img = (artist.livePhotoUrls && artist.livePhotoUrls[0]) || artist.livePhotoUrl || effLogoForMeta || 'https://signaid.eu/logo.png';
@@ -2111,11 +2694,14 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
     setMeta('name', 'twitter:description', desc);
     setMeta('name', 'twitter:image', fullImg);
   }, [artist, targetIdentifier]);
-
   if (loading) {
     const rawLoadingA = typeof artist?.logoA === 'string' ? artist.logoA : ((artist?.logoA as any)?.adaptedRemastered || (artist?.logoA as any)?.adapted || (artist?.logoA as any)?.original);
+    const isPbsLoading = targetIdentifier.toLowerCase().includes('pbs');
     const displayName = artist?.companyName || profileMeta.displayName || targetIdentifier.replace(/^audit-/, '').replace(/[-_]/g, ' ').toUpperCase();
-    const displayLogo = artist?.logoUrl || artist?.auditLogoUrl || artist?.logoAdaptedUrl || rawLoadingA || profileMeta.logoUrl;
+    let displayLogo = artist?.avatarUrl || artist?.logoUrl || artist?.logo || (artist as any)?.imageUrl || artist?.auditLogoUrl || artist?.logoAdaptedUrl || rawLoadingA || profileMeta.avatarUrl || profileMeta.logoUrl || profileMeta.logo || (isPbsLoading ? '/assets/pbs_logo_A.png' : undefined);
+    if (isPbsLoading && (!displayLogo || displayLogo.includes('1789483691723_logo_nobg'))) {
+      displayLogo = '/assets/pbs_logo_A.png';
+    }
     const displayInitials = profileMeta.initials || displayName.slice(0, 2).toUpperCase();
     const accentColor = artist?.accentColor || profileMeta.primaryColor || '#dc2626';
 
@@ -2163,7 +2749,11 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
                   filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.6))'
                 }}
                 onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
+                  if (isPbsLoading && (e.currentTarget.src !== '/assets/pbs_logo_A.png' && !e.currentTarget.src.endsWith('/assets/pbs_logo_A.png'))) {
+                    e.currentTarget.src = '/assets/pbs_logo_A.png';
+                  } else {
+                    (e.target as HTMLElement).style.display = 'none';
+                  }
                 }}
               />
             </div>
@@ -2352,6 +2942,48 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
   return (
     <div style={{ minHeight: '100vh', backgroundColor: pageBg, color: mainTextColor, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', width: '100%', overflowX: 'hidden' }}>
 
+      {/* BOUTON FLOTTANT DE BASCULE THÈME (JOUR / NUIT) */}
+      <div 
+        style={{
+          position: 'fixed',
+          top: '1rem',
+          right: '1rem',
+          zIndex: 9990,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => toggleTheme()}
+          title={isLight ? 'Passer en mode sombre (Nuit)' : 'Passer en mode clair (Jour)'}
+          aria-label="Basculer le thème"
+          style={{
+            backgroundColor: isLight ? 'rgba(255, 255, 255, 0.92)' : 'rgba(24, 24, 27, 0.88)',
+            color: isLight ? '#0f172a' : '#ffffff',
+            border: isLight ? '1px solid #e2e8f0' : '1px solid rgba(255, 255, 255, 0.15)',
+            boxShadow: isLight ? '0 4px 14px rgba(0, 0, 0, 0.08)' : '0 4px 14px rgba(0, 0, 0, 0.4)',
+            backdropFilter: 'blur(12px)',
+            borderRadius: '9999px',
+            padding: '0.42rem 0.85rem',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            transition: 'all 0.2s ease',
+            userSelect: 'none'
+          }}
+        >
+          <span>{isLight ? '☀️' : '🌙'}</span>
+          <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            {isLight ? 'Clair' : 'Sombre'}
+          </span>
+        </button>
+      </div>
+
       <style>{`
         html, body {
           overflow-x: hidden !important;
@@ -2384,6 +3016,23 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
           padding: 0.85rem 1.25rem !important;
           width: 100% !important;
           box-sizing: border-box !important;
+        }
+
+        .artist-bio-text p {
+          margin: 0 0 0.5rem 0;
+        }
+        .artist-bio-text p:last-child {
+          margin-bottom: 0;
+        }
+        .artist-bio-text b,
+        .artist-bio-text strong {
+          font-weight: 700;
+          color: inherit;
+        }
+        .artist-bio-text a {
+          color: inherit;
+          text-decoration: underline;
+          font-weight: 600;
         }
 
         .profile-main-layout {
@@ -2464,22 +3113,69 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
 
         {/* 1. PHOTO D'AMBIANCE / BANNIÈRE AVEC LOGO DANS LA BULLE AVATAR (TOTALEMENT OPTIONNELLE) */}
         {(() => {
-          const validPhotos = (artist.livePhotoUrls && artist.livePhotoUrls.length > 0
-            ? artist.livePhotoUrls
-            : (artist.livePhotoUrl ? [artist.livePhotoUrl] : []))
-            .filter((u: string) => typeof u === 'string' && u.trim().length > 10 && u !== 'none');
+          const isPbsProfile = targetIdentifier.toLowerCase().includes('pbs') ||
+                               (artist.slug || '').toLowerCase().includes('pbs') ||
+                               (artist.companyName || '').toLowerCase().includes('pbs');
+          const isDfazzProfile = targetIdentifier.toLowerCase().includes('dfazz') ||
+                                 (artist.slug || '').toLowerCase().includes('dfazz');
+          const isVisionProfile = targetIdentifier.toLowerCase().includes('vision') ||
+                                  (artist.slug || '').toLowerCase().includes('vision');
+
+          const rawCandidatePhotos = [
+            ...(artist.livePhotoUrls || []),
+            artist.livePhotoUrl,
+            artist.coverUrl,
+            artist.bannerUrl
+          ].filter((u): u is string => typeof u === 'string' && u.trim().length > 10 && u !== 'none');
+
+          const validPhotos = (isPbsProfile
+            ? ['/assets/pbs_banner.png']
+            : (isDfazzProfile && rawCandidatePhotos.length === 0
+              ? ['/assets/dfazz_hero.jpg']
+              : (isVisionProfile && rawCandidatePhotos.length === 0
+                ? ['https://storage.googleapis.com/signaid-prod-assets/users/mt074jnaldxn/gallery/1787808082062_cover.jpg']
+                : rawCandidatePhotos)));
           const hasLivePhotos = validPhotos.length > 0;
 
           const scale = (artist.logoScale || 100) / 100;
-          const maxLogoH = Math.round(92 * scale);
-          const maxLogoW = Math.round(120 * scale);
+          const logoDim = scale !== 1 ? `${Math.min(95, Math.max(40, Math.round(90 * scale)))}%` : '90%';
           const overlayMode = artist.logoOverlayColor || 'auto';
           const isWhiteForced = overlayMode === 'white';
           const isBlackForced = overlayMode === 'black';
 
           const rawLogoA = typeof artist.logoA === 'string' ? artist.logoA : ((artist.logoA as any)?.adaptedRemastered || (artist.logoA as any)?.adapted || (artist.logoA as any)?.original || '');
-          const currentEffectiveLogo = artist.logoUrl || artist.auditLogoUrl || artist.logoAdaptedUrl || rawLogoA || '';
-          const effLogoLower = currentEffectiveLogo.toLowerCase();
+          
+          const isBadLogo = (u?: string) => !u || u.includes('1789483691723_logo_nobg') || u.includes('1789579603133');
+
+          const logoCandidates = [
+            artist.avatarUrl,
+            artist.logoUrl,
+            artist.logo,
+            (artist as any).imageUrl,
+            artist.auditLogoUrl,
+            artist.logoAdaptedUrl,
+            rawLogoA,
+            processedAvatarUrl,
+            profileMeta.avatarUrl,
+            profileMeta.logoUrl,
+            profileMeta.logo
+          ];
+          let avatarSrc = '';
+          for (const c of logoCandidates) {
+            if (typeof c === 'string' && c.trim()) {
+              if (isBadLogo(c)) continue;
+              avatarSrc = c;
+              break;
+            }
+          }
+          if (!avatarSrc && isPbsProfile) {
+            avatarSrc = '/assets/pbs_logo_A.png';
+          }
+          if (!avatarSrc) {
+            avatarSrc = SEED_PROFILES[targetIdentifier.toLowerCase().trim()]?.logoUrl || '';
+          }
+
+          const effLogoLower = (avatarSrc || '').toLowerCase();
           const isLogoWhiteFile = effLogoLower.includes('white') ||
             effLogoLower.includes('blanc') ||
             effLogoLower.includes('aaronh') ||
@@ -2490,30 +3186,36 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
             artist.logoOverlayColor === 'white';
           const isLogoBlackFile = effLogoLower.includes('black') || effLogoLower.includes('noir');
 
-          // Mode Jour (7h-22h / isLight):
-          // Le fond du cercle est BLANC (#ffffff).
-          // Mode Nuit (22h-7h / !isLight):
-          // Le fond du cercle est NOIR (rgba(10, 10, 15, 0.95)).
-          const circleBg = isLight
-            ? (isWhiteForced ? 'rgba(10, 10, 15, 0.95)' : '#ffffff')
-            : (isBlackForced ? '#ffffff' : 'rgba(10, 10, 15, 0.95)');
+          // Mode Jour / Mode Nuit / PBS :
+          // Pour PBS ou fond clair : cercle blanc (#ffffff) avec logo lisible au centre du cercle blanc.
+          const circleBg = isPbsProfile
+            ? '#ffffff'
+            : (isLight
+              ? (isWhiteForced ? 'rgba(10, 10, 15, 0.95)' : '#ffffff')
+              : (isBlackForced ? '#ffffff' : 'rgba(10, 10, 15, 0.95)'));
 
-          const circleBorder = isLight
-            ? (artist.accentColor ? `3px solid ${artist.accentColor}` : '3px solid rgba(0, 0, 0, 0.12)')
-            : (artist.accentColor ? `3px solid ${artist.accentColor}` : '3px solid rgba(255, 255, 255, 0.4)');
+          const circleBorder = isPbsProfile
+            ? `3px solid ${artist.accentColor || '#00b5e2'}`
+            : (isLight
+              ? (artist.accentColor ? `3px solid ${artist.accentColor}` : '3px solid rgba(0, 0, 0, 0.12)')
+              : (artist.accentColor ? `3px solid ${artist.accentColor}` : '3px solid rgba(255, 255, 255, 0.4)'));
 
-          const logoFilter = isLight
-            ? ((isLogoWhiteFile && !isWhiteForced) || isBlackForced
-              ? 'brightness(0) drop-shadow(0 2px 6px rgba(0,0,0,0.25))'
-              : 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))')
-            : ((isLogoBlackFile && !isBlackForced) || isWhiteForced || isLogoWhiteFile
-              ? (isLogoBlackFile ? 'brightness(0) invert(1) drop-shadow(0 2px 10px rgba(0,0,0,0.95))' : 'drop-shadow(0 2px 10px rgba(0,0,0,0.95))')
-              : 'drop-shadow(0 2px 10px rgba(0,0,0,0.7))');
+          // S'assurer qu'aucun filtre CSS blanc sur fond blanc n'est appliqué sur le cercle blanc !
+          const isBackgroundWhite = circleBg === '#ffffff' || circleBg.includes('255, 255, 255');
+          const logoFilter = isPbsProfile
+            ? 'drop-shadow(0 2px 6px rgba(0,0,0,0.12))'
+            : (isBackgroundWhite
+              ? ((isLogoWhiteFile && !isWhiteForced) || isBlackForced
+                ? 'brightness(0) drop-shadow(0 2px 6px rgba(0,0,0,0.25))'
+                : 'drop-shadow(0 2px 8px rgba(0,0,0,0.15))')
+              : ((isLogoBlackFile && !isBlackForced) || isWhiteForced || isLogoWhiteFile
+                ? (isLogoBlackFile ? 'brightness(0) invert(1) drop-shadow(0 2px 10px rgba(0,0,0,0.95))' : 'drop-shadow(0 2px 10px rgba(0,0,0,0.95))')
+                : 'drop-shadow(0 2px 8px rgba(0,0,0,0.25))'));
 
           // CAS 1 : Présence d'une photo d'ambiance -> Bannière avec bulle avatar chevauchante
           if (hasLivePhotos && validPhotos.length > 0) {
             return (
-              <div style={{ position: 'relative', width: '100%', marginBottom: currentEffectiveLogo ? '3.8rem' : '1.5rem' }}>
+              <div style={{ position: 'relative', width: '100%', marginBottom: avatarSrc ? '3.8rem' : '1.5rem' }}>
                 {/* IMAGE DE BANNIÈRE */}
                 <ArtistPhotoCarousel
                   urls={validPhotos}
@@ -2526,13 +3228,15 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
                 />
 
                 {/* LOGO PAR-DESSUS DANS UN CADRE ROND FIXE */}
-                {currentEffectiveLogo && (
-                  <div style={{
-                    position: 'absolute',
-                    bottom: '-46px',
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    zIndex: 10,
+                {avatarSrc && (
+                  <div 
+                    className="p-1.5"
+                    style={{
+                      position: 'absolute',
+                      bottom: '-46px',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      zIndex: 10,
                     width: '145px',
                     height: '145px',
                     borderRadius: '50%',
@@ -2543,20 +3247,31 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    padding: '12px',
+                    padding: '6px',
+                    boxSizing: 'border-box',
                     boxShadow: '0 14px 35px rgba(0, 0, 0, 0.4)'
                   }}>
                     <img
-                      src={getOptimizedImageUrl(processedAvatarUrl || currentEffectiveLogo, 500)}
-                      alt={artist.companyName}
+                      src={getOptimizedImageUrl(avatarSrc, 500)}
+                      alt={artist.companyName || (isPbsProfile ? 'Logo PBS' : 'Logo')}
+                      loading="eager"
+                      decoding="sync"
+                      {...({ fetchpriority: 'high' } as any)}
                       style={{
-                        maxHeight: `${maxLogoH}px`,
-                        maxWidth: `${maxLogoW}px`,
-                        width: `${Math.round(85 * scale)}%`,
-                        height: 'auto',
+                        width: logoDim,
+                        height: logoDim,
+                        maxWidth: logoDim,
+                        maxHeight: logoDim,
                         objectFit: 'contain',
                         filter: logoFilter,
-                        transition: 'all 0.15s ease'
+                        transition: 'all 0.15s ease',
+                        display: 'block',
+                        margin: 'auto'
+                      }}
+                      onError={(e) => {
+                        if (isPbsProfile && (e.currentTarget.src !== '/assets/pbs_logo_A.png' && !e.currentTarget.src.endsWith('/assets/pbs_logo_A.png'))) {
+                          e.currentTarget.src = '/assets/pbs_logo_A.png';
+                        }
                       }}
                     />
                   </div>
@@ -2566,7 +3281,7 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
           }
 
           // CAS 2 : Pas de photo d'ambiance -> Aucun conteneur / placeholder de bannière, bulle avatar centrée épurée
-          if (currentEffectiveLogo) {
+          if (avatarSrc) {
             return (
               <div style={{
                 display: 'flex',
@@ -2576,9 +3291,11 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
                 paddingTop: '1.25rem',
                 marginBottom: '0.75rem'
               }}>
-                <div style={{
-                  width: '140px',
-                  height: '140px',
+                <div 
+                  className="p-1.5"
+                  style={{
+                    width: '140px',
+                    height: '140px',
                   borderRadius: '50%',
                   backgroundColor: circleBg,
                   border: circleBorder,
@@ -2587,20 +3304,31 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  padding: '12px',
+                  padding: '6px',
+                  boxSizing: 'border-box',
                   boxShadow: isLight ? '0 8px 24px rgba(0, 0, 0, 0.08)' : '0 12px 30px rgba(0, 0, 0, 0.5)'
                 }}>
                   <img
-                    src={getOptimizedImageUrl(processedAvatarUrl || currentEffectiveLogo, 500)}
-                    alt={artist.companyName}
+                    src={getOptimizedImageUrl(avatarSrc, 500)}
+                    alt={artist.companyName || (isPbsProfile ? 'Logo PBS' : 'Logo')}
+                    loading="eager"
+                    decoding="sync"
+                    {...({ fetchpriority: 'high' } as any)}
                     style={{
-                      maxHeight: `${maxLogoH}px`,
-                      maxWidth: `${maxLogoW}px`,
-                      width: `${Math.round(85 * scale)}%`,
-                      height: 'auto',
+                      width: logoDim,
+                      height: logoDim,
+                      maxWidth: logoDim,
+                      maxHeight: logoDim,
                       objectFit: 'contain',
                       filter: logoFilter,
-                      transition: 'all 0.15s ease'
+                      transition: 'all 0.15s ease',
+                      display: 'block',
+                      margin: 'auto'
+                    }}
+                    onError={(e) => {
+                      if (isPbsProfile && (e.currentTarget.src !== '/assets/pbs_logo_A.png' && !e.currentTarget.src.endsWith('/assets/pbs_logo_A.png'))) {
+                        e.currentTarget.src = '/assets/pbs_logo_A.png';
+                      }
                     }}
                   />
                 </div>
@@ -2612,7 +3340,7 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         })()}
 
         {/* 3. NOM DU PROFIL & SLOGAN (TYPOGRAPHIE FIDÈLE AU STUDIO ADMIN) */}
-        <div style={{ marginBottom: '1.25rem', marginTop: (processedAvatarUrl || currentEffectiveLogo) ? '0.5rem' : '0' }}>
+        <div style={{ marginBottom: '1.25rem', marginTop: (processedAvatarUrl || artist.avatarUrl || artist.logoUrl || artist.logo) ? '0.5rem' : '0' }}>
           {artist.companyName && artist.companyName.trim() !== '' && (
             <h1 className="artist-main-title" style={{ fontSize: 'clamp(1.4rem, 6vw, 2.2rem)', fontWeight: '900', letterSpacing: '-0.02em', margin: '0 0 0.25rem 0', textTransform: 'uppercase', color: mainTextColor, wordBreak: 'break-word' }}>
               {artist.companyName}
@@ -2626,33 +3354,43 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         </div>
 
         {/* 4. BIO / PITCH EN CARTE VERRE FUMÉ */}
-        {artist.presentation && (
-          <div
-            style={{
-              background: isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(15, 23, 42, 0.65)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              border: isLight ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: '16px',
-              padding: '1.25rem 1.5rem',
-              margin: '0 auto 1.5rem auto',
-              maxWidth: '540px',
-              boxShadow: isLight ? '0 10px 25px -5px rgba(0, 0, 0, 0.05)' : '0 10px 30px -5px rgba(0, 0, 0, 0.5)',
-              textAlign: 'center'
-            }}
-          >
-            <p style={{
-              margin: 0,
-              fontSize: '0.92rem',
-              lineHeight: 1.6,
-              color: isLight ? '#334155' : '#cbd5e1',
-              fontWeight: 500,
-              letterSpacing: '0.01em'
-            }}>
-              {artist.presentation}
-            </p>
-          </div>
-        )}
+        {(() => {
+          const rawBio = artist.presentation || (artist as any).description || (artist as any).bio;
+          if (!rawBio || typeof rawBio !== 'string' || !rawBio.trim()) return null;
+          const textOnly = stripHtmlTags(rawBio);
+          if (!textOnly) return null;
+          const cleanBio = sanitizeHtml(rawBio);
+
+          return (
+            <div
+              style={{
+                background: isLight ? 'rgba(255, 255, 255, 0.85)' : 'rgba(15, 23, 42, 0.65)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: isLight ? '1px solid rgba(226, 232, 240, 0.8)' : '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '16px',
+                padding: '1.25rem 1.5rem',
+                margin: '0 auto 1.5rem auto',
+                maxWidth: '540px',
+                boxShadow: isLight ? '0 10px 25px -5px rgba(0, 0, 0, 0.05)' : '0 10px 30px -5px rgba(0, 0, 0, 0.5)',
+                textAlign: 'center'
+              }}
+            >
+              <div
+                className="artist-bio-text"
+                style={{
+                  margin: 0,
+                  fontSize: '0.92rem',
+                  lineHeight: 1.6,
+                  color: isLight ? '#334155' : '#cbd5e1',
+                  fontWeight: 500,
+                  letterSpacing: '0.01em'
+                }}
+                dangerouslySetInnerHTML={{ __html: cleanBio }}
+              />
+            </div>
+          );
+        })()}
 
         {/* 5. BARRE DES RÉSEAUX SOCIAUX & STREAMING (PICTOGRAMMES RONDS SOUS LA BIO) */}
         {(() => {
@@ -2882,13 +3620,15 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
             items={products}
             title="Merch & Collections"
             subtitle="Capsules officielles & éditions limitées"
-            accentColor={artist.accentColor || '#ff3366'}
+            accentColor={artist?.accentColor || '#ff3366'}
             isLightMode={isLight}
-            artistLogoA={artist.logoUrl || artist.auditLogoUrl || artist.logoAdaptedUrl || (typeof artist.logoA === 'string' ? artist.logoA : ((artist.logoA as any)?.adaptedRemastered || (artist.logoA as any)?.adapted || (artist.logoA as any)?.original)) || ''}
-            artistLogoB={artist.logoB || artist.logoAdaptedUrl || artist.auditLogoUrl || (typeof artist.logoA === 'string' ? artist.logoA : ((artist.logoA as any)?.adaptedRemastered || (artist.logoA as any)?.adapted || (artist.logoA as any)?.original)) || artist.logoUrl || ''}
-            artistName={artist.companyName}
+            artistLogoA={artist?.logoUrl || artist?.auditLogoUrl || artist?.logoAdaptedUrl || (typeof artist?.logoA === 'string' ? artist?.logoA : ((artist?.logoA as any)?.adaptedRemastered || (artist?.logoA as any)?.adapted || (artist?.logoA as any)?.original)) || ''}
+            artistLogoB={artist?.logoB || artist?.logoAdaptedUrl || artist?.auditLogoUrl || (typeof artist?.logoA === 'string' ? artist?.logoA : ((artist?.logoA as any)?.adaptedRemastered || (artist?.logoA as any)?.adapted || (artist?.logoA as any)?.original)) || artist?.logoUrl || ''}
+            artistName={artist?.companyName || ''}
             onAddToCart={addToCart}
-            shopUrl={`/portail-shop/${artist.slug || (artist.companyName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '') || artist.id}`}
+            shopUrl={`/portail-shop/${artist?.slug || (artist?.companyName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '') || artist?.id || targetIdentifier}`}
+            enabledProductIds={artist?.enabledProductIds || (targetIdentifier.toLowerCase().includes('pbs') ? ['prod_signaid_sportt_poly_mtzmb4zr', 'E3520_front', 'E3520_back', 'E3520'] : undefined)}
+            isPbsProfile={targetIdentifier.toLowerCase().includes('pbs')}
           />
         </div>
       )}
@@ -3047,8 +3787,27 @@ export default function ArtistProfileView({ overrideSlug }: { overrideSlug?: str
         </div>
       )}
 
-      {/* BARRE D'OUTILS ADMIN FLOTTANTE QUAND CONNECTÉ DIRECTEMENT SUR LE PROFIL */}
-      <AdminQuickBar uid={artist.id} companyName={artist.companyName} />
+      {/* BARRE D'OUTILS ADMIN FLOTTANTE : STRICTEMENT MASQUÉE SUR LES URLS PUBLIQUES DIRECTES.
+          S'affiche UNIQUEMENT si l'utilisateur est administrateur authentifié ET en mode aperçu (?preview=admin ou provenant de /vitrine-admin) */}
+      {(() => {
+        if (typeof window === 'undefined') return null;
+        const params = new URLSearchParams(window.location.search);
+        const hasPreviewParam = params.get('preview') === 'admin' || params.has('admin') || params.get('mode') === 'admin';
+        const isFromAdmin = typeof document !== 'undefined' && (
+          document.referrer.includes('/vitrine-admin') ||
+          document.referrer.includes('/admin') ||
+          window.location.pathname.startsWith('/vitrine-admin')
+        );
+        if (!hasPreviewParam && !isFromAdmin) return null;
+        return (
+          <AdminQuickBar 
+            uid={artist.id} 
+            companyName={artist.companyName} 
+            currentTheme={artist?.theme || profileMeta.theme || 'auto'}
+            onThemeChange={toggleTheme}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -3064,3 +3823,5 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
   boxSizing: 'border-box'
 };
+
+export default ArtistProfileView;

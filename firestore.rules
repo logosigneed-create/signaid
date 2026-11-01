@@ -11,6 +11,46 @@ service cloud.firestore {
       );
     }
 
+    // Catalogue produits et configurations publiques
+    match /products/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    match /SiteConfigs/{document=**} {
+      allow read, write: if true;
+    }
+    match /portail-config/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Audits, previews et sessions
+    match /audits/{document=**} {
+      allow read, write: if true;
+    }
+    match /sessions/{document=**} {
+      allow read, write: if true;
+    }
+    match /anonymous_previews/{document=**} {
+      allow read, write: if true;
+    }
+    match /btp_projects/{document=**} {
+      allow read, write: if true;
+    }
+    match /showcases/{document=**} {
+      allow read, write: if true;
+    }
+    match /generation_logs/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Utilisateurs connectés ou anonymes
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+    match /users/{userId} {
+      allow read, write: if request.auth != null;
+    }
+
     // Global Settings (Pricing, Dimensions, Flyer, Banner, etc.)
     match /settings/{settingId} {
       allow read: if true; 
@@ -18,65 +58,45 @@ service cloud.firestore {
     }
 
     // Contact Messages
-    match /contact_messages/{document} {
-      allow create: if request.auth != null;
+    match /contact_messages/{document=**} {
+      allow create: if true;
       allow read, update, delete: if isAdmin();
     }
 
-    // AI Generation Logs (Guests & Users)
-    match /generation_logs/{document} {
-      allow create: if request.auth != null;
-      allow read: if isAdmin();
-    }
-
     // Feedback
-    match /feedback/{document} {
-      allow create: if request.auth != null;
+    match /feedback/{document=**} {
+      allow create: if true;
       allow read: if isAdmin();
     }
 
     // Posts & Gallery
-    match /posts/{postId} {
+    match /posts/{document=**} {
       allow read: if true;
       allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && request.auth.uid == resource.data.user.id;
-    }
-
-    // Users
-    match /users/{userId} {
-      // Allow user to read/write their own data OR Admin to read all
-      allow read: if (request.auth != null && request.auth.uid == userId) || isAdmin();
-      allow write: if (request.auth != null && request.auth.uid == userId) || isAdmin();
+      allow update, delete: if request.auth != null && (request.auth.uid == resource.data.user.id || isAdmin());
     }
 
     // Orders
-    match /orders/{orderId} {
-      allow create: if request.auth != null;
-      // Allow user to read own orders OR Admin to read all
+    match /orders/{document=**} {
+      allow create: if true;
       allow read: if (request.auth != null && (resource.data.email == request.auth.token.email || resource.data.userId == request.auth.uid)) || isAdmin();
     }
 
     // Quotes
-    match /quotes/{quoteId} {
-      allow create: if request.auth != null;
+    match /quotes/{document=**} {
+      allow create: if true;
       allow read: if isAdmin();
     }
 
     // Redemptions
-    match /redemptions/{redemptionId} {
-      allow create: if request.auth != null;
+    match /redemptions/{document=**} {
+      allow create: if true;
       allow read: if isAdmin();
-    }
-
-    // Products (Catalog)
-    match /products/{slug} {
-      allow read: if true;
-      allow write: if isAdmin();
     }
 
     // Chat Sessions
     match /chats/{sessionId}/messages/{messageId} {
-      allow create, read: if request.auth != null && (request.auth.uid == sessionId || isAdmin()); 
+      allow create, read: if true; 
       allow update, delete: if isAdmin();
     }
 
@@ -87,82 +107,76 @@ service cloud.firestore {
     }
 
     // Design Sharing
-    match /sharedDesigns/{designId} {
+    match /sharedDesigns/{document=**} {
       allow read, create: if true;
       allow update, delete: if isAdmin();
     }
 
-    match /shortLinks/{shortId} {
+    match /shortLinks/{document=**} {
       allow read, create: if true;
       allow update, delete: if isAdmin();
     }
 
-    // BTP / Portail Projects & Dotations
-    match /btp_projects/{projectId} {
+    // BTP / Portail Projects & Dotations (recursive)
+    match /audit_projects/{document=**} {
       allow read, create, update, delete: if true;
     }
 
-    match /btp_dotations/{dotationId} {
+    match /projects/{document=**} {
       allow read, create, update, delete: if true;
     }
 
-    match /anonymous_previews/{previewId} {
+    match /btp_dotations/{document=**} {
       allow read, create, update, delete: if true;
     }
 
-    // Vitrine / Site Configuration
-    match /configs/{configId} {
+    // Vitrine / Site Configuration (recursive: covers SiteConfigs/{slug}/mockups/{id})
+    match /configs/{document=**} {
       allow read, create, update, delete: if true;
     }
 
-    match /audit_catalog/{docId} {
+    match /audit_catalog/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
 
-    match /custom_audit_products/{docId} {
+    match /custom_audit_products/{document=**} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if true;
     }
 
-    match /audit_custom_products/{productId} {
+    match /audit_custom_products/{document=**} {
       allow read, create, update, delete: if true;
     }
 
-    match /audit_products/{productId} {
+    match /audit_products/{document=**} {
       allow read, create, update, delete: if true;
     }
 
-    match /SiteConfigs/{configId} {
+    match /prospects/{document=**} {
       allow read, create, update, delete: if true;
-    }
-
-    // Portail General Configuration (Placements, etc.)
-    match /portail-config/{configId} {
-      allow read: if true;
-      allow write: if isAdmin();
     }
 
     // Inbound Leads
-    match /leads/{leadId} {
+    match /leads/{document=**} {
       allow create: if true;
       allow read, update, delete: if isAdmin();
     }
 
     // Prospect Requests (Landing Page Application Form)
-    match /prospect_requests/{requestId} {
+    match /prospect_requests/{document=**} {
       allow create: if true;
       allow read, update, delete: if isAdmin();
     }
 
     // Access Requests (Infrastructure Claim Modal)
-    match /access_requests/{requestId} {
+    match /access_requests/{document=**} {
       allow create: if true;
       allow read, update, delete: if isAdmin();
     }
 
     // DJ Sales (Dashboard stats & margins)
-    match /dj_sales/{saleId} {
+    match /dj_sales/{document=**} {
       allow read, create, update, delete: if true;
     }
 
@@ -172,5 +186,3 @@ service cloud.firestore {
     }
   }
 }
-
-

@@ -4,7 +4,7 @@ import {
     Sparkles, Upload, ArrowLeft, Download, Layers, Palette, RefreshCw, 
     Wand2, Check, AlertCircle, ShoppingBag, Eye, EyeOff, Plus, Trash2, Copy, 
     ExternalLink, FileText, CheckCircle2, Shield, Settings2, Box, Tag, Euro,
-    Key, X, Sliders, Shirt, Maximize2, RotateCw
+    Key, X, Sliders, Shirt, Maximize2, RotateCw, ArrowRight
 } from 'lucide-react';
 import { 
     generateProductAidImage, refinePromptWithAI, extractDominantColor, 
@@ -14,9 +14,46 @@ import {
 import { 
     saveProductToAuditPortal, fetchCustomAuditProducts, 
     deleteProductFromAuditPortal, getMergedAuditCatalog, formatCatalogAsTsCode,
-    sanitizeAuditProductEntry
+    sanitizeAuditProductEntry, STANDARD_COLOR_PRESETS, createColorVariantFromProduct,
+    getKnownMockupsForProductColor, ColorPreset
 } from '../services/auditCatalogService';
 import { AuditProductEntry, AUDIT_PORTAIL_CONFIG } from '../config/audit-portail';
+import { storage } from '../firebaseConfig';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+
+/**
+ * Convertit une chaîne Base64 (data:image/...) en Blob binaire
+ */
+const base64ToBlob = async (base64Data: string): Promise<Blob> => {
+    try {
+        const res = await fetch(base64Data);
+        return await res.blob();
+    } catch {
+        const parts = base64Data.split(';base64,');
+        const contentType = parts[0]?.replace(/^data:/, '') || 'image/png';
+        const base64Payload = parts[1] || parts[0];
+        const raw = window.atob(base64Payload);
+        const rawLength = raw.length;
+        const uInt8Array = new Uint8Array(rawLength);
+        for (let i = 0; i < rawLength; ++i) {
+            uInt8Array[i] = raw.charCodeAt(i);
+        }
+        return new Blob([uInt8Array], { type: contentType });
+    }
+};
+
+/**
+ * Upload un Blob ou une image Base64 sur Firebase Storage et retourne l'URL de téléchargement publique
+ */
+const uploadMockupBase64ToStorage = async (base64Data: string, storagePath: string): Promise<string> => {
+    const blob = await base64ToBlob(base64Data);
+    const storageRef = ref(storage, storagePath);
+    const snapshot = await uploadBytes(storageRef, blob, {
+        contentType: blob.type || 'image/png',
+        cacheControl: 'public, max-age=31536000'
+    });
+    return await getDownloadURL(snapshot.ref);
+};
 
 export const ProductAidView: React.FC = () => {
     const navigate = useNavigate();
@@ -24,9 +61,21 @@ export const ProductAidView: React.FC = () => {
     const templateInputRef = useRef<HTMLInputElement>(null);
     const mockupFrontInputRef = useRef<HTMLInputElement>(null);
     const mockupBackInputRef = useRef<HTMLInputElement>(null);
+    const variantFrontInputRef = useRef<HTMLInputElement>(null);
+    const variantBackInputRef = useRef<HTMLInputElement>(null);
 
     // Active tab: 'audit-form' | 'ai-studio' | 'active-catalog'
     const [activeTab, setActiveTab] = useState<'audit-form' | 'ai-studio' | 'active-catalog'>('audit-form');
+
+    // === Color Variant States ===
+    const [isVariantModalOpen, setIsVariantModalOpen] = useState<boolean>(false);
+    const [variantSourceProduct, setVariantSourceProduct] = useState<AuditProductEntry | null>(null);
+    const [variantTarget, setVariantTarget] = useState<AuditProductEntry | null>(null);
+    const [selectedPresetName, setSelectedPresetName] = useState<string>('Blanc');
+    const [customColorHex, setCustomColorHex] = useState<string>('#ffffff');
+    const [customColorName, setCustomColorName] = useState<string>('');
+    const [isSavingVariant, setIsSavingVariant] = useState<boolean>(false);
+    const [selectedSourceForClone, setSelectedSourceForClone] = useState<string>('');
 
     // === AI Studio States ===
     const [garmentImage, setGarmentImage] = useState<ProductAidImage | null>(null);
@@ -333,6 +382,27 @@ export const ProductAidView: React.FC = () => {
                     back = tmp;
                     if (preview === tmp) preview = front;
                 }
+
+                // 1. Automatisation de l'upload Firebase Storage des images Base64
+                const cleanSku = (formProduct.sku || 'sku').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+
+                if (front && front.startsWith('data:image/')) {
+                    setSaveSuccessMessage("Upload du mockup Face vers Firebase Storage...");
+                    const frontStoragePath = `catalog_mockups/${cleanSku}_front.png`;
+                    front = await uploadMockupBase64ToStorage(front, frontStoragePath);
+                }
+
+                if (back && back.startsWith('data:image/')) {
+                    setSaveSuccessMessage("Upload du mockup Dos vers Firebase Storage...");
+                    const backStoragePath = `catalog_mockups/${cleanSku}_back.png`;
+                    back = await uploadMockupBase64ToStorage(back, backStoragePath);
+                }
+
+                if (preview && preview.startsWith('data:image/')) {
+                    preview = front;
+                } else if (!preview) {
+                    preview = front;
+                }
             }
 
             const productId = isWhiteNx7200
@@ -356,6 +426,19 @@ export const ProductAidView: React.FC = () => {
                     marginEstimated: Math.max(0, Number(((Number(formProduct.pricing.retailPriceTtc) || 0) / 1.2 - (Number(formProduct.pricing.costPriceHt) || 0)).toFixed(2)))
                 }
             });
+
+            // Mettre à jour l'état local du formulaire avec les URLs pérennes de Storage
+            setFormProduct(prev => ({
+                ...prev,
+                mockups: {
+                    ...prev.mockups,
+                    front,
+                    back,
+                    preview
+                },
+                frontImageUrl: front,
+                backImageUrl: back
+            }));
 
             await saveProductToAuditPortal(finalProduct);
             await loadCatalog();
@@ -384,6 +467,164 @@ export const ProductAidView: React.FC = () => {
         navigator.clipboard.writeText(code);
         setCopiedJson(true);
         setTimeout(() => setCopiedJson(false), 3000);
+    };
+
+    // === Color Variant Actions ===
+    const handleOpenVariantModal = (sourceProduct: AuditProductEntry, initialColorName: string = 'Blanc') => {
+        setError(null);
+        setVariantSourceProduct(sourceProduct);
+        setSelectedPresetName(initialColorName);
+        const preset = STANDARD_COLOR_PRESETS.find(p => p.name.toLowerCase() === initialColorName.toLowerCase()) || STANDARD_COLOR_PRESETS[0];
+        const newVariant = createColorVariantFromProduct(sourceProduct, preset);
+        setVariantTarget(newVariant);
+        setIsVariantModalOpen(true);
+    };
+
+    const handleSelectColorPreset = (preset: ColorPreset) => {
+        setSelectedPresetName(preset.name);
+        if (variantSourceProduct) {
+            const updated = createColorVariantFromProduct(variantSourceProduct, preset);
+            setVariantTarget(updated);
+        }
+    };
+
+    const handleCustomColorChange = (name: string, hex: string) => {
+        setSelectedPresetName('custom');
+        setCustomColorName(name);
+        setCustomColorHex(hex);
+        if (variantSourceProduct) {
+            const updated = createColorVariantFromProduct(variantSourceProduct, {
+                name: name || 'Couleur',
+                hex: hex || '#ffffff',
+                skuSuffix: (name || 'COL').substring(0, 3).toUpperCase()
+            });
+            setVariantTarget(updated);
+        }
+    };
+
+    const handleVariantMockupUpload = (file: File, view: 'front' | 'back') => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const base64 = reader.result as string;
+            setVariantTarget(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    mockups: {
+                        ...prev.mockups,
+                        [view]: base64,
+                        preview: view === 'front' ? base64 : (prev.mockups?.preview || base64)
+                    },
+                    frontImageUrl: view === 'front' ? base64 : prev.frontImageUrl,
+                    backImageUrl: view === 'back' ? base64 : prev.backImageUrl
+                };
+            });
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleSwapVariantViews = () => {
+        setVariantTarget(prev => {
+            if (!prev) return null;
+            const front = prev.mockups?.front || '';
+            const back = prev.mockups?.back || '';
+            return {
+                ...prev,
+                mockups: {
+                    ...prev.mockups,
+                    front: back,
+                    back: front,
+                    preview: back
+                },
+                frontImageUrl: back,
+                backImageUrl: front
+            };
+        });
+    };
+
+    const handleSaveVariantDirectly = async () => {
+        if (!variantTarget) return;
+        if (!variantTarget.title || !variantTarget.sku) {
+            setError("Veuillez renseigner au minimum le Titre et la Référence SKU de la variante.");
+            return;
+        }
+
+        setIsSavingVariant(true);
+        setError(null);
+        try {
+            let front = (variantTarget.mockups?.front || variantTarget.frontImageUrl || '').trim();
+            let back = (variantTarget.mockups?.back || variantTarget.backImageUrl || '').trim();
+            let preview = (variantTarget.mockups?.preview || front).trim();
+
+            const cleanSku = (variantTarget.sku || 'variant').trim().replace(/[^a-zA-Z0-9_-]/g, '_');
+
+            if (front && front.startsWith('data:image/')) {
+                setSaveSuccessMessage("Upload du mockup Face de la variante vers Firebase Storage...");
+                const frontStoragePath = `catalog_mockups/${cleanSku}_front.png`;
+                front = await uploadMockupBase64ToStorage(front, frontStoragePath);
+            }
+
+            if (back && back.startsWith('data:image/')) {
+                setSaveSuccessMessage("Upload du mockup Dos de la variante vers Firebase Storage...");
+                const backStoragePath = `catalog_mockups/${cleanSku}_back.png`;
+                back = await uploadMockupBase64ToStorage(back, backStoragePath);
+            }
+
+            if (!preview || preview.startsWith('data:image/')) {
+                preview = front;
+            }
+
+            const finalVariant: AuditProductEntry = sanitizeAuditProductEntry({
+                ...variantTarget,
+                mockups: {
+                    front,
+                    back,
+                    preview
+                },
+                frontImageUrl: front,
+                backImageUrl: back,
+                pricing: {
+                    costPriceHt: Number(variantTarget.pricing?.costPriceHt) || 0,
+                    retailPriceTtc: Number(variantTarget.pricing?.retailPriceTtc) || 0,
+                    currency: variantTarget.pricing?.currency || 'EUR',
+                    marginEstimated: Math.max(0, Number(((Number(variantTarget.pricing?.retailPriceTtc) || 0) / 1.2 - (Number(variantTarget.pricing?.costPriceHt) || 0)).toFixed(2)))
+                }
+            });
+
+            await saveProductToAuditPortal(finalVariant);
+            await loadCatalog();
+            setIsVariantModalOpen(false);
+            setSaveSuccessMessage(`Variante « ${finalVariant.title} » (${finalVariant.sku}) ajoutée avec succès au catalogue !`);
+            setTimeout(() => setSaveSuccessMessage(null), 5000);
+        } catch (err: any) {
+            setError(err.message || "Erreur lors de l'enregistrement de la variante.");
+        } finally {
+            setIsSavingVariant(false);
+        }
+    };
+
+    const handleOpenVariantInForm = () => {
+        if (!variantTarget) return;
+        setFormProduct(variantTarget);
+        setIsVariantModalOpen(false);
+        setActiveTab('audit-form');
+        setSaveSuccessMessage(`Variante « ${variantTarget.title} » chargée dans le formulaire. Ajustez vos images Face & Dos et validez !`);
+        setTimeout(() => setSaveSuccessMessage(null), 5000);
+    };
+
+    const handleQuickCloneToForm = (sourceProductId: string, colorName: string) => {
+        const source = activeCatalog.find(p => p.id === sourceProductId);
+        if (!source) return;
+        const preset = STANDARD_COLOR_PRESETS.find(p => p.name.toLowerCase() === colorName.toLowerCase()) || {
+            name: colorName,
+            hex: '#ffffff',
+            skuSuffix: colorName.substring(0, 3).toUpperCase(),
+            label: colorName
+        };
+        const variant = createColorVariantFromProduct(source, preset);
+        setFormProduct(variant);
+        setSaveSuccessMessage(`Produit « ${source.title} » dupliqué en variante « ${colorName} » ! Toutes les caractéristiques techniques ont été reprises. Modifiez l'image Face / Dos et validez.`);
+        setTimeout(() => setSaveSuccessMessage(null), 5000);
     };
 
     return (
@@ -577,6 +818,350 @@ export const ProductAidView: React.FC = () => {
                 </div>
             )}
 
+            {/* Modal: Color Variant Management */}
+            {isVariantModalOpen && variantTarget && (
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
+                    <div className="bg-neutral-900 border border-neutral-700 rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl space-y-6 relative my-8 animate-in fade-in zoom-in-95 duration-200">
+                        <button 
+                            type="button"
+                            onClick={() => setIsVariantModalOpen(false)}
+                            className="absolute top-5 right-5 text-neutral-400 hover:text-white p-1.5 rounded-xl hover:bg-neutral-800 transition-colors"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+
+                        {/* Modal Header */}
+                        <div className="flex items-start gap-4 border-b border-neutral-800 pb-4">
+                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0 shadow-inner">
+                                <Palette className="w-6 h-6" />
+                            </div>
+                            <div className="flex-1 pr-6">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-400 px-2.5 py-0.5 rounded-full border border-amber-500/20 uppercase tracking-wide">
+                                        Nouvelle Variante de Couleur
+                                    </span>
+                                    {variantSourceProduct && (
+                                        <span className="text-[10px] text-neutral-400 font-mono">
+                                            Source : {variantSourceProduct.sku}
+                                        </span>
+                                    )}
+                                </div>
+                                <h3 className="font-extrabold text-lg text-white">
+                                    {variantSourceProduct?.title || 'Produit'}
+                                </h3>
+                                <p className="text-xs text-neutral-400 mt-0.5">
+                                    Toutes les spécifications techniques (composition, grammage, coupe, finitions) sont automatiquement reprises. Choisissez la couleur et ajustez vos images Face &amp; Dos.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Step 1: Color Selection */}
+                        <div className="space-y-3">
+                            <label className="text-xs font-bold text-neutral-200 flex items-center justify-between">
+                                <span className="flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px] font-extrabold">1</span>
+                                    Sélectionnez la couleur du modèle :
+                                </span>
+                                <span className="text-[11px] font-medium text-amber-400">
+                                    Actuelle : {variantTarget.colors?.[0]?.name || selectedPresetName}
+                                </span>
+                            </label>
+
+                            {/* Preset Pills */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                {STANDARD_COLOR_PRESETS.map(preset => {
+                                    const isSelected = selectedPresetName === preset.name;
+                                    return (
+                                        <button
+                                            key={preset.name}
+                                            type="button"
+                                            onClick={() => handleSelectColorPreset(preset)}
+                                            className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-semibold transition-all text-left ${
+                                                isSelected
+                                                    ? 'bg-amber-500/15 border-amber-500 text-white shadow-md shadow-amber-500/10 ring-1 ring-amber-500/50'
+                                                    : 'bg-neutral-950 border-neutral-800 text-neutral-300 hover:border-neutral-700 hover:bg-neutral-800/60'
+                                            }`}
+                                        >
+                                            <span 
+                                                className="w-4 h-4 rounded-full shrink-0 shadow border border-black/40" 
+                                                style={{ backgroundColor: preset.hex }} 
+                                            />
+                                            <span className="truncate flex-1">{preset.name}</span>
+                                            {isSelected && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                                        </button>
+                                    );
+                                })}
+
+                                {/* Custom Color Option */}
+                                <button
+                                    type="button"
+                                    onClick={() => handleCustomColorChange(customColorName || 'Bleu Ciel', customColorHex || '#38bdf8')}
+                                    className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-semibold transition-all text-left ${
+                                        selectedPresetName === 'custom'
+                                            ? 'bg-amber-500/15 border-amber-500 text-white shadow-md shadow-amber-500/10 ring-1 ring-amber-500/50'
+                                            : 'bg-neutral-950 border-neutral-800 text-neutral-300 hover:border-neutral-700 hover:bg-neutral-800/60'
+                                    }`}
+                                >
+                                    <Palette className="w-4 h-4 text-orange-400 shrink-0" />
+                                    <span className="truncate flex-1">Personnalisée...</span>
+                                    {selectedPresetName === 'custom' && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                                </button>
+                            </div>
+
+                            {/* Custom Color Editor when selected */}
+                            {selectedPresetName === 'custom' && (
+                                <div className="p-3 bg-neutral-950 rounded-xl border border-neutral-800 space-y-3 mt-2 animate-in fade-in duration-150">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-[11px] text-neutral-400 block mb-1">Nom de la couleur</label>
+                                            <input 
+                                                type="text"
+                                                value={customColorName}
+                                                onChange={(e) => handleCustomColorChange(e.target.value, customColorHex)}
+                                                placeholder="Ex: Vert Sauge, Rose Poudré..."
+                                                className="w-full bg-neutral-900 border border-neutral-700 rounded-lg p-2 text-xs text-white focus:border-amber-500 focus:outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[11px] text-neutral-400 block mb-1">Nuance HEX</label>
+                                            <div className="flex items-center gap-2 bg-neutral-900 border border-neutral-700 rounded-lg p-1.5">
+                                                <input 
+                                                    type="color"
+                                                    value={customColorHex}
+                                                    onChange={(e) => handleCustomColorChange(customColorName, e.target.value)}
+                                                    className="w-6 h-6 rounded border-0 cursor-pointer bg-transparent"
+                                                />
+                                                <input 
+                                                    type="text"
+                                                    value={customColorHex}
+                                                    onChange={(e) => handleCustomColorChange(customColorName, e.target.value)}
+                                                    className="flex-1 bg-transparent text-xs font-mono text-white focus:outline-none uppercase"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Step 2: Commercial Identity (Title & SKU) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-neutral-950/70 p-4 rounded-2xl border border-neutral-800">
+                            <div>
+                                <label className="text-xs text-neutral-400 block mb-1 font-medium">Titre Commercial de la variante</label>
+                                <input 
+                                    type="text"
+                                    value={variantTarget.title}
+                                    onChange={(e) => setVariantTarget({ ...variantTarget, title: e.target.value })}
+                                    className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-2.5 text-xs text-neutral-200 focus:border-amber-500 focus:outline-none font-semibold"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-neutral-400 block mb-1 font-medium">SKU / Référence unique</label>
+                                <input 
+                                    type="text"
+                                    value={variantTarget.sku}
+                                    onChange={(e) => setVariantTarget({ ...variantTarget, sku: e.target.value })}
+                                    className="w-full bg-neutral-900 border border-neutral-800 rounded-xl p-2.5 text-xs text-neutral-200 font-mono focus:border-amber-500 focus:outline-none"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Step 3: Images Mockups (Face & Dos) */}
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                                <label className="text-xs font-bold text-neutral-200 flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-[10px] font-extrabold">2</span>
+                                    Images du Produit Détouré (Face &amp; Dos) :
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={handleSwapVariantViews}
+                                    className="text-[11px] text-neutral-400 hover:text-amber-300 flex items-center gap-1 hover:underline"
+                                    title="Permuter la vue Face et la vue Dos"
+                                >
+                                    <RotateCw className="w-3 h-3 text-amber-400" />
+                                    ⇄ Inverser Face / Dos
+                                </button>
+                            </div>
+
+                            <p className="text-[11px] text-neutral-400">
+                                💡 Vous pouvez charger votre propre photo détourée (PNG avec fond transparent) ou conserver le gabarit suggéré ci-dessous.
+                            </p>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {/* Vue Face */}
+                                <div className="bg-neutral-950 p-3.5 rounded-2xl border border-neutral-800 space-y-2.5">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-400" /> Vue FACE
+                                        </span>
+                                        <button 
+                                            type="button"
+                                            onClick={() => variantFrontInputRef.current?.click()}
+                                            className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                                        >
+                                            <Upload className="w-3 h-3 text-amber-400" /> Remplacer / Upload
+                                        </button>
+                                        <input 
+                                            ref={variantFrontInputRef}
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => e.target.files?.[0] && handleVariantMockupUpload(e.target.files[0], 'front')}
+                                        />
+                                    </div>
+
+                                    <input 
+                                        type="text"
+                                        value={variantTarget.mockups?.front || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setVariantTarget({
+                                                ...variantTarget,
+                                                mockups: { ...variantTarget.mockups, front: val },
+                                                frontImageUrl: val
+                                            });
+                                        }}
+                                        placeholder="/assets/... ou https://..."
+                                        className="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-[11px] text-neutral-300 font-mono focus:border-amber-500 focus:outline-none"
+                                    />
+
+                                    <div className="h-32 bg-neutral-900/60 rounded-xl border border-neutral-800 flex items-center justify-center p-2 relative overflow-hidden">
+                                        {variantTarget.mockups?.front ? (
+                                            <img 
+                                                src={variantTarget.mockups.front} 
+                                                alt="Mockup Face" 
+                                                className="max-h-full max-w-full object-contain filter drop-shadow" 
+                                            />
+                                        ) : (
+                                            <div 
+                                                onClick={() => variantFrontInputRef.current?.click()}
+                                                className="text-center cursor-pointer text-neutral-500 hover:text-neutral-300 transition-colors"
+                                            >
+                                                <Upload className="w-6 h-6 mx-auto mb-1 text-neutral-600" />
+                                                <span className="text-[11px]">Cliquer pour ajouter l'image Face</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Vue Dos */}
+                                <div className="bg-neutral-950 p-3.5 rounded-2xl border border-neutral-800 space-y-2.5">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+                                            <span className="w-2 h-2 rounded-full bg-blue-400" /> Vue DOS
+                                        </span>
+                                        <button 
+                                            type="button"
+                                            onClick={() => variantBackInputRef.current?.click()}
+                                            className="px-2.5 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                                        >
+                                            <Upload className="w-3 h-3 text-amber-400" /> Remplacer / Upload
+                                        </button>
+                                        <input 
+                                            ref={variantBackInputRef}
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => e.target.files?.[0] && handleVariantMockupUpload(e.target.files[0], 'back')}
+                                        />
+                                    </div>
+
+                                    <input 
+                                        type="text"
+                                        value={variantTarget.mockups?.back || ''}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setVariantTarget({
+                                                ...variantTarget,
+                                                mockups: { ...variantTarget.mockups, back: val },
+                                                backImageUrl: val
+                                            });
+                                        }}
+                                        placeholder="/assets/... ou https://..."
+                                        className="w-full bg-neutral-900 border border-neutral-800 rounded-lg p-2 text-[11px] text-neutral-300 font-mono focus:border-amber-500 focus:outline-none"
+                                    />
+
+                                    <div className="h-32 bg-neutral-900/60 rounded-xl border border-neutral-800 flex items-center justify-center p-2 relative overflow-hidden">
+                                        {variantTarget.mockups?.back ? (
+                                            <img 
+                                                src={variantTarget.mockups.back} 
+                                                alt="Mockup Dos" 
+                                                className="max-h-full max-w-full object-contain filter drop-shadow" 
+                                            />
+                                        ) : (
+                                            <div 
+                                                onClick={() => variantBackInputRef.current?.click()}
+                                                className="text-center cursor-pointer text-neutral-500 hover:text-neutral-300 transition-colors"
+                                            >
+                                                <Upload className="w-6 h-6 mx-auto mb-1 text-neutral-600" />
+                                                <span className="text-[11px]">Cliquer pour ajouter l'image Dos</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Inherited Specs Badge */}
+                        <div className="bg-neutral-950 p-3.5 rounded-2xl border border-neutral-800/80 text-[11px] text-neutral-400 space-y-1.5">
+                            <span className="font-bold text-neutral-300 flex items-center gap-1.5">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                Données techniques reprises à 100% :
+                            </span>
+                            <div className="flex flex-wrap gap-2 text-[10px]">
+                                <span className="bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800 font-medium text-neutral-300">{variantTarget.brand} • {variantTarget.model}</span>
+                                <span className="bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800 text-neutral-300">{variantTarget.weightGsm} g/m²</span>
+                                <span className="bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800 text-neutral-300">{variantTarget.composition}</span>
+                                <span className="bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800 text-neutral-300">{variantTarget.fit}</span>
+                                <span className="bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800 text-emerald-400 font-semibold">{variantTarget.pricing?.retailPriceTtc?.toFixed(2)} € TTC</span>
+                            </div>
+                        </div>
+
+                        {/* Modal Action Buttons */}
+                        <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-3 pt-2 border-t border-neutral-800">
+                            <button
+                                type="button"
+                                onClick={() => setIsVariantModalOpen(false)}
+                                className="w-full sm:w-auto px-4 py-2.5 text-xs text-neutral-400 hover:text-white rounded-xl transition-colors font-medium"
+                            >
+                                Annuler
+                            </button>
+
+                            <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                                <button
+                                    type="button"
+                                    onClick={handleOpenVariantInForm}
+                                    className="w-full sm:w-auto px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-1.5 border border-neutral-700"
+                                >
+                                    <span>Personnaliser dans le formulaire</span>
+                                    <ArrowRight className="w-3.5 h-3.5" />
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={handleSaveVariantDirectly}
+                                    disabled={isSavingVariant || !variantTarget.mockups?.front}
+                                    className="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-orange-600/30 flex items-center justify-center gap-2 disabled:opacity-50"
+                                >
+                                    {isSavingVariant ? (
+                                        <>
+                                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                            <span>Enregistrement en cours...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Sparkles className="w-3.5 h-3.5" />
+                                            <span>Enregistrer la variante</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Global Notifications */}
             {saveSuccessMessage && (
                 <div className="max-w-7xl mx-auto px-4 mt-4 w-full">
@@ -614,6 +1199,69 @@ export const ProductAidView: React.FC = () => {
                         {/* Left Col: AI Extractor & Specs Form */}
                         <div className="lg:col-span-7 space-y-6">
                             
+                            {/* Card 0: Duplication & Variante de Couleur Instantanée */}
+                            <div className="bg-gradient-to-b from-neutral-900 to-neutral-900/90 border border-amber-500/30 rounded-2xl p-5 shadow-xl space-y-3.5 relative overflow-hidden">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+                                
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                                            <Palette className="w-4 h-4" />
+                                        </div>
+                                        <h3 className="font-bold text-sm text-neutral-100">Dupliquer un Produit en Variante de Couleur</h3>
+                                    </div>
+                                    <span className="text-[10px] text-amber-400 font-mono bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                                        Reprise 100% des données
+                                    </span>
+                                </div>
+
+                                <p className="text-xs text-neutral-400">
+                                    Sélectionnez un modèle existant pour cloner instantanément toutes ses caractéristiques (marque, grammage, coupe, composition, prix). Il vous suffira de charger l'image raccord Face/Dos.
+                                </p>
+
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                                    <select
+                                        value={selectedSourceForClone}
+                                        onChange={(e) => setSelectedSourceForClone(e.target.value)}
+                                        className="flex-1 bg-neutral-950 border border-neutral-800 rounded-xl p-2.5 text-xs text-neutral-200 focus:border-amber-500 focus:outline-none"
+                                    >
+                                        <option value="">Sélectionner un produit source à cloner...</option>
+                                        {activeCatalog.map(p => (
+                                            <option key={p.id} value={p.id}>
+                                                {p.brand} • {p.title} ({p.sku})
+                                            </option>
+                                        ))}
+                                    </select>
+
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        <button
+                                            type="button"
+                                            disabled={!selectedSourceForClone}
+                                            onClick={() => handleQuickCloneToForm(selectedSourceForClone, 'Blanc')}
+                                            className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 hover:text-white rounded-xl text-xs font-bold transition-all border border-neutral-700 disabled:opacity-40 flex items-center gap-1.5"
+                                            title="Cloner directement en modèle Blanc"
+                                        >
+                                            <span className="w-2.5 h-2.5 rounded-full bg-white border border-black/30" />
+                                            <span>⚪ Cloner en Blanc</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            disabled={!selectedSourceForClone}
+                                            onClick={() => {
+                                                const src = activeCatalog.find(p => p.id === selectedSourceForClone);
+                                                if (src) handleOpenVariantModal(src, 'Blanc');
+                                            }}
+                                            className="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-amber-600/20 disabled:opacity-40 flex items-center gap-1.5"
+                                            title="Ouvrir l'assistant complet de variante"
+                                        >
+                                            <Sparkles className="w-3.5 h-3.5" />
+                                            <span>Assistant Variante</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                             {/* Card 1: AI Instant Extractor */}
                             <div className="bg-gradient-to-b from-neutral-900 to-neutral-900/80 border border-orange-500/30 rounded-2xl p-5 shadow-xl relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -696,10 +1344,21 @@ export const ProductAidView: React.FC = () => {
 
                             {/* Card 2: Detailed Technical Form */}
                             <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 shadow-xl space-y-5">
-                                <h3 className="font-bold text-sm text-neutral-200 flex items-center gap-2 border-b border-neutral-800 pb-3">
-                                    <Tag className="w-4 h-4 text-orange-400" />
-                                    Données Produit & Pipeline Textile
-                                </h3>
+                                <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+                                    <h3 className="font-bold text-sm text-neutral-200 flex items-center gap-2">
+                                        <Tag className="w-4 h-4 text-orange-400" />
+                                        Données Produit & Pipeline Textile
+                                    </h3>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleOpenVariantModal(formProduct, 'Blanc')}
+                                        className="text-[11px] bg-neutral-800 hover:bg-neutral-700 text-amber-400 px-3 py-1 rounded-lg border border-neutral-700 font-semibold transition-colors flex items-center gap-1.5"
+                                        title="Créer une variante de couleur à partir de ces données"
+                                    >
+                                        <Palette className="w-3.5 h-3.5" />
+                                        <span>+ Dupliquer en variante</span>
+                                    </button>
+                                </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {/* Title */}
@@ -1394,7 +2053,7 @@ export const ProductAidView: React.FC = () => {
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
                                     <div className="relative aspect-square max-w-sm mx-auto w-full bg-neutral-950 rounded-xl border border-neutral-800 flex items-center justify-center p-4">
                                         <img 
-                                            src={visualizerView === 'front' ? selectedVisualizerProduct.mockups?.front : selectedVisualizerProduct.mockups?.back} 
+                                            src={(visualizerView === 'back' ? (selectedVisualizerProduct.mockups?.back || selectedVisualizerProduct.backImageUrl) : (selectedVisualizerProduct.mockups?.front || selectedVisualizerProduct.frontImageUrl || selectedVisualizerProduct.imageUrl)) || ''} 
                                             alt="Mockup Visualizer"
                                             className="max-h-full max-w-full object-contain"
                                             onError={(e) => {
@@ -1418,16 +2077,26 @@ export const ProductAidView: React.FC = () => {
                                                 ))}
                                             </div>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setFormProduct(selectedVisualizerProduct);
-                                                setActiveTab('audit-form');
-                                            }}
-                                            className="w-full bg-orange-600 hover:bg-orange-500 text-white py-2 rounded-xl font-bold"
-                                        >
-                                            Modifier ce produit
-                                        </button>
+                                        <div className="flex flex-col sm:flex-row items-center gap-2 pt-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleOpenVariantModal(selectedVisualizerProduct, 'Blanc')}
+                                                className="w-full sm:flex-1 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white py-2 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 text-xs shadow-md shadow-orange-950/30"
+                                            >
+                                                <Palette className="w-3.5 h-3.5 text-amber-200" />
+                                                <span>+ Ajouter une variante de couleur</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setFormProduct(selectedVisualizerProduct);
+                                                    setActiveTab('audit-form');
+                                                }}
+                                                className="w-full sm:w-auto px-4 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 py-2 rounded-xl font-semibold text-xs transition-colors"
+                                            >
+                                                Modifier ce produit
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1451,7 +2120,7 @@ export const ProductAidView: React.FC = () => {
                                             title="Cliquer pour inspecter dans le Visualiseur"
                                         >
                                             <img 
-                                                src={(cardPreviewViews[prod.id] === 'back' ? prod.mockups?.back : prod.mockups?.front) || prod.mockups?.front} 
+                                                src={(cardPreviewViews[prod.id] === 'back' ? (prod.mockups?.back || prod.backImageUrl) : (prod.mockups?.front || prod.frontImageUrl || prod.imageUrl)) || prod.mockups?.front || prod.frontImageUrl || prod.imageUrl || ''} 
                                                 alt={prod.title} 
                                                 className="max-h-full max-w-full object-contain filter drop-shadow-md" 
                                                 onError={(e) => {
@@ -1534,23 +2203,35 @@ export const ProductAidView: React.FC = () => {
                                             </div>
                                         </div>
 
-                                        <div className="flex items-center justify-between gap-2 pt-2">
+                                        <div className="flex flex-col gap-2 pt-2">
                                             <button 
-                                                onClick={() => {
-                                                    setFormProduct(prod);
-                                                    setActiveTab('audit-form');
-                                                }}
-                                                className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                                                type="button"
+                                                onClick={() => handleOpenVariantModal(prod, 'Blanc')}
+                                                className="w-full bg-gradient-to-r from-amber-600/90 to-orange-600/90 hover:from-amber-500 hover:to-orange-500 text-white py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md shadow-orange-950/40"
+                                                title="Ajouter une variante de couleur pour ce produit"
                                             >
-                                                Modifier
+                                                <Palette className="w-3.5 h-3.5 text-amber-300" />
+                                                <span>+ Variante de couleur (Blanc...)</span>
                                             </button>
-                                            <button 
-                                                onClick={() => handleDeleteProduct(prod.id, prod.title)}
-                                                className="p-1.5 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                                                title="Supprimer"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+
+                                            <div className="flex items-center justify-between gap-2">
+                                                <button 
+                                                    onClick={() => {
+                                                        setFormProduct(prod);
+                                                        setActiveTab('audit-form');
+                                                    }}
+                                                    className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 py-1.5 rounded-lg text-xs font-semibold transition-colors"
+                                                >
+                                                    Modifier
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleDeleteProduct(prod.id, prod.title)}
+                                                    className="p-1.5 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                    title="Supprimer"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

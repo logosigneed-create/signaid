@@ -14,7 +14,7 @@ export interface AuditProductEntry {
   model: string;
   title: string;
   category: string;
-  garmentType: 'tank_top' | 'tshirt_oversize' | 'tshirt' | 'polo' | 'sweat' | 'business_card';
+  garmentType: 'tank_top' | 'tshirt_oversize' | 'tshirt' | 'polo' | 'sweat' | 'hoodie' | 'business_card';
   composition: string;
   weightGsm: number;
   fit: string;
@@ -38,6 +38,7 @@ export interface AuditProductEntry {
   };
   frontImageUrl?: string;
   backImageUrl?: string;
+  imageUrl?: string;
   printSpecs: {
     printableAreas: ('front' | 'back' | 'chest_left' | 'chest_right' | 'neck')[];
     recommendedTechnique: 'DTG' | 'ScreenPrint' | 'Embroidery' | 'DTF';
@@ -75,6 +76,141 @@ export const AUDIT_PORTAIL_CONFIG: AuditPortailConfig = {
     primaryColor: "#3b82f6"
   },
   catalog: [
+    {
+      id: "jhk170-classic-tshirt",
+      sku: "JHK170-BLK",
+      supplierRef: "JHK170",
+      supplierName: "JHK T-Shirt Co.",
+      brand: "JHK",
+      model: "Regular T-Shirt 170",
+      title: "T-Shirt Noir Classique",
+      category: "Textile / Manches Courtes",
+      garmentType: "tshirt",
+      composition: "100% Coton peigné Ringspun",
+      weightGsm: 170,
+      fit: "Coupe régulière classique unisexe",
+      features: [
+        "Col rond avec bord-côte élasthanne 1x1",
+        "Bande de propreté d'épaule à épaule",
+        "Double piqûre aux manches et au bas",
+        "Étiquette détachable (Tear-away)"
+      ],
+      sizes: ["XS", "S", "M", "L", "XL", "XXL", "3XL"],
+      colors: [
+        { name: "Noir", hex: "#000000", isPrimary: true },
+        { name: "Blanc", hex: "#ffffff", isPrimary: false }
+      ],
+      pricing: {
+        costPriceHt: 3.90,
+        retailPriceTtc: 24.99,
+        currency: "EUR",
+        marginEstimated: 16.90
+      },
+      mockups: {
+        front: "/assets/tshirt-black-JHK170.png",
+        back: "/assets/tshirt-black-JHK170-dos.png",
+        preview: "/assets/tshirt-black-JHK170.png"
+      },
+      frontImageUrl: "/assets/tshirt-black-JHK170.png",
+      backImageUrl: "/assets/tshirt-black-JHK170-dos.png",
+      printSpecs: {
+        printableAreas: ["front", "back", "chest_left"],
+        recommendedTechnique: "DTG",
+        maxPrintWidthMm: 300,
+        maxPrintHeightMm: 400
+      },
+      status: "active"
+    },
+    {
+      id: "jhk510-polo-premium",
+      sku: "JHK510-BLK",
+      supplierRef: "JHK510",
+      supplierName: "JHK T-Shirt Co.",
+      brand: "JHK",
+      model: "Polo Regular 210",
+      title: "Polo Piqué Premium",
+      category: "Textile / Col & Boutons",
+      garmentType: "polo",
+      composition: "100% Coton Piqué peigné",
+      weightGsm: 210,
+      fit: "Coupe classique soignée avec patte de boutonnage",
+      features: [
+        "Patte 2 boutons ton sur ton renforcée",
+        "Col et bas de manches en côte 1x1",
+        "Fentes latérales d'aisance renforcées",
+        "Maille piquée haute densité pour broderie ou DTF"
+      ],
+      sizes: ["S", "M", "L", "XL", "XXL"],
+      colors: [
+        { name: "Noir", hex: "#000000", isPrimary: true },
+        { name: "Blanc", hex: "#ffffff", isPrimary: false }
+      ],
+      pricing: {
+        costPriceHt: 6.20,
+        retailPriceTtc: 34.99,
+        currency: "EUR",
+        marginEstimated: 22.95
+      },
+      mockups: {
+        front: "/assets/polo-black-JHK510.png",
+        back: "/assets/polo-black-JHK510-dos.png",
+        preview: "/assets/polo-black-JHK510.png"
+      },
+      frontImageUrl: "/assets/polo-black-JHK510.png",
+      backImageUrl: "/assets/polo-black-JHK510-dos.png",
+      printSpecs: {
+        printableAreas: ["front", "back", "chest_left"],
+        recommendedTechnique: "Embroidery",
+        maxPrintWidthMm: 280,
+        maxPrintHeightMm: 380
+      },
+      status: "active"
+    },
+    {
+      id: "jhk421-hoodie",
+      sku: "JHK421-BLK",
+      supplierRef: "JHK421",
+      supplierName: "JHK T-Shirt Co.",
+      brand: "JHK",
+      model: "Kangaroo Hoodie 290",
+      title: "Hoodie Premium Unisexe",
+      category: "Textile / Molleton & Capuche",
+      garmentType: "sweat",
+      composition: "65% Polyester / 35% Coton peigné",
+      weightGsm: 290,
+      fit: "Coupe confort avec poche kangourou et capuche doublée",
+      features: [
+        "Molleton gratté chaud et doux",
+        "Capuche doublée avec cordon de serrage plat",
+        "Poche kangourou renforcée avec surpiqûres",
+        "Bord-côte élasthanne aux poignets et à la taille"
+      ],
+      sizes: ["XS", "S", "M", "L", "XL", "XXL"],
+      colors: [
+        { name: "Noir", hex: "#000000", isPrimary: true },
+        { name: "Gris Chiné", hex: "#9ca3af", isPrimary: false }
+      ],
+      pricing: {
+        costPriceHt: 11.50,
+        retailPriceTtc: 49.00,
+        currency: "EUR",
+        marginEstimated: 29.33
+      },
+      mockups: {
+        front: "/assets/hoodie-black-JHK421.png",
+        back: "/assets/hoodie-black-JHK421-dos.png",
+        preview: "/assets/hoodie-black-JHK421.png"
+      },
+      frontImageUrl: "/assets/hoodie-black-JHK421.png",
+      backImageUrl: "/assets/hoodie-black-JHK421-dos.png",
+      printSpecs: {
+        printableAreas: ["front", "back", "chest_left"],
+        recommendedTechnique: "DTG",
+        maxPrintWidthMm: 320,
+        maxPrintHeightMm: 420
+      },
+      status: "active"
+    },
     {
       id: "visionroom-basic-tank",
       sku: "BYBB011-BLK",
@@ -204,6 +340,181 @@ export const AUDIT_PORTAIL_CONFIG: AuditPortailConfig = {
         recommendedTechnique: "DTG",
         maxPrintWidthMm: 350,
         maxPrintHeightMm: 450
+      },
+      status: "active"
+    },
+    {
+      id: "jhk170-classic-tshirt-white",
+      sku: "JHK170-WHT",
+      supplierRef: "JHK170",
+      supplierName: "JHK T-Shirt Co.",
+      brand: "JHK",
+      model: "Regular T-Shirt 170",
+      title: "T-Shirt Blanc Classique",
+      category: "Textile / Manches Courtes",
+      garmentType: "tshirt",
+      composition: "100% Coton peigné Ringspun",
+      weightGsm: 170,
+      fit: "Coupe régulière classique unisexe",
+      features: [
+        "Col rond avec bord-côte élasthanne 1x1",
+        "Bande de propreté d'épaule à épaule",
+        "Double piqûre aux manches et au bas",
+        "Étiquette détachable (Tear-away)"
+      ],
+      sizes: ["XS", "S", "M", "L", "XL", "XXL", "3XL"],
+      colors: [
+        { name: "Blanc", hex: "#ffffff", isPrimary: true }
+      ],
+      pricing: {
+        costPriceHt: 3.90,
+        retailPriceTtc: 24.99,
+        currency: "EUR",
+        marginEstimated: 16.90
+      },
+      mockups: {
+        front: "/assets/tshirt-white-JHK170.png",
+        back: "/assets/tshirt-white-JHK170-dos.png",
+        preview: "/assets/tshirt-white-JHK170.png"
+      },
+      frontImageUrl: "/assets/tshirt-white-JHK170.png",
+      backImageUrl: "/assets/tshirt-white-JHK170-dos.png",
+      printSpecs: {
+        printableAreas: ["front", "back", "chest_left"],
+        recommendedTechnique: "DTG",
+        maxPrintWidthMm: 300,
+        maxPrintHeightMm: 400
+      },
+      status: "active"
+    },
+    {
+      id: "jhk510-polo-premium-white",
+      sku: "JHK510-WHT",
+      supplierRef: "JHK510",
+      supplierName: "JHK T-Shirt Co.",
+      brand: "JHK",
+      model: "Polo Regular 210",
+      title: "Polo Piqué Premium Blanc",
+      category: "Textile / Col & Boutons",
+      garmentType: "polo",
+      composition: "100% Coton Piqué peigné",
+      weightGsm: 210,
+      fit: "Coupe classique soignée avec patte de boutonnage",
+      features: [
+        "Patte 2 boutons ton sur ton renforcée",
+        "Col et bas de manches en côte 1x1",
+        "Fentes latérales d'aisance renforcées",
+        "Maille piquée haute densité pour broderie ou DTF"
+      ],
+      sizes: ["S", "M", "L", "XL", "XXL"],
+      colors: [
+        { name: "Blanc", hex: "#ffffff", isPrimary: true }
+      ],
+      pricing: {
+        costPriceHt: 6.20,
+        retailPriceTtc: 34.99,
+        currency: "EUR",
+        marginEstimated: 22.95
+      },
+      mockups: {
+        front: "/assets/polo-white-JHK510.png",
+        back: "/assets/polo-white-JHK510-dos.png",
+        preview: "/assets/polo-white-JHK510.png"
+      },
+      frontImageUrl: "/assets/polo-white-JHK510.png",
+      backImageUrl: "/assets/polo-white-JHK510-dos.png",
+      printSpecs: {
+        printableAreas: ["front", "back", "chest_left"],
+        recommendedTechnique: "Embroidery",
+        maxPrintWidthMm: 280,
+        maxPrintHeightMm: 380
+      },
+      status: "active"
+    },
+    {
+      id: "jhk421-hoodie-white",
+      sku: "JHK421-WHT",
+      supplierRef: "JHK421",
+      supplierName: "JHK T-Shirt Co.",
+      brand: "JHK",
+      model: "Kangaroo Hoodie 290",
+      title: "Hoodie Premium Unisexe Blanc",
+      category: "Textile / Molleton & Capuche",
+      garmentType: "sweat",
+      composition: "65% Polyester / 35% Coton peigné",
+      weightGsm: 290,
+      fit: "Coupe confort avec poche kangourou et capuche doublée",
+      features: [
+        "Molleton gratté chaud et doux",
+        "Capuche doublée avec cordon de serrage plat",
+        "Poche kangourou renforcée avec surpiqûres",
+        "Bord-côte élasthanne aux poignets et à la taille"
+      ],
+      sizes: ["XS", "S", "M", "L", "XL", "XXL"],
+      colors: [
+        { name: "Blanc", hex: "#ffffff", isPrimary: true }
+      ],
+      pricing: {
+        costPriceHt: 11.50,
+        retailPriceTtc: 49.00,
+        currency: "EUR",
+        marginEstimated: 29.33
+      },
+      mockups: {
+        front: "/assets/hoodie-white-JHK421.png",
+        back: "/assets/hoodie-white-JHK421-dos.png",
+        preview: "/assets/hoodie-white-JHK421.png"
+      },
+      frontImageUrl: "/assets/hoodie-white-JHK421.png",
+      backImageUrl: "/assets/hoodie-white-JHK421-dos.png",
+      printSpecs: {
+        printableAreas: ["front", "back", "chest_left"],
+        recommendedTechnique: "DTG",
+        maxPrintWidthMm: 320,
+        maxPrintHeightMm: 420
+      },
+      status: "active"
+    },
+    {
+      id: "visionroom-basic-tank-white",
+      sku: "BYBB011-WHT",
+      supplierRef: "BYBB011",
+      supplierName: "L-Shop-Team",
+      brand: "Build Your Brand",
+      model: "Basic Tank",
+      title: "Débardeur Vision Room Blanc",
+      category: "Textile / Sans Manches",
+      garmentType: "tank_top",
+      composition: "100% Coton peigné (Jersey simple)",
+      weightGsm: 140,
+      fit: "Coupe standard (Regular fit), col rond ras du cou",
+      features: [
+        "Sans étiquette de marque au col (Tear-away / Label-free)",
+        "Maille fine idéale pour impression numérique directe (DTG) et sérigraphie",
+        "Finitions renforcées aux emmanchures et au col"
+      ],
+      sizes: ["S", "M", "L", "XL", "XXL"],
+      colors: [
+        { name: "Blanc", hex: "#ffffff", isPrimary: true }
+      ],
+      pricing: {
+        costPriceHt: 4.85,
+        retailPriceTtc: 27.99,
+        currency: "EUR",
+        marginEstimated: 18.48
+      },
+      mockups: {
+        front: "/assets/tank-white-BYBB011.png",
+        back: "/assets/tank-white-BYBB011-dos.png",
+        preview: "/assets/tank-white-BYBB011.png"
+      },
+      frontImageUrl: "/assets/tank-white-BYBB011.png",
+      backImageUrl: "/assets/tank-white-BYBB011-dos.png",
+      printSpecs: {
+        printableAreas: ["front", "back", "chest_left"],
+        recommendedTechnique: "DTG",
+        maxPrintWidthMm: 280,
+        maxPrintHeightMm: 400
       },
       status: "active"
     }

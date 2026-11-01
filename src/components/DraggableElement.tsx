@@ -64,6 +64,16 @@ export function DraggableElement({
         if (!isDragging && !isResizing) return;
 
         const handleMove = (e: MouseEvent | TouchEvent) => {
+            // Allow native vertical scroll on mobile if movement is vertical and below drag threshold
+            if ('touches' in e && (e as TouchEvent).touches.length === 1 && !hasMoved.current) {
+                const touch = (e as TouchEvent).touches[0];
+                const dy = Math.abs(touch.clientY - dragInfo.current.startY);
+                const dx = Math.abs(touch.clientX - dragInfo.current.startX);
+                if (dy > dx && dy < 10) {
+                    return;
+                }
+            }
+
             if (e.cancelable) e.preventDefault();
 
             // --- PINCH TO RESIZE LOGIC ---

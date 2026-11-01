@@ -623,7 +623,7 @@ export const STYLE_MATRIX: Record<string, StylePreset[]> = {
       prompt: "V-TON_DIRECT",
       image: "/assets/ai_styles/vton_direct.png",
       icon: "fa-shirt",
-      glasses: "wearing stylish sunglasses"
+      glasses: ""
     }
   ],
   "Trends": [

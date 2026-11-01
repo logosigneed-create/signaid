@@ -1,8 +1,27 @@
 [
   {
-    "origin": ["*"],
-    "method": ["GET", "PUT", "POST", "DELETE", "HEAD", "OPTIONS"],
-    "responseHeader": ["*"],
+    "origin": [
+      "https://signaid-prod.web.app",
+      "https://signaid-prod.firebaseapp.com",
+      "https://signaid.eu",
+      "http://localhost:3847",
+      "http://127.0.0.1:3847",
+      "http://localhost:5173",
+      "http://localhost:3000",
+      "*"
+    ],
+    "method": [
+      "GET",
+      "HEAD",
+      "PUT",
+      "POST",
+      "DELETE"
+    ],
+    "responseHeader": [
+      "Content-Type",
+      "Access-Control-Allow-Origin",
+      "x-goog-resumable"
+    ],
     "maxAgeSeconds": 3600
   }
 ]
