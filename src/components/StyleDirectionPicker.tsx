@@ -288,85 +288,149 @@ export const StyleDirectionPicker: React.FC<StyleDirectionPickerProps> = ({
   };
 
   return (
-    <div className="space-y-3 select-none">
-      {/* Palette de nuances néon & high-contrast directes (sans saut d'étape) */}
-      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-        {[
-          { color: '#FF6B00', label: 'Neon Orange' },
-          { color: '#00F0FF', label: 'Cyber Cyan' },
-          { color: '#FF1E27', label: 'Ultra Crimson' },
-          { color: '#FFB800', label: 'Electric Gold' },
-          { color: '#FFFFFF', label: 'Pure White' },
-          { color: '#D946EF', label: 'Hyper Pink' },
-        ].map((item) => {
-          const isSelected = activeColor.toUpperCase() === item.color.toUpperCase();
-          return (
-            <button
-              key={item.color}
-              type="button"
-              onClick={() => handleColorChange(item.color)}
-              className={`h-7 px-2.5 rounded-lg border text-[10px] font-mono font-bold uppercase transition flex items-center gap-1.5 cursor-pointer shrink-0 focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none active:scale-95 ${
-                isSelected
-                  ? isDayMode
-                    ? 'border-zinc-900 bg-zinc-900 text-white shadow-sm'
-                    : 'border-white bg-zinc-800 text-white shadow-lg ring-1 ring-white/30'
-                  : isDayMode
-                  ? 'border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-medium'
-                  : 'border-zinc-800 bg-zinc-900/80 text-zinc-400 hover:text-white hover:border-zinc-700'
-              }`}
-              title={item.label}
-            >
-              <span
-                className="w-2.5 h-2.5 rounded-full inline-block shadow-sm"
-                style={{ backgroundColor: item.color }}
-              />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* LIGNE 2 (Desktop >= 920px) : Sélecteur de couleur compact : pastille cliquable (w-8 h-8 rounded-lg) + label sobre "Couleur d'accent" */}
-      <div className="hidden min-[920px]:flex items-center">
-        <label
-          className="inline-flex items-center gap-2.5 cursor-pointer group select-none"
-          title="Modifier la couleur d'accent personnalisée"
-        >
-          {/* Input[type="color"] masqué sans déclenchement d'étape */}
-          <input
-            ref={colorInputRef}
-            type="color"
-            value={activeColor}
-            onChange={(e) => {
-              handleColorChange(e.target.value);
-            }}
-            className="sr-only"
-            aria-label="Couleur d'accent personnalisée"
-          />
-
-          {/* Pastille cliquable (w-8 h-8 rounded-lg) affichant la couleur active */}
-          <span
-            className="w-8 h-8 rounded-lg border border-black/30 dark:border-white/20 shadow-sm transition-transform duration-150 group-hover:scale-105 group-active:scale-95 shrink-0 block"
-            style={{ backgroundColor: activeColor }}
-          />
-
-          {/* Label sobre "Couleur d'accent" */}
-          <span
-            className={`text-xs font-mono tracking-tight transition-colors ${
-              isDayMode ? 'text-zinc-900 group-hover:text-zinc-950 font-bold' : 'text-zinc-300 group-hover:text-white font-medium'
-            }`}
+    <div className="space-y-3.5 select-none">
+      {/* 1. SÉLECTEUR DE COULEUR PERSONNALISÉE (Pipette, pastille, code Hex & Palette directe) TOUT EN HAUT */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <label
+            className="inline-flex items-center gap-2.5 cursor-pointer group select-none"
+            title="Modifier la couleur personnalisée (pipette)"
           >
-            Couleur personnalisée
-          </span>
-        </label>
+            {/* Input[type="color"] masqué déclenché par la pastille */}
+            <input
+              ref={colorInputRef}
+              type="color"
+              value={activeColor}
+              onChange={(e) => {
+                handleColorChange(e.target.value);
+              }}
+              className="sr-only"
+              aria-label="Couleur personnalisée"
+            />
+
+            {/* Pastille cliquable (w-8 h-8 rounded-lg) affichant la couleur active */}
+            <span
+              className="w-8 h-8 rounded-lg border border-black/30 dark:border-white/20 shadow-sm transition-transform duration-150 group-hover:scale-105 group-active:scale-95 shrink-0 block cursor-pointer"
+              style={{ backgroundColor: activeColor }}
+            />
+
+            {/* Label "Couleur personnalisée" */}
+            <span
+              className={`text-xs font-mono tracking-tight transition-colors ${
+                isDayMode ? 'text-zinc-900 group-hover:text-zinc-950 font-bold' : 'text-zinc-200 group-hover:text-white font-semibold'
+              }`}
+            >
+              Couleur personnalisée
+            </span>
+          </label>
+
+          {/* Saisie / Affichage Hexadécimal direct */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono text-zinc-500 font-bold">HEX</span>
+            <input
+              type="text"
+              maxLength={7}
+              value={activeColor.toUpperCase()}
+              onChange={(e) => {
+                const val = e.target.value.trim();
+                if (/^#[0-9A-Fa-f]{0,6}$/.test(val) || /^[0-9A-Fa-f]{0,6}$/.test(val)) {
+                  const formatted = val.startsWith('#') ? val : `#${val}`;
+                  if (/^#[0-9A-Fa-f]{6}$/.test(formatted)) {
+                    handleColorChange(formatted);
+                  }
+                }
+              }}
+              className={`w-20 px-2 py-1 rounded-md text-[11px] font-mono font-bold text-center border transition focus:outline-none focus:ring-1 focus:ring-lime-400 ${
+                isDayMode
+                  ? 'bg-zinc-100 border-zinc-300 text-zinc-900'
+                  : 'bg-zinc-900/90 border-zinc-700 text-zinc-100'
+              }`}
+              placeholder="#FFFFFF"
+            />
+          </div>
+        </div>
+
+        {/* Palette de nuances néon & high-contrast directes */}
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+          {[
+            { color: '#FF6B00', label: 'Neon Orange' },
+            { color: '#00F0FF', label: 'Cyber Cyan' },
+            { color: '#FF1E27', label: 'Ultra Crimson' },
+            { color: '#FFB800', label: 'Electric Gold' },
+            { color: '#FFFFFF', label: 'Pure White' },
+            { color: '#D946EF', label: 'Hyper Pink' },
+          ].map((item) => {
+            const isSelected = activeColor.toUpperCase() === item.color.toUpperCase();
+            return (
+              <button
+                key={item.color}
+                type="button"
+                onClick={() => handleColorChange(item.color)}
+                className={`h-7 px-2.5 rounded-lg border text-[10px] font-mono font-bold uppercase transition flex items-center gap-1.5 cursor-pointer shrink-0 focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none active:scale-95 ${
+                  isSelected
+                    ? isDayMode
+                      ? 'border-zinc-900 bg-zinc-900 text-white shadow-sm'
+                      : 'border-white bg-zinc-800 text-white shadow-lg ring-1 ring-white/30'
+                    : isDayMode
+                    ? 'border-zinc-300 bg-zinc-100 hover:bg-zinc-200 text-zinc-800 font-medium'
+                    : 'border-zinc-800 bg-zinc-900/80 text-zinc-400 hover:text-white hover:border-zinc-700'
+                }`}
+                title={item.label}
+              >
+                <span
+                  className="w-2.5 h-2.5 rounded-full inline-block shadow-sm"
+                  style={{ backgroundColor: item.color }}
+                />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* LIGNE 2 (Mobile < 920px) : Deux jauges fluides (Teinte chromatique 0-360° et Éclat Néon 20-90%) avec Hold-to-Preview */}
-      <div className="min-[920px]:hidden space-y-3 pt-1">
+      {/* 2. CHOIX DES STYLES ET TYPOGRAPHIES DES TITRES */}
+      <div className="space-y-1.5 pt-1 border-t border-zinc-800/60 dark:border-zinc-800/60">
+        <div className="flex items-center justify-between">
+          <span className={`text-[10px] font-mono font-bold uppercase tracking-wider block ${isDayMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
+            Styles &amp; Typographies des titres
+          </span>
+          <span className="text-[10px] font-mono text-zinc-500 font-semibold uppercase">
+            {activeStyleKey}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {(['FUTUR', 'HARD', 'URBAN'] as StylePresetKey[]).map((key) => {
+            const preset = STYLE_PRESETS[key];
+            const isSelected = activeStyleKey === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => handleSelectStyle(key)}
+                className={`py-2 px-2 rounded-xl border text-xs font-mono font-bold transition flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                  isSelected
+                    ? isDayMode
+                      ? 'border-zinc-900 bg-zinc-900 text-white shadow-sm'
+                      : 'border-lime-400 bg-lime-400/10 text-lime-400 shadow-md ring-1 ring-lime-400/40'
+                    : isDayMode
+                      ? 'border-zinc-200 bg-zinc-50 hover:bg-zinc-100 text-zinc-700'
+                      : 'border-zinc-800 bg-zinc-900/70 hover:border-zinc-700 text-zinc-400 hover:text-white'
+                }`}
+              >
+                <span>{preset.label}</span>
+                <span className="text-[9px] opacity-60 uppercase font-normal">{preset.typographyId}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. Jauges fluides (Mobile < 920px) : Teinte chromatique 0-360° et Éclat Néon 20-90% */}
+      <div className="min-[920px]:hidden space-y-3 pt-1 border-t border-zinc-800/60 dark:border-zinc-800/60">
         {/* Jauge 1 : Teinte de la couleur d'accent (0° à 360°) */}
         <div className="space-y-1.5">
           <div className="flex justify-between text-[10px] font-mono font-bold">
-            <span className={isDayMode ? 'text-zinc-900' : 'text-zinc-300'}>Couleur d'accent (Teinte)</span>
+            <span className={isDayMode ? 'text-zinc-900' : 'text-zinc-300'}>Teinte (0° à 360°)</span>
             <div className="flex items-center gap-1.5">
               <span className={`font-mono ${isDayMode ? 'text-zinc-900' : 'text-lime-400'}`}>{hueValue}°</span>
               <span
