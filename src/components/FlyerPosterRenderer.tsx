@@ -344,7 +344,15 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const subjectOffsetX = subject?.x ?? (activeTransforms.offsetX ?? 0);
   const subjectAlignX = subject?.alignX ?? activeTransforms.alignX ?? 'center';
 
-  // Décor (Arrière-plan) : décalages panoramiques Drag & Drop bornés rigoureusement entre -12% et +12%
+  // Débattements adaptés au ratio d'affichage pour préserver la liberté de cadrage sans bords noirs
+  const isStory = format === 'story';
+  const isBanner = format === 'banner' || format === '16:9';
+  const isFlyer = format === 'flyer' || format === 'a3';
+
+  const limitX = isStory ? 45 : (isFlyer ? 30 : 15);
+  const limitY = isBanner ? 40 : (isStory ? 12 : 20);
+
+  // Décor (Arrière-plan) : décalages panoramiques Drag & Drop bornés selon le format
   const rawBgOffsetX = typeof input.backgroundOffsetX === 'number'
     ? input.backgroundOffsetX
     : (typeof data.backgroundOffsetX === 'number' ? data.backgroundOffsetX : 0);
@@ -352,8 +360,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     ? input.backgroundOffsetY
     : (typeof data.backgroundOffsetY === 'number' ? data.backgroundOffsetY : 0);
 
-  const bgOffsetX = Math.max(-12, Math.min(12, rawBgOffsetX));
-  const bgOffsetY = Math.max(-12, Math.min(12, rawBgOffsetY));
+  const bgOffsetX = Math.max(-limitX, Math.min(limitX, rawBgOffsetX));
+  const bgOffsetY = Math.max(-limitY, Math.min(limitY, rawBgOffsetY));
 
   (input as any).backgroundOffsetX = bgOffsetX;
   (input as any).backgroundOffsetY = bgOffsetY;
@@ -859,8 +867,16 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       const newX = Math.round((state.initialOffsetX + deltaPercentX) * 10) / 10;
       const newY = Math.round((state.initialOffsetY + deltaPercentY) * 10) / 10;
 
-      const clampedX = Math.max(-12, Math.min(12, newX));
-      const clampedY = Math.max(-12, Math.min(12, newY));
+      // Débattements adaptés au ratio d'affichage pour préserver la liberté de cadrage sans bords noirs
+      const isStory = format === 'story';
+      const isBanner = format === 'banner' || format === '16:9';
+      const isFlyer = format === 'flyer' || format === 'a3';
+
+      const limitX = isStory ? 45 : (isFlyer ? 30 : 15);
+      const limitY = isBanner ? 40 : (isStory ? 12 : 20);
+
+      const clampedX = Math.max(-limitX, Math.min(limitX, newX));
+      const clampedY = Math.max(-limitY, Math.min(limitY, newY));
 
       if (setInput) {
         setInput((prev) => ({
@@ -2192,7 +2208,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         - Conteneur en absolute inset-0 w-full h-full overflow-hidden pointer-events-none
         - Aucun wrapper intermédiaire (ni max-w, max-h, aspect-square ou hauteur fixe)
         - Débord permanent (bleed 130%, top -15%, left -15%) pour absorber les translations
-        - Offsets bornés entre -12% et +12% : 0% de pixel noir visible quel que soit le format
+        - Offsets bornés dynamiquement selon le format (Story 45/12, Flyer 30/20, Banner 15/40) : 0% de pixel noir visible
         =======================================================================
       */}
       {(data.backgroundUrl || backgroundImage) ? (
