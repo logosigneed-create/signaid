@@ -365,6 +365,36 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const dynamicSafetyScale = Math.max(1.15, 1.15 + (maxBgOffset / 100) * 0.4);
   const bgScale = dynamicSafetyScale * (data.backgroundScale ?? 1.0);
 
+  // Sections contextuelles strictes (Décor = volet 1, Sujet = volet 2, Textes = volet 5)
+  // Détection universelle et permissive de la section décor active :
+  const isDecorActive = activeSection === 'decor' || activeSection === 'background' || activeSection === 'fond' || !activeSection;
+  const isDecorSection = isDecorActive;
+  const isSubjectSection = activeSection === 'subject' || activeSection === 'subject2';
+  const isTextSection = activeSection === 'text' || activeSection === 'texts' || activeSection === 'textSizes';
+  const isLogoSection = activeSection === 'logo';
+
+  // Gestion de priorité d'interaction selon l'onglet actif (Sujet 1 vs Sujet 2)
+  const isSubject2Tab = activeSubjectTab === 'subject2' || activeSubjectTab === 'secondary' || activeSection === 'subject2';
+  const isSubject1Tab = !isSubject2Tab;
+
+  // 1. Décor réactif quand la section décor est active (ou volet 1 ouvert / par défaut)
+  const isDecorPointerActive = isInteractive && !isExporting && isDecorActive;
+
+  // 2. Sujets réactifs STRICTEMENT quand activeSection === 'subject' (ou volet 2 ouvert)
+  const isS1PointerActive = isInteractive && !isExporting && isSubjectSection && isSubject1Tab;
+  const isS2PointerActive = isInteractive && !isExporting && isSubjectSection && isSubject2Tab;
+  const isSubjectActive = isS1PointerActive;
+  const isSubject2Active = isS2PointerActive;
+
+  // Hiérarchie visuelle z-index Sujet 1 vs Sujet 2
+  const s1ZIndex = isSubject2Tab ? 20 : (isSubject1InFront ? 22 : 20);
+  const s2ZIndex = isSubject2Tab ? 23 : (isSubject1InFront ? 20 : 22);
+
+  // 3. Textes réactifs STRICTEMENT quand activeSection === 'text' (ou volet 5 ouvert)
+  const isTextsActive = isInteractive && !isExporting && isTextSection;
+  const canInteractTexts = isTextsActive;
+  const isLogoActive = isInteractive && !isExporting && isLogoSection;
+
   // État et contrôleurs de glisser-déposer (Drag & Drop) intuitif du Sujet 1
   const [isLocalDraggingSubject, setIsLocalDraggingSubject] = React.useState(false);
   const subjectDragRef = React.useRef<{
@@ -380,6 +410,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   // Nettoyage de sécurité des écouteurs globaux si le composant est démonté pendant un drag
   const dragCleanupRef = React.useRef<(() => void) | null>(null);
   const dragCleanup2Ref = React.useRef<(() => void) | null>(null);
+  const bgCleanupRef = React.useRef<(() => void) | null>(null);
+
   React.useEffect(() => {
     return () => {
       if (dragCleanupRef.current) {
@@ -390,6 +422,10 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         dragCleanup2Ref.current();
         dragCleanup2Ref.current = null;
       }
+      if (bgCleanupRef.current) {
+        bgCleanupRef.current();
+        bgCleanupRef.current = null;
+      }
     };
   }, []);
 
@@ -397,9 +433,18 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     clientX: number,
     clientY: number,
     targetEl: HTMLElement,
-    originalEvent: any
+    originalEvent: any,
+    pointerId?: number
   ) => {
     if (!isInteractive) return;
+
+    let capturedPointerId: number | null = null;
+    if (typeof pointerId === 'number' && targetEl.setPointerCapture) {
+      try {
+        targetEl.setPointerCapture(pointerId);
+        capturedPointerId = pointerId;
+      } catch { }
+    }
 
     // Mesure de la boîte englobante du canevas pour convertir les pixels en pourcentages
     const container =
@@ -428,12 +473,12 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
 
     onSubjectDragStart?.(originalEvent, 'primary');
 
-    const handleWindowMove = (moveEvt: MouseEvent | TouchEvent) => {
+    const handleWindowMove = (moveEvt: MouseEvent | TouchEvent | PointerEvent) => {
       const state = subjectDragRef.current;
       if (!state) return;
 
-      const curClientX = 'touches' in moveEvt ? moveEvt.touches[0].clientX : moveEvt.clientX;
-      const curClientY = 'touches' in moveEvt ? moveEvt.touches[0].clientY : moveEvt.clientY;
+      const curClientX = 'touches' in moveEvt && moveEvt.touches.length > 0 ? moveEvt.touches[0].clientX : (moveEvt as MouseEvent).clientX;
+      const curClientY = 'touches' in moveEvt && moveEvt.touches.length > 0 ? moveEvt.touches[0].clientY : (moveEvt as MouseEvent).clientY;
 
       const deltaX = curClientX - state.startX;
       const deltaY = curClientY - state.startY;
@@ -484,7 +529,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       onSubjectDragMove?.(curClientX, curClientY);
     };
 
-    const handleWindowUp = (upEvt: MouseEvent | TouchEvent) => {
+    const handleWindowUp = (upEvt?: Event) => {
       cleanup();
       const state = subjectDragRef.current;
       const didMove = state?.hasMoved;
@@ -499,40 +544,58 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     };
 
     const cleanup = () => {
+      if (capturedPointerId !== null && targetEl.releasePointerCapture) {
+        try {
+          targetEl.releasePointerCapture(capturedPointerId);
+        } catch { }
+        capturedPointerId = null;
+      }
+      window.removeEventListener('pointermove', handleWindowMove);
+      window.removeEventListener('pointerup', handleWindowUp);
+      window.removeEventListener('pointercancel', handleWindowUp);
       window.removeEventListener('mousemove', handleWindowMove);
       window.removeEventListener('mouseup', handleWindowUp);
       window.removeEventListener('touchmove', handleWindowMove);
       window.removeEventListener('touchend', handleWindowUp);
       window.removeEventListener('touchcancel', handleWindowUp);
+      window.removeEventListener('mouseleave', handleWindowUp);
       dragCleanupRef.current = null;
     };
 
+    if (dragCleanupRef.current) {
+      dragCleanupRef.current();
+    }
     dragCleanupRef.current = cleanup;
+
+    window.addEventListener('pointermove', handleWindowMove, { passive: false });
+    window.addEventListener('pointerup', handleWindowUp);
+    window.addEventListener('pointercancel', handleWindowUp);
     window.addEventListener('mousemove', handleWindowMove, { passive: false });
     window.addEventListener('mouseup', handleWindowUp);
     window.addEventListener('touchmove', handleWindowMove, { passive: false });
     window.addEventListener('touchend', handleWindowUp);
     window.addEventListener('touchcancel', handleWindowUp);
-  };
-
-  const handleSubjectMouseDown = (e: React.MouseEvent<HTMLElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    handleSubjectStart(e.clientX, e.clientY, e.currentTarget, e);
-  };
-
-  const handleSubjectTouchStart = (e: React.TouchEvent<HTMLElement>) => {
-    if (e.touches.length !== 1) return;
-    e.stopPropagation();
-    handleSubjectStart(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
+    window.addEventListener('mouseleave', handleWindowUp);
   };
 
   const handleSubjectPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     e.preventDefault();
     e.stopPropagation();
+    handleSubjectStart(e.clientX, e.clientY, e.currentTarget, e, e.pointerId);
+  };
+
+  const handleSubjectMouseDown = (e: React.MouseEvent<HTMLElement>) => {
+    if (e.button !== 0 || subjectDragRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
     handleSubjectStart(e.clientX, e.clientY, e.currentTarget, e);
+  };
+
+  const handleSubjectTouchStart = (e: React.TouchEvent<HTMLElement>) => {
+    if (e.touches.length !== 1 || subjectDragRef.current) return;
+    e.stopPropagation();
+    handleSubjectStart(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
   };
 
   // Second sujet (duo / B2B) si présent
@@ -562,9 +625,18 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     clientX: number,
     clientY: number,
     targetEl: HTMLElement,
-    originalEvent: any
+    originalEvent: any,
+    pointerId?: number
   ) => {
     if (!isInteractive) return;
+
+    let capturedPointerId: number | null = null;
+    if (typeof pointerId === 'number' && targetEl.setPointerCapture) {
+      try {
+        targetEl.setPointerCapture(pointerId);
+        capturedPointerId = pointerId;
+      } catch { }
+    }
 
     const container =
       (targetEl.closest('[data-poster-container="true"]') as HTMLElement | null) ||
@@ -588,12 +660,12 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
 
     onVisualElementClick?.('subject2' as any);
 
-    const handleWindowMove = (moveEvt: MouseEvent | TouchEvent) => {
+    const handleWindowMove = (moveEvt: MouseEvent | TouchEvent | PointerEvent) => {
       const state = subject2DragRef.current;
       if (!state) return;
 
-      const curClientX = 'touches' in moveEvt ? moveEvt.touches[0].clientX : moveEvt.clientX;
-      const curClientY = 'touches' in moveEvt ? moveEvt.touches[0].clientY : moveEvt.clientY;
+      const curClientX = 'touches' in moveEvt && moveEvt.touches.length > 0 ? moveEvt.touches[0].clientX : (moveEvt as MouseEvent).clientX;
+      const curClientY = 'touches' in moveEvt && moveEvt.touches.length > 0 ? moveEvt.touches[0].clientY : (moveEvt as MouseEvent).clientY;
 
       const deltaX = curClientX - state.startX;
       const deltaY = curClientY - state.startY;
@@ -640,7 +712,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       onSubjectDragMove?.(deltaX, deltaY);
     };
 
-    const handleWindowUp = (upEvt: MouseEvent | TouchEvent) => {
+    const handleWindowUp = (upEvt?: Event) => {
       cleanup();
       const state = subject2DragRef.current;
       const didMove = state?.hasMoved;
@@ -655,40 +727,58 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     };
 
     const cleanup = () => {
+      if (capturedPointerId !== null && targetEl.releasePointerCapture) {
+        try {
+          targetEl.releasePointerCapture(capturedPointerId);
+        } catch { }
+        capturedPointerId = null;
+      }
+      window.removeEventListener('pointermove', handleWindowMove);
+      window.removeEventListener('pointerup', handleWindowUp);
+      window.removeEventListener('pointercancel', handleWindowUp);
       window.removeEventListener('mousemove', handleWindowMove);
       window.removeEventListener('mouseup', handleWindowUp);
       window.removeEventListener('touchmove', handleWindowMove);
       window.removeEventListener('touchend', handleWindowUp);
       window.removeEventListener('touchcancel', handleWindowUp);
+      window.removeEventListener('mouseleave', handleWindowUp);
       dragCleanup2Ref.current = null;
     };
 
+    if (dragCleanup2Ref.current) {
+      dragCleanup2Ref.current();
+    }
     dragCleanup2Ref.current = cleanup;
+
+    window.addEventListener('pointermove', handleWindowMove, { passive: false });
+    window.addEventListener('pointerup', handleWindowUp);
+    window.addEventListener('pointercancel', handleWindowUp);
     window.addEventListener('mousemove', handleWindowMove, { passive: false });
     window.addEventListener('mouseup', handleWindowUp);
     window.addEventListener('touchmove', handleWindowMove, { passive: false });
     window.addEventListener('touchend', handleWindowUp);
     window.addEventListener('touchcancel', handleWindowUp);
-  };
-
-  const handleSubject2MouseDown = (e: React.MouseEvent<HTMLElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    handleSubject2Start(e.clientX, e.clientY, e.currentTarget, e);
-  };
-
-  const handleSubject2TouchStart = (e: React.TouchEvent<HTMLElement>) => {
-    if (e.touches.length !== 1) return;
-    e.stopPropagation();
-    handleSubject2Start(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
+    window.addEventListener('mouseleave', handleWindowUp);
   };
 
   const handleSubject2PointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     e.preventDefault();
     e.stopPropagation();
+    handleSubject2Start(e.clientX, e.clientY, e.currentTarget, e, e.pointerId);
+  };
+
+  const handleSubject2MouseDown = (e: React.MouseEvent<HTMLElement>) => {
+    if (e.button !== 0 || subject2DragRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
     handleSubject2Start(e.clientX, e.clientY, e.currentTarget, e);
+  };
+
+  const handleSubject2TouchStart = (e: React.TouchEvent<HTMLElement>) => {
+    if (e.touches.length !== 1 || subject2DragRef.current) return;
+    e.stopPropagation();
+    handleSubject2Start(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
   };
 
   // État et contrôleurs de glisser-déposer (Drag & Drop) intuitif du Décor (Arrière-plan)
@@ -707,9 +797,18 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     clientX: number,
     clientY: number,
     targetEl: HTMLElement,
-    originalEvent: any
+    originalEvent: any,
+    pointerId?: number
   ) => {
     if (!isInteractive) return;
+
+    let capturedPointerId: number | null = null;
+    if (typeof pointerId === 'number' && targetEl.setPointerCapture) {
+      try {
+        targetEl.setPointerCapture(pointerId);
+        capturedPointerId = pointerId;
+      } catch { }
+    }
 
     const container =
       (targetEl.closest('[data-poster-container="true"]') as HTMLElement | null) ||
@@ -731,12 +830,12 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       hasMoved: false,
     };
 
-    const handleWindowMove = (moveEvt: MouseEvent | TouchEvent) => {
+    const handleWindowMove = (moveEvt: MouseEvent | TouchEvent | PointerEvent) => {
       const state = bgDragRef.current;
       if (!state) return;
 
-      const curClientX = 'touches' in moveEvt ? moveEvt.touches[0].clientX : moveEvt.clientX;
-      const curClientY = 'touches' in moveEvt ? moveEvt.touches[0].clientY : moveEvt.clientY;
+      const curClientX = 'touches' in moveEvt && moveEvt.touches.length > 0 ? moveEvt.touches[0].clientX : (moveEvt as MouseEvent).clientX;
+      const curClientY = 'touches' in moveEvt && moveEvt.touches.length > 0 ? moveEvt.touches[0].clientY : (moveEvt as MouseEvent).clientY;
 
       const deltaX = curClientX - state.startX;
       const deltaY = curClientY - state.startY;
@@ -772,7 +871,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       }
     };
 
-    const handleWindowUp = () => {
+    const handleWindowUp = (upEvt?: Event) => {
       cleanup();
       const state = bgDragRef.current;
       const didMove = state?.hasMoved;
@@ -785,33 +884,58 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     };
 
     const cleanup = () => {
+      if (capturedPointerId !== null && targetEl.releasePointerCapture) {
+        try {
+          targetEl.releasePointerCapture(capturedPointerId);
+        } catch { }
+        capturedPointerId = null;
+      }
+      window.removeEventListener('pointermove', handleWindowMove);
+      window.removeEventListener('pointerup', handleWindowUp);
+      window.removeEventListener('pointercancel', handleWindowUp);
       window.removeEventListener('mousemove', handleWindowMove);
       window.removeEventListener('mouseup', handleWindowUp);
       window.removeEventListener('touchmove', handleWindowMove);
       window.removeEventListener('touchend', handleWindowUp);
       window.removeEventListener('touchcancel', handleWindowUp);
+      window.removeEventListener('mouseleave', handleWindowUp);
+      bgCleanupRef.current = null;
     };
 
+    if (bgCleanupRef.current) {
+      bgCleanupRef.current();
+    }
+    bgCleanupRef.current = cleanup;
+
+    window.addEventListener('pointermove', handleWindowMove, { passive: false });
+    window.addEventListener('pointerup', handleWindowUp);
+    window.addEventListener('pointercancel', handleWindowUp);
     window.addEventListener('mousemove', handleWindowMove, { passive: false });
     window.addEventListener('mouseup', handleWindowUp);
     window.addEventListener('touchmove', handleWindowMove, { passive: false });
     window.addEventListener('touchend', handleWindowUp);
     window.addEventListener('touchcancel', handleWindowUp);
-  };
-
-  const handleBgMouseDown = (e: React.MouseEvent<HTMLElement>) => {
-    if (e.button !== 0) return;
-    handleBgStart(e.clientX, e.clientY, e.currentTarget, e);
-  };
-
-  const handleBgTouchStart = (e: React.TouchEvent<HTMLElement>) => {
-    if (e.touches.length !== 1) return;
-    handleBgStart(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
+    window.addEventListener('mouseleave', handleWindowUp);
   };
 
   const handleBgPointerDown = (e: React.PointerEvent<HTMLElement>) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
+    e.preventDefault();
+    e.stopPropagation();
+    handleBgStart(e.clientX, e.clientY, e.currentTarget, e, e.pointerId);
+  };
+
+  const handleBgMouseDown = (e: React.MouseEvent<HTMLElement>) => {
+    if (e.button !== 0 || bgDragRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
     handleBgStart(e.clientX, e.clientY, e.currentTarget, e);
+  };
+
+  const handleBgTouchStart = (e: React.TouchEvent<HTMLElement>) => {
+    if (e.touches.length !== 1 || bgDragRef.current) return;
+    e.stopPropagation();
+    handleBgStart(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget, e);
   };
 
   // Opacité, Dégradé Fondu Bas et Blend-Mode du Sujet 1
@@ -988,36 +1112,6 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       color: '#f4f4f5',
       backdropFilter: 'blur(16px)',
     };
-
-  // Sections contextuelles strictes (Décor = volet 1, Sujet = volet 2, Textes = volet 5)
-  // Détection universelle de la section décor active :
-  const isDecorActive = activeSection === 'decor' || activeSection === 'background' || activeSection === 'fond' || !activeSection;
-  const isDecorSection = isDecorActive;
-  const isSubjectSection = activeSection === 'subject' || activeSection === 'subject2';
-  const isTextSection = activeSection === 'text' || activeSection === 'texts' || activeSection === 'textSizes';
-  const isLogoSection = activeSection === 'logo';
-
-  // Gestion de priorité d'interaction selon l'onglet actif (Sujet 1 vs Sujet 2)
-  const isSubject2Tab = activeSubjectTab === 'subject2' || activeSubjectTab === 'secondary' || activeSection === 'subject2';
-  const isSubject1Tab = !isSubject2Tab;
-
-  // 1. Décor réactif quand la section décor est active (ou volet 1 ouvert / par défaut)
-  const isDecorPointerActive = isInteractive && !isExporting && isDecorActive;
-
-  // 2. Sujets réactifs STRICTEMENT quand activeSection === 'subject' (ou volet 2 ouvert)
-  const isS1PointerActive = isInteractive && !isExporting && isSubjectSection && isSubject1Tab;
-  const isS2PointerActive = isInteractive && !isExporting && isSubjectSection && isSubject2Tab;
-  const isSubjectActive = isS1PointerActive;
-  const isSubject2Active = isS2PointerActive;
-
-  // Hiérarchie visuelle z-index Sujet 1 vs Sujet 2
-  const s1ZIndex = isSubject2Tab ? 20 : (isSubject1InFront ? 22 : 20);
-  const s2ZIndex = isSubject2Tab ? 23 : (isSubject1InFront ? 20 : 22);
-
-  // 3. Textes réactifs STRICTEMENT quand activeSection === 'text' (ou volet 5 ouvert)
-  const isTextsActive = isInteractive && !isExporting && isTextSection;
-  const canInteractTexts = isTextsActive;
-  const isLogoActive = isInteractive && !isExporting && isLogoSection;
 
   // Contrôleurs de glisser-déposer interne pour les blocs de texte si non passés par le parent
   const textDragRef = React.useRef<{
@@ -2102,7 +2196,11 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         =======================================================================
       */}
       {(data.backgroundUrl || backgroundImage) ? (
-        <div className="absolute inset-0 w-full h-full overflow-hidden pointer-events-none">
+        <div
+          className={`absolute inset-0 w-full h-full overflow-hidden transition-none ${
+            isDecorActive ? 'z-[2] pointer-events-auto' : 'z-0 pointer-events-none'
+          }`}
+        >
           <img
             src={data.backgroundUrl || backgroundImage}
             alt="Décor"
@@ -2113,11 +2211,11 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
             decoding="async"
             onContextMenu={(e) => e.preventDefault()}
             className={`absolute max-w-none max-h-none object-cover select-none ${
-              isDecorPointerActive
+              isDecorActive
                 ? isLocalDraggingBg
-                  ? 'cursor-grabbing active:cursor-grabbing'
-                  : 'cursor-grab active:cursor-grabbing'
-                : ''
+                  ? 'cursor-grabbing active:cursor-grabbing pointer-events-auto'
+                  : 'cursor-grab active:cursor-grabbing pointer-events-auto'
+                : 'pointer-events-none'
             }`}
             style={{
               width: '130%',
@@ -2125,22 +2223,22 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
               top: '-15%',
               left: '-15%',
               transform: `translate(${input.backgroundOffsetX ?? 0}%, ${input.backgroundOffsetY ?? 0}%)`,
-              pointerEvents: isDecorPointerActive ? 'auto' : 'none',
+              pointerEvents: isDecorActive ? 'auto' : 'none',
               opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03)
                 ? 1
                 : (data.backgroundOpacity ?? 1),
               filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03 || toneOverlay.filterCss === 'none') ? 'none' : toneOverlay.filterCss,
             }}
-            onPointerDown={isDecorPointerActive ? handleBgPointerDown : undefined}
-            onMouseDown={isDecorPointerActive ? handleBgMouseDown : undefined}
-            onTouchStart={isDecorPointerActive ? handleBgTouchStart : undefined}
-            onClick={isDecorPointerActive ? (e) => {
+            onPointerDown={isDecorActive ? handleBgPointerDown : undefined}
+            onMouseDown={isDecorActive ? handleBgMouseDown : undefined}
+            onTouchStart={isDecorActive ? handleBgTouchStart : undefined}
+            onClick={isDecorActive ? (e) => {
               if (!bgDragRef.current?.hasMoved) {
                 e.stopPropagation();
                 onVisualElementClick?.('decor');
               }
             } : undefined}
-            title={isDecorPointerActive ? "Glisser pour déplacer le décor (ou cliquer pour régler)" : undefined}
+            title={isDecorActive ? "Glisser pour déplacer le décor (ou cliquer pour régler)" : undefined}
           />
         </div>
       ) : null}
