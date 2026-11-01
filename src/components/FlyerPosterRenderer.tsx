@@ -344,15 +344,15 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const subjectOffsetX = subject?.x ?? (activeTransforms.offsetX ?? 0);
   const subjectAlignX = subject?.alignX ?? activeTransforms.alignX ?? 'center';
 
-  // Débattements adaptés au ratio d'affichage pour préserver la liberté de cadrage sans bords noirs
+  // Débattements adaptés pour naviguer dans l'image (bornés à ±35% en X et ±35% en Y)
   const isStory = format === 'story';
   const isBanner = format === 'banner' || format === '16:9';
   const isFlyer = format === 'flyer' || format === 'a3';
 
-  const limitX = isStory ? 45 : (isFlyer ? 30 : 15);
-  const limitY = isBanner ? 40 : (isStory ? 12 : 20);
+  const limitX = 35;
+  const limitY = 35;
 
-  // Décor (Arrière-plan) : décalages panoramiques Drag & Drop bornés selon le format
+  // Décor (Arrière-plan) : décalages panoramiques Drag & Drop bornés à ±35%
   const rawBgOffsetX = typeof input.backgroundOffsetX === 'number'
     ? input.backgroundOffsetX
     : (typeof data.backgroundOffsetX === 'number' ? data.backgroundOffsetX : 0);
@@ -368,10 +368,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   (data as any).backgroundOffsetX = bgOffsetX;
   (data as any).backgroundOffsetY = bgOffsetY;
 
-  // Échelle fixe et couvrante avec marge de sécurité stable (1.15 min, absorbant dynamiquement les décalages de translation sans bords noirs)
-  const maxBgOffset = Math.max(Math.abs(bgOffsetX), Math.abs(bgOffsetY));
-  const dynamicSafetyScale = Math.max(1.15, 1.15 + (maxBgOffset / 100) * 0.4);
-  const bgScale = dynamicSafetyScale * (data.backgroundScale ?? 1.0);
+  // Échelle stricte respectant le choix utilisateur (sans multiplicateur caché)
+  const bgScale = data.backgroundScale ?? 1.0;
 
   // Sections contextuelles strictes (Décor = volet 1, Sujet = volet 2, Textes = volet 5)
   // Détection universelle et permissive de la section décor active :
@@ -831,8 +829,8 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     bgDragRef.current = {
       startX: clientX,
       startY: clientY,
-      initialOffsetX: data.backgroundOffsetX ?? 0,
-      initialOffsetY: data.backgroundOffsetY ?? 0,
+      initialOffsetX: bgOffsetX,
+      initialOffsetY: bgOffsetY,
       containerWidth,
       containerHeight,
       hasMoved: false,
@@ -867,13 +865,9 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       const newX = Math.round((state.initialOffsetX + deltaPercentX) * 10) / 10;
       const newY = Math.round((state.initialOffsetY + deltaPercentY) * 10) / 10;
 
-      // Débattements adaptés au ratio d'affichage pour préserver la liberté de cadrage sans bords noirs
-      const isStory = format === 'story';
-      const isBanner = format === 'banner' || format === '16:9';
-      const isFlyer = format === 'flyer' || format === 'a3';
-
-      const limitX = isStory ? 45 : (isFlyer ? 30 : 15);
-      const limitY = isBanner ? 40 : (isStory ? 12 : 20);
+      // Débattements adaptés pour naviguer dans l'image (bornés à ±35% en X et ±35% en Y)
+      const limitX = 35;
+      const limitY = 35;
 
       const clampedX = Math.max(-limitX, Math.min(limitX, newX));
       const clampedY = Math.max(-limitY, Math.min(limitY, newY));
@@ -2204,17 +2198,17 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     >
       {/* 
         =======================================================================
-        STRUCTURE DE COUVERTURE TOTALE (ZERO BANDE NOIRE)
-        - Conteneur en absolute inset-0 w-full h-full overflow-hidden pointer-events-none
-        - Aucun wrapper intermédiaire (ni max-w, max-h, aspect-square ou hauteur fixe)
-        - Débord permanent (bleed 130%, top -15%, left -15%) pour absorber les translations
-        - Offsets bornés dynamiquement selon le format (Story 45/12, Flyer 30/20, Banner 15/40) : 0% de pixel noir visible
+        STRUCTURE DE COUVERTURE TOTALE DU DÉCOR SANS ROGNAGE FORCÉ
+        - Conteneur de fond : absolute inset-0 w-full h-full overflow-hidden pointer-events-none
+        - Image <img> : w-full h-full object-cover max-w-none max-h-none
+        - Échelle stricte respectant l'échelle choisie : data.backgroundScale ?? 1.0
+        - Déplacement adapté : translate(${bgOffsetX}%, ${bgOffsetY}%) scale(${data.backgroundScale ?? 1.0})
         =======================================================================
       */}
       {(data.backgroundUrl || backgroundImage) ? (
         <div
-          className={`absolute inset-0 w-full h-full overflow-hidden transition-none ${
-            isDecorActive ? 'z-[2] pointer-events-auto' : 'z-0 pointer-events-none'
+          className={`absolute inset-0 w-full h-full overflow-hidden pointer-events-none transition-none ${
+            isDecorActive ? 'z-[2]' : 'z-0'
           }`}
         >
           <img
@@ -2226,7 +2220,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
             fetchPriority="high"
             decoding="async"
             onContextMenu={(e) => e.preventDefault()}
-            className={`absolute max-w-none max-h-none object-cover select-none ${
+            className={`w-full h-full object-cover max-w-none max-h-none select-none ${
               isDecorActive
                 ? isLocalDraggingBg
                   ? 'cursor-grabbing active:cursor-grabbing pointer-events-auto'
@@ -2234,11 +2228,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                 : 'pointer-events-none'
             }`}
             style={{
-              width: '130%',
-              height: '130%',
-              top: '-15%',
-              left: '-15%',
-              transform: `translate(${input.backgroundOffsetX ?? 0}%, ${input.backgroundOffsetY ?? 0}%)`,
+              transform: `translate(${bgOffsetX}%, ${bgOffsetY}%) scale(${data.backgroundScale ?? 1.0})`,
               pointerEvents: isDecorActive ? 'auto' : 'none',
               opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03)
                 ? 1
