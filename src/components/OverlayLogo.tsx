@@ -101,10 +101,14 @@ export const OverlayLogo: React.FC<OverlayLogoProps> = ({
 
   const phoneScreenFilter = 'drop-shadow(0 0 10px rgba(249, 115, 22, 0.5))';
 
-  const canDrag = Boolean(setInput && !disabled && isActuallyActive);
+  const canDrag = Boolean(setInput && !disabled);
 
   const handleLogoDragStart = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!canDrag || !isActuallyActive || e.button !== 0) return;
+    if (!canDrag || e.button !== 0) return;
+
+    if (!isActuallyActive && onLogoClick) {
+      onLogoClick();
+    }
 
     e.preventDefault();
     e.stopPropagation();
@@ -133,6 +137,51 @@ export const OverlayLogo: React.FC<OverlayLogoProps> = ({
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {}
+
+    const handleWindowPointerMove = (moveEvt: PointerEvent) => {
+      if (!isDraggingRef.current || !dragContainerRef.current || !setInput) return;
+      const dist = Math.hypot(moveEvt.clientX - startPosRef.current.x, moveEvt.clientY - startPosRef.current.y);
+      if (dist > 3) {
+        hasMovedRef.current = true;
+      }
+      const cRect = dragContainerRef.current.getBoundingClientRect();
+      if (cRect.width <= 0 || cRect.height <= 0) return;
+
+      const pX = ((moveEvt.clientX - cRect.left) / cRect.width) * 100;
+      const pY = ((moveEvt.clientY - cRect.top) / cRect.height) * 100;
+
+      let nX = pX - dragOffsetPercentRef.current.x;
+      let nY = pY - dragOffsetPercentRef.current.y;
+
+      nX = Math.max(0, Math.min(100, nX));
+      nY = Math.max(0, Math.min(100, nY));
+
+      const rX = Math.round(nX * 10) / 10;
+      const rY = Math.round(nY * 10) / 10;
+
+      setInput((prev) =>
+        prev.isPinnedToSubject && subjectTransform
+          ? updatePinnedLogoTransform(prev, previewFormat, subjectTransform, { x: rX, y: rY })
+          : updateLogoTransform(prev, previewFormat, { x: rX, y: rY })
+      );
+    };
+
+    const handleWindowPointerUp = () => {
+      window.removeEventListener('pointermove', handleWindowPointerMove);
+      window.removeEventListener('pointerup', handleWindowPointerUp);
+      window.removeEventListener('pointercancel', handleWindowPointerUp);
+      const didMove = hasMovedRef.current;
+      isDraggingRef.current = false;
+      setIsDragging(false);
+      dragContainerRef.current = null;
+      if (!didMove && onLogoClick) {
+        onLogoClick();
+      }
+    };
+
+    window.addEventListener('pointermove', handleWindowPointerMove);
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    window.addEventListener('pointercancel', handleWindowPointerUp);
   };
 
   const handleLogoDragMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -142,7 +191,7 @@ export const OverlayLogo: React.FC<OverlayLogoProps> = ({
     e.stopPropagation();
 
     const dist = Math.hypot(e.clientX - startPosRef.current.x, e.clientY - startPosRef.current.y);
-    if (dist > 4) {
+    if (dist > 3) {
       hasMovedRef.current = true;
     }
 
@@ -187,7 +236,6 @@ export const OverlayLogo: React.FC<OverlayLogoProps> = ({
   };
 
   const handleDivClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isActuallyActive) return;
     if (!hasMovedRef.current && onLogoClick) {
       e.stopPropagation();
       onLogoClick();
@@ -198,13 +246,13 @@ export const OverlayLogo: React.FC<OverlayLogoProps> = ({
     <div
       onContextMenu={(e) => e.preventDefault()}
       className={`absolute ${isPinned ? 'z-[22]' : 'z-35'} select-none -webkit-touch-callout-none transition-all duration-150 ${
-        isActuallyActive
-          ? canDrag
+        !disabled && !isExporting
+          ? isActuallyActive
             ? isDragging
               ? 'cursor-grabbing pointer-events-auto touch-none ring-1 ring-dashed ring-lime-400 shadow-[0_0_15px_rgba(163,230,53,0.5)] rounded-lg'
               : 'cursor-grab active:cursor-grabbing pointer-events-auto touch-none ring-1 ring-dashed ring-lime-400/80 hover:ring-lime-400 shadow-[0_0_12px_rgba(163,230,53,0.3)] rounded-lg'
             : onLogoClick
-              ? 'cursor-pointer pointer-events-auto ring-1 ring-dashed ring-lime-400/80 rounded-lg'
+              ? 'cursor-pointer pointer-events-auto hover:ring-1 hover:ring-dashed hover:ring-lime-400/70 rounded-lg'
               : 'pointer-events-none'
           : 'pointer-events-none'
       } ${
@@ -222,15 +270,15 @@ export const OverlayLogo: React.FC<OverlayLogoProps> = ({
         WebkitTouchCallout: 'none',
         WebkitUserSelect: 'none',
         userSelect: 'none',
-        pointerEvents: isActuallyActive ? 'auto' : 'none',
+        pointerEvents: (!disabled && !isExporting) ? 'auto' : 'none',
       }}
-      onPointerDown={isActuallyActive && canDrag ? handleLogoDragStart : undefined}
-      onPointerMove={isActuallyActive && canDrag ? handleLogoDragMove : undefined}
-      onPointerUp={isActuallyActive && canDrag ? handleLogoDragEnd : undefined}
-      onPointerCancel={isActuallyActive && canDrag ? handleLogoDragEnd : undefined}
-      onClick={isActuallyActive ? handleDivClick : undefined}
+      onPointerDown={canDrag ? handleLogoDragStart : undefined}
+      onPointerMove={canDrag ? handleLogoDragMove : undefined}
+      onPointerUp={canDrag ? handleLogoDragEnd : undefined}
+      onPointerCancel={canDrag ? handleLogoDragEnd : undefined}
+      onClick={handleDivClick}
       data-pinned-to-subject={isPinned ? 'true' : undefined}
-      title={isActuallyActive ? (canDrag ? "Glisser pour repositionner ou cliquer pour configurer" : "Cliquer pour configurer le logo") : undefined}
+      title={!disabled && !isExporting ? (canDrag ? "Glisser pour repositionner ou cliquer pour configurer" : "Cliquer pour configurer le logo") : undefined}
     >
       {isOnPhoneScreen && (
         <div

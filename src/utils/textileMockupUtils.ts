@@ -43,13 +43,8 @@ export const DTF_PRINT_BOUNDS = {
  * Détecte si une URL de logo est un placeholder ou une démo
  */
 export const isDemoOrInvalidLogo = (url?: string | null): boolean => {
-  if (!url) return true;
-  return (
-    url.includes('logo-demo') ||
-    url.includes('21nine') ||
-    url.includes('signaid-logo') ||
-    url.includes('mannequin-blank')
-  );
+  if (!url || typeof url !== 'string' || !url.trim()) return true;
+  return url.includes('mannequin-blank');
 };
 
 /**
@@ -161,6 +156,15 @@ export function resolveActiveTextileLogo(
   // 6. Sujet visuel actuel (photo DJ / artiste / sujet détouré)
   if (input.djPhoto && !isDemoOrInvalidLogo(input.djPhoto)) {
     return input.djPhoto;
+  }
+
+  // 7. Visuel actif d'affiche ou fond
+  if (input.flyerImageUrl && !isDemoOrInvalidLogo(input.flyerImageUrl)) {
+    return input.flyerImageUrl;
+  }
+  const bg = input.customBackground || input.backgroundImage || input.bgImage;
+  if (bg && !isDemoOrInvalidLogo(bg)) {
+    return bg;
   }
 
   // Aucun logo utilisateur chargé : rendu vierge (aucun logo démo forcé)

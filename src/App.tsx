@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { Shirt } from 'lucide-react';
 import { auth } from './firebaseConfig';
 import { AuthProvider } from './contexts/AuthContext';
 import { logAnalyticsEvent, AnalyticsEvents } from './services/analyticsService';
@@ -204,7 +205,10 @@ function StudioComposerRoute() {
             const existing = prev.formatTransforms?.[previewFormat];
             return {
                 ...prev,
+                djPhotoOffsetX: pos.x,
                 djPhotoOffsetY: pos.y,
+                subjectPositionX: pos.x,
+                subjectPositionY: pos.y,
                 formatTransforms: {
                     ...(prev.formatTransforms || {}),
                     [previewFormat]: {
@@ -240,8 +244,8 @@ function StudioComposerRoute() {
 
             {/* 2. ESPACE DE TRAVAIL : GAUCHE = RÉGLAGES, DROITE = VISUEL */}
             <div className="flex-1 w-full flex flex-col min-[920px]:flex-row min-h-0 overflow-hidden">
-                {/* COLONNE GAUCHE : Panneau Accordéons & Réglages StudioComposer */}
-                <aside className={`w-full min-[920px]:w-[440px] lg:w-[480px] xl:w-[520px] shrink-0 border-b min-[920px]:border-b-0 min-[920px]:border-r ${isDayMode ? 'border-zinc-300 bg-white/95 text-zinc-900' : 'border-zinc-800/80 bg-zinc-900/40 text-white'} min-h-0 overflow-y-auto p-4 sm:p-6 order-2 min-[920px]:order-1`}>
+                {/* COLONNE GAUCHE : Panneau Accordéons & Réglages StudioComposer (Fixe et stable lors du changement de format) */}
+                <aside className={`w-full min-[920px]:w-[440px] lg:w-[480px] xl:w-[520px] shrink-0 flex-none border-b min-[920px]:border-b-0 min-[920px]:border-r ${isDayMode ? 'border-zinc-300 bg-white/95 text-zinc-900' : 'border-zinc-800/80 bg-zinc-900/40 text-white'} min-h-0 overflow-y-auto p-4 sm:p-6 order-2 min-[920px]:order-1`}>
                     <StudioComposer
                         input={input}
                         setInput={setInput}
@@ -257,7 +261,7 @@ function StudioComposerRoute() {
                 </aside>
 
                 {/* COLONNE DROITE : Canvas Interactif Desktop */}
-                <main className={`flex-1 flex flex-col items-center justify-center p-6 lg:p-8 ${isDayMode ? 'bg-zinc-200/60' : 'bg-zinc-950/80'} overflow-y-auto relative select-none order-1 min-[920px]:order-2`}>
+                <main className={`flex-1 min-w-0 min-h-0 flex flex-col items-center justify-center p-6 lg:p-8 ${isDayMode ? 'bg-zinc-200/60' : 'bg-zinc-950/80'} overflow-y-auto relative select-none order-1 min-[920px]:order-2`}>
                     <div className="w-full max-w-2xl flex flex-col items-center justify-center my-auto">
                         {/* Sélecteur de format rapide au-dessus du canvas */}
                         <div className={`mb-4 flex items-center gap-1 ${isDayMode ? 'bg-white border-zinc-300' : 'bg-zinc-950 border-zinc-800'} border rounded-xl p-1 text-xs font-mono shadow-lg`}>
@@ -274,17 +278,19 @@ function StudioComposerRoute() {
                                     {fmt.label}
                                 </button>
                             ))}
-                            {previewFormat === 'tshirt' && (
-                                <button
-                                    type="button"
-                                    onClick={() => setPreviewFormat('tshirt')}
-                                    className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer uppercase ${
-                                        isDayMode ? 'bg-zinc-900 text-lime-400 shadow-sm' : 'bg-zinc-800 text-lime-400 shadow-sm'
-                                    }`}
-                                >
-                                    Stand Merch
-                                </button>
-                            )}
+                            <button
+                                type="button"
+                                onClick={() => setPreviewFormat('tshirt')}
+                                className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer uppercase flex items-center gap-1.5 ${
+                                    previewFormat === 'tshirt'
+                                        ? (isDayMode ? 'bg-zinc-900 text-lime-400 shadow-sm' : 'bg-zinc-800 text-lime-400 shadow-sm')
+                                        : (isDayMode ? 'text-zinc-600 hover:text-black' : 'text-zinc-400 hover:text-white')
+                                }`}
+                                title="Aperçu des maquettes vêtements Stand Merch"
+                            >
+                                <Shirt className="w-3.5 h-3.5" />
+                                <span>Stand Merch</span>
+                            </button>
                         </div>
 
                         {/* Conteneur d'affiche avec ratio d'aspect dynamique */}

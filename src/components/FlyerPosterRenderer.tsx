@@ -368,6 +368,10 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
       hasMoved: false,
     };
 
+    if (!isSubjectActive) {
+      onVisualElementClick?.('subject');
+    }
+
     onSubjectDragStart?.(originalEvent, 'primary');
 
     const handleWindowMove = (moveEvt: MouseEvent | TouchEvent) => {
@@ -618,6 +622,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
   const isSubjectActive = isInteractive && !isExporting && (!activeSection || activeSection === 'subject');
   const isLogoActive = isInteractive && !isExporting && (!activeSection || activeSection === 'logo');
   const isTextsActive = isInteractive && !isExporting && (!activeSection || activeSection === 'texts' || activeSection === 'textSizes');
+  const canInteractTexts = isInteractive && !isExporting;
   const effectiveFocusedField = (isInteractive && !isExporting) ? focusedTextField : null;
 
   // Contrôleurs de glisser-déposer interne pour les blocs de texte si non passés par le parent
@@ -643,6 +648,10 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
     if (!isInteractive || !setInput) return;
     if (e.button !== 0 && e.pointerType === 'mouse') return;
     e.stopPropagation();
+
+    if (!isTextsActive) {
+      onVisualElementClick?.('textSizes', canonicalKey || field);
+    }
 
     const targetEl = e.currentTarget;
     const container = targetEl.closest('[data-poster-container="true"]') || wrapperRef.current;
@@ -812,13 +821,13 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           const innerTextElement = isSurtitre ? (
             <span
               data-tap-edit={item.id}
-              onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, offsetKey, item.id) : undefined}
-              onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
-              onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onClick={isTextsActive ? (e) => {
+              onPointerDown={canInteractTexts ? (e) => handleInternalTextPointerDown(e, offsetKey, item.id) : undefined}
+              onPointerMove={canInteractTexts ? handleInternalTextPointerMove : undefined}
+              onPointerUp={canInteractTexts ? handleInternalTextPointerUp : undefined}
+              onPointerCancel={canInteractTexts ? handleInternalTextPointerUp : undefined}
+              onClick={canInteractTexts ? (e) => {
                 e.stopPropagation();
-                onVisualElementClick?.('texts', item.id as any);
+                onVisualElementClick?.('textSizes', item.id as any);
               } : undefined}
               className={`${typo.badgeClass.replace(/\btext-(white|black|zinc-\d+|slate-\d+|neutral-\d+|gray-\d+)\b/g, '')} whitespace-nowrap overflow-visible transition-all inline-block select-none max-w-full ${capsuleClass} ${
                 isTextsActive
@@ -827,7 +836,9 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                     : effectiveFocusedField === item.id
                       ? 'pointer-events-auto cursor-grab ring-2 ring-lime-400 rounded px-1 bg-lime-400/20 text-lime-300 shadow-[0_0_12px_rgba(163,230,53,0.8)]'
                       : 'pointer-events-auto cursor-grab hover:ring-1 hover:ring-lime-400/50 rounded'
-                  : 'pointer-events-none select-none'
+                  : canInteractTexts
+                    ? 'pointer-events-auto cursor-pointer hover:ring-1 hover:ring-dashed hover:ring-lime-400/60 rounded px-1'
+                    : 'pointer-events-none select-none'
               }`}
               style={{
                 fontFamily: "'Syne', 'Inter', 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif",
@@ -859,13 +870,13 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           ) : isTitle ? (
             <div
               data-tap-edit={item.id}
-              onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, offsetKey, item.id) : undefined}
-              onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
-              onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onClick={isTextsActive ? (e) => {
+              onPointerDown={canInteractTexts ? (e) => handleInternalTextPointerDown(e, offsetKey, item.id) : undefined}
+              onPointerMove={canInteractTexts ? handleInternalTextPointerMove : undefined}
+              onPointerUp={canInteractTexts ? handleInternalTextPointerUp : undefined}
+              onPointerCancel={canInteractTexts ? handleInternalTextPointerUp : undefined}
+              onClick={canInteractTexts ? (e) => {
                 e.stopPropagation();
-                onVisualElementClick?.('texts', item.id as any);
+                onVisualElementClick?.('textSizes', item.id as any);
               } : undefined}
               className={`transition-all relative select-none inline-block max-w-full ${capsuleClass} ${
                 isTextsActive
@@ -874,7 +885,9 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                     : effectiveFocusedField === item.id
                       ? 'pointer-events-auto cursor-grab ring-2 ring-lime-400 rounded-lg shadow-[0_0_15px_rgba(163,230,53,0.85)] scale-[1.01]'
                       : 'pointer-events-auto cursor-grab hover:ring-1 hover:ring-lime-400/50 rounded-lg'
-                  : 'pointer-events-none select-none'
+                  : canInteractTexts
+                    ? 'pointer-events-auto cursor-pointer hover:ring-1 hover:ring-dashed hover:ring-lime-400/60 rounded-lg'
+                    : 'pointer-events-none select-none'
               }`}
               style={{ touchAction: 'none' }}
             >
@@ -900,13 +913,13 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           ) : isSoustitre ? (
             <p
               data-tap-edit={item.id}
-              onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, offsetKey, item.id) : undefined}
-              onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
-              onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onClick={isTextsActive ? (e) => {
+              onPointerDown={canInteractTexts ? (e) => handleInternalTextPointerDown(e, offsetKey, item.id) : undefined}
+              onPointerMove={canInteractTexts ? handleInternalTextPointerMove : undefined}
+              onPointerUp={canInteractTexts ? handleInternalTextPointerUp : undefined}
+              onPointerCancel={canInteractTexts ? handleInternalTextPointerUp : undefined}
+              onClick={canInteractTexts ? (e) => {
                 e.stopPropagation();
-                onVisualElementClick?.('texts', item.id as any);
+                onVisualElementClick?.('textSizes', item.id as any);
               } : undefined}
               className={`${typo.subClass.replace(/\btext-(white|black|zinc-\d+|slate-\d+|neutral-\d+|gray-\d+)\b/g, '')} whitespace-pre overflow-visible transition-all select-none max-w-full inline-block ${capsuleClass} ${
                 isTextsActive
@@ -915,7 +928,9 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                     : effectiveFocusedField === item.id
                       ? 'pointer-events-auto cursor-grab text-lime-300 font-bold ring-2 ring-lime-400 rounded shadow-[0_0_12px_rgba(163,230,53,0.8)]'
                       : 'pointer-events-auto cursor-grab hover:ring-1 hover:ring-lime-400/50 rounded'
-                  : 'pointer-events-none select-none'
+                  : canInteractTexts
+                    ? 'pointer-events-auto cursor-pointer hover:ring-1 hover:ring-dashed hover:ring-lime-400/60 rounded'
+                    : 'pointer-events-none select-none'
               }`}
               style={{
                 fontSize: getAutoScaledFontSize(cleanText, 2.6 * (item.fontSizeScale ?? 1.0), 1.0 * (item.fontSizeScale ?? 1.0), 'cqi'),
@@ -945,13 +960,13 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           ) : (
             <span
               data-tap-edit={item.id}
-              onPointerDown={isTextsActive ? (e) => handleInternalTextPointerDown(e, offsetKey, item.id) : undefined}
-              onPointerMove={isTextsActive ? handleInternalTextPointerMove : undefined}
-              onPointerUp={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onPointerCancel={isTextsActive ? handleInternalTextPointerUp : undefined}
-              onClick={isTextsActive ? (e) => {
+              onPointerDown={canInteractTexts ? (e) => handleInternalTextPointerDown(e, offsetKey, item.id) : undefined}
+              onPointerMove={canInteractTexts ? handleInternalTextPointerMove : undefined}
+              onPointerUp={canInteractTexts ? handleInternalTextPointerUp : undefined}
+              onPointerCancel={canInteractTexts ? handleInternalTextPointerUp : undefined}
+              onClick={canInteractTexts ? (e) => {
                 e.stopPropagation();
-                onVisualElementClick?.('texts', item.id as any);
+                onVisualElementClick?.('textSizes', item.id as any);
               } : undefined}
               className={`${typo.badgeClass.replace(/\btext-(white|black|zinc-\d+|slate-\d+|neutral-\d+|gray-\d+)\b/g, '')} uppercase block whitespace-nowrap overflow-visible transition-all select-none max-w-full ${capsuleClass} ${
                 isTextsActive
@@ -960,7 +975,9 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
                     : effectiveFocusedField === item.id
                       ? 'pointer-events-auto cursor-grab ring-2 ring-lime-400 rounded px-1 bg-lime-400/20 text-lime-300 shadow-[0_0_12px_rgba(163,230,53,0.8)]'
                       : 'pointer-events-auto cursor-grab hover:ring-1 hover:ring-lime-400/50 rounded'
-                  : 'pointer-events-none select-none'
+                  : canInteractTexts
+                    ? 'pointer-events-auto cursor-pointer hover:ring-1 hover:ring-dashed hover:ring-lime-400/60 rounded px-1'
+                    : 'pointer-events-none select-none'
               }`}
               style={{
                 fontSize: getAutoScaledFontSize(cleanText, 2.0 * (item.fontSizeScale ?? 1.0), 0.9 * (item.fontSizeScale ?? 1.0), 'cqi'),
@@ -1744,7 +1761,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
               userSelect: 'none',
               touchAction: 'none',
               opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03)
-                ? (typeof data.backgroundOpacity === 'number' ? data.backgroundOpacity : 1)
+                ? 1
                 : (data.backgroundOpacity ?? 0.75),
               filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03 || toneOverlay.filterCss === 'none') ? 'none' : toneOverlay.filterCss,
             }}
@@ -1919,7 +1936,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
         input={data}
         setInput={setInput}
         previewFormat={targetFormatKey}
-        disabled={!isInteractive || !isLogoActive}
+        disabled={!isInteractive}
         isActive={isLogoActive}
         isExporting={isExporting}
         subjectTransform={subjectImage ? {
@@ -1928,7 +1945,7 @@ export const FlyerPosterRenderer: React.FC<FlyerPosterRendererProps> = ({
           offsetX: subjectOffsetX,
           alignX: subjectAlignX,
         } : null}
-        onLogoClick={isLogoActive ? () => onVisualElementClick?.('logo') : undefined}
+        onLogoClick={isInteractive ? () => onVisualElementClick?.('logo') : undefined}
       />
 
       {/* 6. Textes positionnés DEVANT le sujet (z-index: 30) */}

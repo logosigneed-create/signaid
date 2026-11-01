@@ -5583,7 +5583,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
               WebkitUserSelect: 'none',
               userSelect: 'none',
               touchAction: 'none',
-              opacity: input.backgroundOpacity ?? 0.75,
+              opacity: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03) ? 1 : (input.backgroundOpacity ?? 0.75),
               filter: (isToneCenter || Math.abs(currentTone - 0.5) < 0.03 || toneOverlay.filterCss === 'none') ? 'none' : toneOverlay.filterCss,
             }}
             title="Cliquer pour configurer le fond (Décor & Ambiance)"
@@ -7928,8 +7928,8 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
 
               <div className="space-y-2">
 
-                {/* ACCORDÉON « AJUSTEMENTS MANUELS PRÉCIS » (FERMÉ PAR DÉFAUT) : Fondu, Opacité, Taille, Position */}
-                <details data-testid="subject-advanced-accordion" className={`group ${innerBg} rounded-xl border`}>
+                {/* ACCORDÉON « AJUSTEMENTS MANUELS PRÉCIS » : Fondu, Opacité, Taille, Position */}
+                <details open data-testid="subject-advanced-accordion" className={`group ${innerBg} rounded-xl border`}>
                   <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none flex items-center justify-between px-3 py-2.5 text-xs font-bold font-mono text-zinc-300 hover:text-white">
                     <span>Ajustements manuels précis</span>
                     <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
@@ -7955,6 +7955,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                           const val = Number.isNaN(parsed) ? 35 : parsed;
                           setInput((prev) => ({
                             ...prev,
+                            isSubjectGradientFade: true,
                             ...(isSecondary ? { secondarySubjectFadeIntensity: val } : { subjectFadeIntensity: val }),
                           }));
                           if (isLiveScrubbing) setLiveScrubData((p) => p ? { ...p, value: `${val} %` } : null);
@@ -7964,6 +7965,7 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                           const val = Number.isNaN(parsed) ? 35 : parsed;
                           setInput((prev) => ({
                             ...prev,
+                            isSubjectGradientFade: true,
                             ...(isSecondary ? { secondarySubjectFadeIntensity: val } : { subjectFadeIntensity: val }),
                           }));
                         }}
@@ -8327,42 +8329,29 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                       {(input.logoImage || input.logoUrl) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />}
                     </button>
 
-                    {Boolean(
-                      input.tshirtPreviewImage ||
-                      input.tshirtPreviewImages?.front ||
-                      input.tshirtPreviewImages?.back ||
-                      input.logoImage ||
-                      input.logoUrl ||
-                      input.tshirtCustomLogo ||
-                      input.tshirtBackCustomLogo ||
-                      input.rawLogoImage ||
-                      input.redesignedLogoSvg ||
-                      input.djPhoto
-                    ) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setLogoTarget('apparel');
-                          setTshirtView('ghost');
-                          onSelectFormat?.('tshirt');
-                          onTriggerDtfPress?.();
-                        }}
-                        className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-mono font-bold transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none ${logoTarget === 'apparel'
-                          ? 'bg-lime-400 text-black shadow-sm font-black'
-                          : isDayMode ? 'bg-zinc-200 text-zinc-700 hover:text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'
-                          }`}
-                      >
-                        <Shirt className="w-3.5 h-3.5" />
-                        <span>Stand Merch (0 € stock)</span>
-                        {!isDemoLogo(input.tshirtCustomLogo) ? (
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Logo exclusif actif" />
-                        ) : (input.logoImage || input.logoUrl) ? (
-                          <span className="text-[9px] opacity-75 font-normal">(hérité)</span>
-                        ) : input.djPhoto ? (
-                          <span className="text-[9px] opacity-75 font-normal">(sujet)</span>
-                        ) : null}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLogoTarget('apparel');
+                        setTshirtView('ghost');
+                        onSelectFormat?.('tshirt');
+                        onTriggerDtfPress?.();
+                      }}
+                      className={`flex-1 py-1.5 px-2.5 rounded-lg text-[11px] font-mono font-bold transition flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-2 focus-visible:ring-lime-400 focus-visible:outline-none ${logoTarget === 'apparel'
+                        ? 'bg-lime-400 text-black shadow-sm font-black'
+                        : isDayMode ? 'bg-zinc-200 text-zinc-700 hover:text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'
+                        }`}
+                    >
+                      <Shirt className="w-3.5 h-3.5" />
+                      <span>Stand Merch (0 € stock)</span>
+                      {!isDemoLogo(input.tshirtCustomLogo) ? (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Logo exclusif actif" />
+                      ) : (input.logoImage || input.logoUrl) ? (
+                        <span className="text-[9px] opacity-75 font-normal">(hérité)</span>
+                      ) : (
+                        <span className="text-[9px] opacity-75 font-normal">(visuel)</span>
+                      )}
+                    </button>
                   </div>
 
                   {/* Sélecteur « Vue Active Calibrage » directement au-dessus de la zone de chargement du logo */}
@@ -9032,8 +9021,8 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                             </div>
                           </div>
 
-                          {/* ACCORDÉON « AJUSTEMENTS MANUELS PRÉCIS » LOGO AFFICHE (FERMÉ PAR DÉFAUT) */}
-                          <details data-testid="logo-advanced-accordion" className={`group ${innerBg} rounded-xl border`}>
+                          {/* ACCORDÉON « AJUSTEMENTS MANUELS PRÉCIS » LOGO AFFICHE */}
+                          <details open data-testid="logo-advanced-accordion" className={`group ${innerBg} rounded-xl border`}>
                             <summary className="list-none [&::-webkit-details-marker]:hidden cursor-pointer select-none flex items-center justify-between px-3 py-2.5 text-xs font-bold font-mono text-zinc-300 hover:text-white">
                               <span>Ajustements manuels précis</span>
                               <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-180" />
@@ -9054,6 +9043,26 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                   onPointerDown={(e) => handleSliderPointerDown(e, 'Taille Logo Affiche', `${Math.round((currentLogoTransform.scale ?? 0.6) * 100)} %`)}
                                   onPointerUp={handleSliderPointerUp}
                                   onPointerCancel={handleSliderPointerCancel}
+                                  onInput={(e) => {
+                                    const val = parseFloat((e.target as HTMLInputElement).value) || 0.6;
+                                    if (input.isPinnedToSubject && input.djPhoto) {
+                                      const subjectTrScale = currentSubjectTransformForLogo.scale > 0.01 ? currentSubjectTransformForLogo.scale : 0.01;
+                                      setInput((p) => ({
+                                        ...updatePinnedLogoTransform(p, previewFormat, currentSubjectTransformForLogo, {
+                                          relativeScale: Number((val / subjectTrScale).toFixed(3)),
+                                        }),
+                                        logoScale: val,
+                                      }));
+                                    } else {
+                                      setInput((p) => ({
+                                        ...updateLogoTransform(p, previewFormat, { scale: val }),
+                                        logoScale: val,
+                                      }));
+                                    }
+                                    if (isLiveScrubbing) {
+                                      setLiveScrubData((prev) => prev ? { ...prev, value: `${Math.round(val * 100)} %` } : null);
+                                    }
+                                  }}
                                   onChange={(e) => {
                                     const val = parseFloat(e.target.value) || 0.6;
                                     if (input.isPinnedToSubject && input.djPhoto) {
@@ -9093,6 +9102,25 @@ export const StudioComposer: React.FC<StudioComposerProps> = ({
                                   onPointerDown={(e) => handleSliderPointerDown(e, 'Déplacement Y Logo', `${Math.round(currentLogoTransform.y ?? 12)} %`)}
                                   onPointerUp={handleSliderPointerUp}
                                   onPointerCancel={handleSliderPointerCancel}
+                                  onInput={(e) => {
+                                    const val = parseFloat((e.target as HTMLInputElement).value) || 0;
+                                    if (input.isPinnedToSubject && input.djPhoto) {
+                                      setInput((p) => ({
+                                        ...updatePinnedLogoTransform(p, previewFormat, currentSubjectTransformForLogo, { y: val }),
+                                        logoOffsetY: val,
+                                        logoPositionY: val,
+                                      }));
+                                    } else {
+                                      setInput((p) => ({
+                                        ...updateLogoTransform(p, previewFormat, { y: val }),
+                                        logoOffsetY: val,
+                                        logoPositionY: val,
+                                      }));
+                                    }
+                                    if (isLiveScrubbing) {
+                                      setLiveScrubData((prev) => prev ? { ...prev, value: `${Math.round(val)} %` } : null);
+                                    }
+                                  }}
                                   onChange={(e) => {
                                     const val = parseFloat(e.target.value) || 0;
                                     if (input.isPinnedToSubject && input.djPhoto) {

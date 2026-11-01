@@ -43,15 +43,13 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className={`relative w-full h-14 sm:h-16 px-3 sm:px-6 flex items-center justify-between shrink-0 border-b ${
-        isDayMode ? 'border-zinc-200/80 bg-white/95 text-zinc-900' : 'border-zinc-800 bg-zinc-950/95 text-zinc-100'
-      } dark:border-zinc-800 dark:bg-zinc-950/95 dark:text-zinc-100 backdrop-blur-md sticky top-0 z-50 transition-colors duration-300`}>
+      <header className="relative w-full h-14 sm:h-16 px-3 sm:px-6 flex items-center justify-between shrink-0 border-b border-zinc-800 bg-zinc-950/95 text-white backdrop-blur-md sticky top-0 z-50 transition-colors duration-200">
         {/* BLOC GAUCHE : Menu Hamburger (Mobile & Desktop) */}
         <div className="flex items-center gap-2 min-w-0 min-[920px]:min-w-[180px]">
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="p-2 rounded-xl text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/80 transition-colors cursor-pointer"
+            className="p-2 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800/80 transition-colors cursor-pointer"
             aria-label={isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
             title={isMobileMenuOpen ? 'Fermer le menu' : 'Menu & Réglages'}
           >
@@ -59,37 +57,55 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         </div>
 
-        {/* BLOC CENTRE : Titre & Logo SIGNAID.EU parfaitement centré (Desktop & Mobile) */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center pointer-events-none gap-2.5">
+        {/* BLOC CENTRE : Titre & Logo SIGNAID.EU parfaitement centré (contraste franc : texte blanc net sur fond sombre) */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center justify-center pointer-events-none gap-2 sm:gap-2.5">
+          <div
+            onClick={() => {
+              setActiveTab('generator');
+              setIsMobileMenuOpen(false);
+            }}
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-lime-400 text-black font-black flex items-center justify-center font-mono text-xs sm:text-sm shadow-md shadow-lime-400/25 shrink-0 pointer-events-auto cursor-pointer select-none hover:scale-105 transition-transform"
+            title="SIGNAID.EU - Studio"
+          >
+            S
+          </div>
           <span
             onClick={() => {
               setActiveTab('generator');
               setIsMobileMenuOpen(false);
             }}
-            className={`font-mono font-black text-sm sm:text-base tracking-[0.25em] ${
-              isDayMode ? 'text-zinc-950 hover:text-black' : 'text-white hover:text-zinc-200'
-            } uppercase select-none pointer-events-auto cursor-pointer group transition-colors whitespace-nowrap`}
+            className="font-mono font-black text-sm sm:text-base tracking-[0.25em] text-white hover:text-zinc-200 uppercase select-none pointer-events-auto cursor-pointer group transition-colors whitespace-nowrap drop-shadow-sm"
             title="SIGNAID.EU - Studio de Création"
           >
-            SIGNAID<span className="text-lime-500 group-hover:text-lime-400 transition-colors">.EU</span>
+            SIGNAID<span className="text-lime-400 group-hover:text-lime-300 transition-colors">.EU</span>
           </span>
         </div>
 
-        {/* BLOC DROITE : Projets, Bascule Thème et Connexion / Profil */}
+        {/* BLOC DROITE : Bascule Thème (Jour / Nuit), Projets et Connexion / Profil */}
         <div className="flex items-center justify-end gap-2 sm:gap-2.5 min-w-0 min-[920px]:min-w-[180px]">
           {onToggleDayMode && (
             <button
               type="button"
               onClick={onToggleDayMode}
-              className={`p-2 rounded-xl border transition-colors cursor-pointer shrink-0 ${
+              className={`px-2.5 py-1.5 rounded-xl border transition-all duration-200 cursor-pointer shrink-0 flex items-center gap-1.5 font-mono text-xs font-bold ${
                 isDayMode
-                  ? 'border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900 shadow-xs'
-                  : 'border-zinc-800 text-zinc-300 hover:bg-zinc-800/80 hover:text-white shadow-xs'
+                  ? 'border-amber-400/50 bg-amber-400/15 text-amber-300 hover:bg-amber-400/25 shadow-[0_0_12px_rgba(251,191,36,0.25)]'
+                  : 'border-zinc-800 bg-zinc-900/90 text-zinc-300 hover:text-white hover:border-zinc-700 hover:bg-zinc-800/80 shadow-xs'
               }`}
-              aria-label={isDayMode ? 'Passer en mode Sombre' : 'Passer en mode Clair'}
-              title={isDayMode ? 'Passer en mode Sombre' : 'Passer en mode Clair'}
+              aria-label={isDayMode ? 'Mode Clair actif (Cliquer pour passer en mode Sombre)' : 'Mode Sombre actif (Cliquer pour passer en mode Clair)'}
+              title={isDayMode ? 'Mode Clair actif (Cliquer pour passer en mode Sombre)' : 'Mode Sombre actif (Cliquer pour passer en mode Clair)'}
             >
-              {isDayMode ? <Moon className="w-4 h-4 text-zinc-700" /> : <Sun className="w-4 h-4 text-amber-400" />}
+              {isDayMode ? (
+                <>
+                  <Sun className="w-4 h-4 text-amber-400" />
+                  <span className="hidden min-[480px]:inline text-[11px] text-amber-300">Jour</span>
+                </>
+              ) : (
+                <>
+                  <Moon className="w-4 h-4 text-lime-400" />
+                  <span className="hidden min-[480px]:inline text-[11px] text-zinc-300">Nuit</span>
+                </>
+              )}
             </button>
           )}
 
@@ -97,16 +113,16 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               type="button"
               onClick={onOpenProjects}
-              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 text-xs font-mono text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors shadow-sm cursor-pointer shrink-0"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-zinc-800 bg-zinc-900/80 text-xs font-mono text-zinc-300 hover:text-white hover:bg-zinc-800 hover:border-zinc-700 transition-colors shadow-sm cursor-pointer shrink-0"
               title="Ouvrir la liste des projets"
             >
-              <Folder className="w-3.5 h-3.5 text-lime-500 dark:text-lime-400" />
-              <span className="hidden min-[480px]:inline">Projets</span>
+              <Folder className="w-3.5 h-3.5 text-lime-400" />
+              <span className="hidden min-[540px]:inline">Projets</span>
             </button>
           )}
 
           <UserHeaderAuth
-            isDayMode={isDayMode}
+            isDayMode={false}
             onOpenWorkshop={() => setActiveTab('workshop')}
             onOpenAuthModal={onOpenAuthModal}
           />
